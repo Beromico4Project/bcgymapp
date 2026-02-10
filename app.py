@@ -5,7 +5,8 @@ import datetime
 st.set_page_config(page_title="V-Shape Planner", page_icon="💪", layout="centered")
 
 # --- CABEÇALHO ---
-st.title("🏋️‍♂️ Plano V-Shape Adaptativo")
+st.title("Black Clover")
+st.title("Workout APP")
 st.markdown("Foco: Ombros/Dorsais largos, Cintura estreita. Periodização em Ondas.")
 
 # --- BARRA LATERAL (INPUTS) ---
@@ -154,4 +155,68 @@ st.checkbox("Cardio Final (Circulação)?")
 
 if st.button("Concluir Treino"):
     st.balloons()
+
     st.success("Treino registrado! Bom descanso.")
+
+NOME_ARQUIVO = "log_treinos.csv"
+
+def carregar_dados():
+    if os.path.exists(NOME_ARQUIVO):
+        return pd.read_csv(NOME_ARQUIVO)
+    return pd.DataFrame(columns=["Data", "Exercício", "Peso", "RPE", "Notas"])
+
+def salvar_progresso(exercicio, peso, rpe, notas):
+    df = carregar_dados()
+    novo_registo = pd.DataFrame({
+        "Data": [datetime.date.today().strftime("%d/%m/%Y")],
+        "Exercício": [exercicio],
+        "Peso": [peso],
+        "RPE": [rpe],
+        "Notas": [notas]
+    })
+    df = pd.concat([df, novo_registo], ignore_index=True)
+    df.to_csv(NOME_ARQUIVO, index=False)
+
+# --- INTERFACE ---
+st.set_page_config(page_title="V-Shape Log", page_icon="📓")
+
+tab1, tab2 = st.tabs(["🏋️ Treino do Dia", "📈 Histórico"])
+
+with tab1:
+    st.title("Registo de Treino")
+    
+    # Seleção de exercício (Exemplo baseado no teu plano)
+    lista_exercicios = ["Supino Reto", "Remada Curvada", "Agachamento", "Leg Press", "Desenvolvimento"]
+    ex_selecionado = st.selectbox("Selecione o Exercício:", lista_exercicios)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        peso = st.number_input("Peso (kg):", min_value=0.0, step=0.5)
+    with col2:
+        rpe = st.slider("RPE (Esforço 1-10):", 1, 10, 8)
+    
+    notas = st.text_area("Notas do set (ex: 'Senti um pouco o joelho', 'Fácil'):")
+    
+    if st.button("Gravar Set"):
+        salvar_progresso(ex_selecionado, peso, rpe, notas)
+        st.success(f"Set de {ex_selecionado} gravado com sucesso!")
+
+with tab2:
+    st.header("Histórico de Progresso")
+    df_historico = carregar_dados()
+    
+    if not df_historico.empty:
+        # Filtro por exercício
+        filtro = st.multiselect("Filtrar por Exercício:", df_historico["Exercício"].unique())
+        if filtro:
+            df_historico = df_historico[df_historico["Exercício"].isin(filtro)]
+        
+        st.dataframe(df_historico.sort_index(ascending=False), use_container_width=True)
+        
+        # Botão para limpar histórico (Cuidado!)
+        if st.checkbox("Mostrar opção de apagar tudo"):
+            if st.button("🗑️ Limpar Todo o Histórico"):
+                os.remove(NOME_ARQUIVO)
+                st.rerun()
+    else:
+        st.info("Ainda não tens treinos registados. Começa hoje!")
