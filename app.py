@@ -4,6 +4,7 @@ import pandas as pd
 import datetime
 import time
 import base64
+import os
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
@@ -36,16 +37,16 @@ def set_background(png_file):
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        /* AQUI ESTÁ A MUDANÇA: Cinza Escuro (30,30,30) com 85% de opacidade */
+        /* Cinza Escuro com 85% de opacidade */
         filter: blur(12px) brightness(0.5); 
         z-index: -1;
     }}
-    /* Camada extra de Cinza Escuro Transparente por cima da imagem */
+    /* Camada extra de Cinza Escuro Transparente */
     .stApp::after {{
         content: "";
         position: fixed;
         top: 0; left: 0; width: 100vw; height: 100vh;
-        background-color: rgba(20, 20, 20, 0.85); /* Cinza muito escuro transparente */
+        background-color: rgba(20, 20, 20, 0.85); 
         z-index: -1;
     }}
     header {{ background: transparent !important; }}
@@ -55,19 +56,16 @@ def set_background(png_file):
 # Aplica o fundo
 set_background('banner.png')
 
-# --- 3. CSS DA INTERFACE (Cinza Escuro + Transparência) ---
+# --- 3. CSS DA INTERFACE ---
 st.markdown("""
     <style>
-    /* Importar Fontes */
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
 
-    /* Texto Geral */
     html, body, [class*="css"] {
         font-family: 'MedievalSharp', cursive;
         color: #E0E0E0;
     }
     
-    /* Títulos */
     h1, h2, h3 {
         color: #FF4B4B !important; 
         font-family: 'Cinzel', serif !important;
@@ -75,33 +73,33 @@ st.markdown("""
         text-transform: uppercase;
     }
     
-    /* --- ABAS (TABS) COM EFEITO CINZA ESCURO --- */
+    /* ABAS (TABS) */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: rgba(30, 30, 30, 0.6); /* Fundo do menu transparente */
+        background-color: rgba(30, 30, 30, 0.6);
         padding: 10px;
         border-radius: 12px;
         border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        background-color: rgba(50, 50, 50, 0.7); /* Cinza com transparência */
+        background-color: rgba(50, 50, 50, 0.7);
         border: 1px solid rgba(255,255,255,0.1);
         border-radius: 6px;
         color: #CCC;
         font-family: 'Cinzel', serif;
-        backdrop-filter: blur(5px); /* Efeito vidro nas abas */
+        backdrop-filter: blur(5px);
     }
     .stTabs [aria-selected="true"] {
-        background-color: rgba(139, 0, 0, 0.9) !important; /* Vermelho quase sólido */
+        background-color: rgba(139, 0, 0, 0.9) !important;
         color: #FFD700 !important;
         border: 1px solid #FF4B4B !important;
         box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
     }
 
-    /* --- CARTÕES EXPANSÍVEIS (VIDRO FUMADO) --- */
+    /* CARTÕES EXPANSÍVEIS */
     .streamlit-expanderHeader {
-        background-color: rgba(45, 45, 45, 0.8) !important; /* Cinza escuro transparente */
+        background-color: rgba(45, 45, 45, 0.8) !important;
         border-radius: 8px;
         border: 1px solid rgba(255, 255, 255, 0.1);
         color: #FFF !important;
@@ -113,7 +111,7 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    /* Inputs (Caixas de texto) */
+    /* Inputs */
     .stTextInput input, .stNumberInput input, .stTextArea textarea {
         background-color: rgba(0, 0, 0, 0.4) !important;
         color: white !important;
@@ -145,14 +143,25 @@ def get_data():
     except:
         return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
 
-def get_ultimo_registro(exercicio):
+# --- NOVA FUNÇÃO: BUSCAR TODO O TREINO ANTERIOR ---
+def get_treino_anterior(exercicio):
     df = get_data()
-    if df.empty: return None, None
-    registo = df[df["Exercício"] == exercicio]
-    if not registo.empty:
-        ultimo = registo.iloc[-1]
-        return ultimo["Peso"], ultimo["Reps"]
-    return None, None
+    if df.empty: return None, 0.0
+    
+    # Filtrar pelo exercício
+    df_ex = df[df["Exercício"] == exercicio]
+    if df_ex.empty: return None, 0.0
+    
+    # Pegar a última data registada (assumindo ordem cronológica de inserção)
+    ultima_linha = df_ex.iloc[-1]
+    ultima_data = ultima_linha["Data"]
+    
+    # Filtrar todas as séries dessa data
+    treino_passado = df_ex[df_ex["Data"] == ultima_data]
+    
+    # Retorna o DataFrame (colunas úteis) e o peso da última série para sugestão
+    cols_uteis = ["Peso", "Reps", "RPE", "Notas"]
+    return treino_passado[cols_uteis], float(ultima_linha["Peso"])
 
 def salvar_set(exercicio, peso, reps, rpe, notas):
     df_existente = get_data()
@@ -239,8 +248,8 @@ def adaptar_nome(nome):
 # --- 7. CABEÇALHO ---
 col_esq, col_dir = st.columns([1, 4]) 
 with col_esq:
-    try: st.image("logo.png", width=90)
-    except: st.write("♣️")
+    if os.path.exists("logo.png"): st.image("logo.png", width=90)
+    else: st.write("♣️")
 with col_dir:
     st.title("BLACK CLOVER PROJECT")
     st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
@@ -259,20 +268,27 @@ with tab_treino:
         
         for i, item in enumerate(treino_hoje):
             nome_display = adaptar_nome(item['ex'])
-            last_w, last_r = get_ultimo_registro(nome_display)
             
-            # Expander com fundo cinza transparente
+            # --- ATUALIZAÇÃO: BUSCA HISTÓRICO COMPLETO ---
+            df_passado, peso_sugerido = get_treino_anterior(nome_display)
+            
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 c1, c2 = st.columns(2)
                 rpe_txt = "🔴 MUITO PESADO" if item['rpe'] >= 9 else "🟢 LEVE" if item['rpe'] <= 6 else "🟡 PESADO"
                 c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
                 c2.markdown(f"**{rpe_txt}**")
                 
-                if last_w: st.caption(f"🔙 Anterior: {last_w}kg")
+                # --- EXIBIÇÃO DA TABELA DA SEMANA PASSADA ---
+                if df_passado is not None:
+                    st.markdown("📜 **Séries Anteriores:**")
+                    st.dataframe(df_passado, hide_index=True, use_container_width=True)
+                else:
+                    st.caption("Sem registos anteriores.")
 
                 with st.form(key=f"form_{i}"):
                     cc1, cc2, cc3 = st.columns([1,1,2])
-                    peso = cc1.number_input("Kg", value=float(last_w) if last_w else 0.0, step=2.5)
+                    # Usa o último peso conhecido como sugestão
+                    peso = cc1.number_input("Kg", value=peso_sugerido, step=2.5)
                     reps = cc2.number_input("Reps", value=int(str(item['reps']).split('-')[0]), step=1)
                     notas = cc3.text_input("Obs")
                     if st.form_submit_button("Gravar"):
@@ -290,8 +306,10 @@ with tab_treino:
         st.divider()
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
             st.balloons()
-            try: st.image("success.png")
-            except: st.success("LIMITS SURPASSED!")
+            if os.path.exists("success.png"):
+                st.image("success.png")
+            else:
+                st.success("LIMITS SURPASSED!")
             time.sleep(3)
             st.rerun()
 
