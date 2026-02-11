@@ -4,13 +4,14 @@ import pandas as pd
 import datetime
 import time
 import base64
-import os
+import os  # <--- FALTAVA ISTO PARA AS IMAGENS FUNCIONAREM
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
 
-# --- 2. FUNÇÃO DE FUNDO (COM DEBUG) ---
+# --- 2. FUNÇÃO DE FUNDO (ROBUSTA) ---
 def get_base64(bin_file):
+    # Verifica se o ficheiro existe para não dar erro
     if not os.path.exists(bin_file):
         return None
     with open(bin_file, 'rb') as f:
@@ -20,9 +21,69 @@ def get_base64(bin_file):
 def set_background(png_file):
     bin_str = get_base64(png_file)
     
-    # Se a imagem existir, usa-a com desfoque
+    # CSS BASE: Fontes Medievais
+    style_base = """
+    /* Importar Fontes */
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
+
+    /* FORÇAR A FONTE EM TUDO */
+    html, body, [class*="css"], div, label, p, .stMarkdown {
+        font-family: 'MedievalSharp', cursive !important;
+        color: #E0E0E0 !important;
+    }
+    
+    /* TÍTULOS (H1-H3) */
+    h1, h2, h3 {
+        font-family: 'Cinzel', serif !important;
+        color: #FF4B4B !important;
+        text-shadow: 2px 2px 0px #000;
+        text-transform: uppercase;
+        font-weight: 900 !important;
+    }
+
+    /* ABAS (TABS) */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: rgba(0, 0, 0, 0.6);
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #444;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: rgba(60, 60, 60, 0.8);
+        border: 1px solid #555;
+        border-radius: 5px;
+        color: #ddd;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(139, 0, 0, 0.9) !important;
+        color: #FFD700 !important;
+        border: 2px solid #FF0000 !important;
+    }
+
+    /* BOTÕES */
+    div.stButton > button:first-child {
+        background: linear-gradient(180deg, #8B0000 0%, #400000 100%) !important;
+        color: #FFD700 !important;
+        border: 1px solid #FF4B4B !important;
+        font-family: 'Cinzel', serif !important;
+        font-size: 18px !important;
+    }
+    
+    /* INPUTS */
+    .stTextInput input, .stNumberInput input, .stTextArea textarea {
+        background-color: rgba(0, 0, 0, 0.6) !important;
+        color: white !important;
+        border: 1px solid #666 !important;
+    }
+
+    /* Remover barra superior branca */
+    header { background: transparent !important; }
+    """
+
+    # Se a imagem existir, adiciona o CSS do fundo
     if bin_str:
-        bg_css = f"""
+        style_bg = f"""
         .stApp {{
             background: transparent;
         }}
@@ -39,87 +100,15 @@ def set_background(png_file):
         }}
         """
     else:
-        # SE NÃO ENCONTRAR A IMAGEM, USA UM CINZA ESCURO SÓLIDO (Fallback)
-        bg_css = """
-        .stApp {
-            background-color: #1a1a1a;
-        }
-        """
-        st.toast("⚠️ Aviso: 'banner.png' não encontrado. A usar fundo cinza.", icon="⚠️")
-    
-    st.markdown(f"<style>{bg_css}</style>", unsafe_allow_html=True)
+        # Fallback se não houver imagem
+        style_bg = ".stApp { background-color: #121212; }"
 
-# Aplica o fundo
+    st.markdown(f"<style>{style_base} {style_bg}</style>", unsafe_allow_html=True)
+
+# Aplica o visual
 set_background('banner.png')
 
-# --- 3. CSS "NUCLEAR" (FORÇAR TEMA) ---
-st.markdown("""
-    <style>
-    /* Importar Fontes */
-    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
-
-    /* 1. FORÇAR A FONTE EM TUDO (*) */
-    * {
-        font-family: 'MedievalSharp', cursive !important;
-    }
-    
-    /* 2. TÍTULOS (H1, H2, H3) - Fonte Cinzel */
-    h1, h2, h3, .stHeadingContainer {
-        font-family: 'Cinzel', serif !important;
-        color: #FF4B4B !important;
-        text-shadow: 2px 2px 0px #000;
-        text-transform: uppercase;
-        font-weight: 900 !important;
-    }
-
-    /* 3. TEXTO GERAL */
-    p, label, span, div {
-        color: #E0E0E0 !important;
-    }
-
-    /* 4. ABAS (TABS) - CINZA ESCURO SEMI-TRANSPARENTE */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: rgba(0, 0, 0, 0.5);
-        padding: 10px;
-        border-radius: 10px;
-        border: 1px solid #444;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        background-color: rgba(60, 60, 60, 0.8); /* Cinza Escuro Vidro */
-        border: 1px solid #555;
-        border-radius: 5px;
-        color: #ddd;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: rgba(139, 0, 0, 0.9) !important; /* Vermelho Sangue */
-        color: #FFD700 !important; /* Dourado */
-        border: 2px solid #FF0000 !important;
-    }
-
-    /* 5. INPUTS E CAIXAS */
-    .stTextInput input, .stNumberInput input, .stTextArea textarea {
-        background-color: rgba(0, 0, 0, 0.6) !important;
-        color: white !important;
-        border: 1px solid #666 !important;
-    }
-    
-    /* 6. BOTÕES */
-    div.stButton > button:first-child {
-        background: linear-gradient(180deg, #8B0000 0%, #400000 100%) !important;
-        color: #FFD700 !important;
-        border: 1px solid #FF4B4B !important;
-        font-family: 'Cinzel', serif !important;
-        font-size: 18px !important;
-    }
-    
-    /* Remover fundo branco do header nativo */
-    header { background: transparent !important; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- 4. DADOS ---
+# --- 3. DADOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
@@ -148,6 +137,7 @@ def salvar_set(exercicio, peso, reps, rpe, notas):
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
     conn.update(data=df_final)
 
+# --- 4. PLANO DE TREINO ---
 treinos_base = {
     "Segunda (Upper Força)": [
         {"ex": "Supino Reto", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
@@ -216,8 +206,8 @@ def adaptar_nome(nome):
     if dor_costas and "Curvada" in nome: return f"{nome} ➡️ APOIADO"
     return nome
 
-# --- CORREÇÃO DO ERRO DE COLUNAS AQUI ---
-col_esq, col_dir = st.columns([1, 4]) 
+# --- CORREÇÃO DAS COLUNAS AQUI ---
+col_esq, col_dir = st.columns([1, 4]) # <--- Isto corrige o erro "with col_logo1"
 with col_esq:
     if os.path.exists("logo.png"):
         st.image("logo.png", width=90)
