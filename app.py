@@ -43,7 +43,7 @@ def set_background(png_file):
         background-position: center;
         background-repeat: no-repeat;
         /* O FILTRO DE DESFOQUE AQUI: */
-        filter: blur(15px) brightness(0.4); /* Blur forte + Escurecer a imagem */
+        filter: blur(8px) brightness(0.4); /* Blur forte + Escurecer a imagem */
         z-index: -1; /* Fica atrás de tudo */
         transform: scale(1.1); /* Aumenta um pouco para evitar bordas brancas do blur */
     }}
@@ -246,10 +246,8 @@ def adaptar_nome(nome):
     return nome
 
 # --- BANNER DO CAPITÃO ---
-col_logo1, col_logo2 = st.columns([1, 4])
+col_logo1 = st.columns([1, 4])
 with col_logo1:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/4/4e/Black_Clover_Logo.png", width=80)
-with col_logo2:
     st.title("BLACK CLOVER PROJECT")
     st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
@@ -258,8 +256,6 @@ tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
 
 # 2. AGORA SIM, PODES COLOCAR A IMAGEM DENTRO DA ABA
 with tab_treino:
-    st.image("https://wallpapers.com/images/hd/asta-demon-form-4k-wallpaper-dark-aesthetic-x7z7b6.jpg", use_column_width=True)
-
     # 3. GUIA RPE
     with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
         st.markdown("""
@@ -357,5 +353,6 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
 
