@@ -220,9 +220,9 @@ with tab_treino:
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 col_info1, col_info2 = st.columns(2)
                 
-                if rpe_real >= 9: rpe_text = "🔴 MUITO PESADO"
-                elif rpe_real <= 6: rpe_text = "🟢 LEVE (Técnica)"
-                else: rpe_text = "🟡 PESADO"
+                if rpe_real >= 9: rpe_text = "🔴 MODO DEMONÍACO, VAI COM TUDO"
+                elif rpe_real <= 6: rpe_text = "🟢 CONCENTRA-TE SÓ, FOCO NO ATAQUE"
+                else: rpe_text = "🟡 UM ALVO FORMIDÁVEL, NÃO PRECISAS DAR TUDO"
                 
                 col_info1.markdown(f"**Meta:** {series_reais} Séries x {reps_reais} Reps")
                 col_info2.markdown(f"**{rpe_text}**")
@@ -273,3 +273,4 @@ with tab_historico:
         st.dataframe(df_show.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
+
