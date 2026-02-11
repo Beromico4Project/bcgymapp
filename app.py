@@ -126,7 +126,7 @@ def adaptar_nome(nome):
     return nome
 
 # --- CORPO PRINCIPAL COM ABAS ---
-st.title("Black Clover Workout ⚔️")
+st.title("♣️ Black Clover Workout ♣️")
 
 # CRIAÇÃO DAS ABAS AQUI
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
@@ -231,5 +231,6 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
 
