@@ -246,8 +246,17 @@ def adaptar_nome(nome):
     return nome
 
 # --- BANNER DO CAPITÃO ---
-col_logo1 = st.columns([1, 4])
-with col_logo1:
+col_esq, col_dir = st.columns([1, 4]) 
+
+# Coluna da Esquerda (Pequena) - Para o Logo (se tiveres)
+with col_esq:
+    try:
+        st.image("logo.png", width=90)
+    except:
+        st.write("♣️")
+
+# Coluna da Direita (Grande) - Para o Título
+with col_dir:
     st.title("BLACK CLOVER PROJECT")
     st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
@@ -353,6 +362,7 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
 
 
