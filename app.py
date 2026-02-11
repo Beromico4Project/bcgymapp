@@ -22,23 +22,34 @@ def set_background(png_file):
     if not bin_str:
         return
     
-    # CSS para o Fundo Desfocado e Escuro
+    # CSS AVANÇADO: Fundo Fixo + Desfoque Forte
     st.markdown(f"""
     <style>
+    /* 1. Contentor principal transparente */
     .stApp {{
         background: transparent;
     }}
+
+    /* 2. Pseudo-elemento para a imagem de fundo */
     .stApp::before {{
         content: "";
         position: fixed;
-        top: 0; left: 0; width: 100vw; height: 100vh;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
         background-image: url("data:image/png;base64,{bin_str}");
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        filter: blur(5px) brightness(0.4); /* Desfoque + Escuridão */
+        /* Aumentamos a escala para evitar bordas brancas do blur */
+        transform: scale(1.1); 
+        /* Desfoque de 15px e escurecimento para 40% de brilho */
+        filter: blur(15px) brightness(0.4); 
         z-index: -1;
     }}
+    
+    /* 3. Remove fundo do cabeçalho padrão */
     header {{ background: transparent !important; }}
     </style>
     """, unsafe_allow_html=True)
@@ -336,4 +347,5 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
