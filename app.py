@@ -43,7 +43,7 @@ def set_background(png_file):
         background-position: center;
         background-repeat: no-repeat;
         /* O FILTRO DE DESFOQUE AQUI: */
-        filter: blur(15px) brightness(0.4); /* Blur forte + Escurecer a imagem */
+        filter: blur(8px) brightness(0.4); /* Blur forte + Escurecer a imagem */
         z-index: -1; /* Fica atrás de tudo */
         transform: scale(1.1); /* Aumenta um pouco para evitar bordas brancas do blur */
     }}
@@ -363,6 +363,7 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
 
 
