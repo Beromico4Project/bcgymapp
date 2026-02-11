@@ -5,7 +5,7 @@ import datetime
 import time
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="V-Shape Planner", page_icon="🦍", layout="centered")
+st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 2. FUNÇÕES DE DADOS ---
@@ -74,7 +74,7 @@ treinos_base = {
     ]
 }
 
-# --- 4. LÓGICA DE PERIODIZAÇÃO (O Cérebro da App) ---
+# --- 4. LÓGICA DE PERIODIZAÇÃO ---
 def gerar_treino_do_dia(dia, semana):
     treino_base = treinos_base.get(dia, [])
     treino_final = []
@@ -82,24 +82,19 @@ def gerar_treino_do_dia(dia, semana):
     for item in treino_base:
         novo_item = item.copy()
         
-        # --- SEMANA 3: CHOQUE (Aumenta Carga e Volume) ---
+        # --- SEMANA 3: CHOQUE ---
         if semana == 3:
-            # Compostos principais sobem para 5 séries e RPE 9 (quase falha)
             if item["tipo"] == "composto":
-                novo_item["series"] += 1  # De 4x passa a 5x
-                novo_item["rpe"] = 9      # RPE sobe
-                if novo_item["reps"] == "5": # Se for força (5 reps) mantém
-                    pass 
+                novo_item["series"] += 1 
+                novo_item["rpe"] = 9
+                if novo_item["reps"] == "5": pass 
             else:
-                novo_item["rpe"] = 9 # Acessórios também ficam mais pesados
+                novo_item["rpe"] = 9
 
-        # --- SEMANA 4: DELOAD (Recuperação) ---
+        # --- SEMANA 4: DELOAD ---
         elif semana == 4:
-            # Reduz séries e intensidade drasticamente
-            novo_item["series"] = max(2, item["series"] - 1) # Tira 1 série de tudo
-            novo_item["rpe"] = 6 # RPE leve (Técnica)
-            
-            # Ajuste específico do doc: Supino/Agachamento vira 3x6 leve
+            novo_item["series"] = max(2, item["series"] - 1)
+            novo_item["rpe"] = 6
             if item["reps"] == "5":
                 novo_item["reps"] = "6"
         
@@ -108,85 +103,103 @@ def gerar_treino_do_dia(dia, semana):
     return treino_final
 
 # --- 5. INTERFACE ---
+st.sidebar.title("♣️ Black Clover")
 st.sidebar.header("Planeamento")
 
-# Seletor de Semana com explicação visual
 semana = st.sidebar.radio(
     "Fase Atual:",
     [1, 2, 3, 4],
-    format_func=lambda x: f"Semana {x}: {'Volume Moderado (RPE 8)' if x<=2 else 'INTENSIDADE MÁXIMA (RPE 9)' if x==3 else 'Deload / Recuperação (RPE 6)'}"
+    format_func=lambda x: f"Semana {x}: {'Volume Moderado (RPE 8)' if x<=2 else 'INTENSIDADE MÁXIMA (RPE 9)' if x==3 else 'Deload (RPE 6)'}"
 )
 
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
 
-# Ajustes de Lesão
 st.sidebar.markdown("---")
 dor_joelho = st.sidebar.checkbox("⚠️ Dor no Joelho")
 dor_costas = st.sidebar.checkbox("⚠️ Dor nas Costas")
 
 def adaptar_nome(nome):
     if dor_joelho and ("Agachamento" in nome or "Afundo" in nome):
-        return f"{nome} ➡️ LEG PRESS (Adaptado)"
+        return f"{nome} ➡️ LEG PRESS"
     if dor_costas and "Curvada" in nome:
-        return f"{nome} ➡️ APOIADO (Adaptado)"
+        return f"{nome} ➡️ APOIADO"
     return nome
 
-# CORPO PRINCIPAL
-st.title("V-Shape Tracker 🦍")
+# --- CORPO PRINCIPAL COM ABAS ---
+st.title("Black Clover Workout ⚔️")
 
-if dia == "Descanso":
-    st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
-else:
-    # Gera o treino com a lógica da semana aplicada
-    treino_hoje = gerar_treino_do_dia(dia, semana)
-    
-    # Barra de progresso visual
-    total = len(treino_hoje)
-    prog = st.progress(0)
+# CRIAÇÃO DAS ABAS AQUI
+tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
 
-    for i, item in enumerate(treino_hoje):
-        nome_display = adaptar_nome(item['ex'])
-        series_reais = item['series']
-        reps_reais = item['reps']
-        rpe_real = item['rpe']
+# --- ABA 1: TREINO ---
+with tab_treino:
+    if dia == "Descanso":
+        st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
+    else:
+        treino_hoje = gerar_treino_do_dia(dia, semana)
         
-        # Busca histórico
-        last_w, last_r = get_ultimo_registro(nome_display)
-        
-        with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
-            # Cabeçalho Informativo
-            col_info1, col_info2 = st.columns(2)
-            col_info1.markdown(f"**Meta:** {series_reais} Séries x {reps_reais} Reps")
-            
-            # Explicação dinâmica do RPE
-            if rpe_real >= 9:
-                rpe_desc = "🔴 MUITO PESADO (Sobra 1 rep)"
-            elif rpe_real <= 6:
-                rpe_desc = "🟢 LEVE (Técnica perfeita)"
-            else:
-                rpe_desc = "🟡 MODERADO (Sobram 2 reps)"
-            
-            col_info2.markdown(f"**RPE {rpe_real}:** {rpe_desc}")
+        total = len(treino_hoje)
+        prog = st.progress(0)
 
-            if last_w:
-                st.caption(f"🔙 Anterior: {last_w}kg ({last_r} reps)")
-
-            # Formulário
-            with st.form(key=f"form_{i}"):
-                c1, c2, c3 = st.columns([1,1,2])
-                peso = c1.number_input("Peso (kg)", value=float(last_w) if last_w else 0.0, step=2.5)
-                reps = c2.number_input("Reps", value=int(str(reps_reais).split('-')[0]), step=1)
-                notas = c3.text_input("Notas")
+        for i, item in enumerate(treino_hoje):
+            nome_display = adaptar_nome(item['ex'])
+            series_reais = item['series']
+            reps_reais = item['reps']
+            rpe_real = item['rpe']
+            
+            last_w, last_r = get_ultimo_registro(nome_display)
+            
+            with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
+                col_info1, col_info2 = st.columns(2)
+                col_info1.markdown(f"**Meta:** {series_reais} Séries x {reps_reais} Reps")
                 
-                if st.form_submit_button("Gravar Série"):
-                    salvar_set(nome_display, peso, reps, rpe_real, notas)
-                    st.success("Registado!")
+                if rpe_real >= 9: rpe_desc = "🔴 MUITO PESADO"
+                elif rpe_real <= 6: rpe_desc = "🟢 LEVE (Técnica)"
+                else: rpe_desc = "🟡 MODERADO"
+                
+                col_info2.markdown(f"**RPE {rpe_real}:** {rpe_desc}")
+
+                if last_w:
+                    st.caption(f"🔙 Anterior: {last_w}kg ({last_r} reps)")
+
+                with st.form(key=f"form_{i}"):
+                    c1, c2, c3 = st.columns([1,1,2])
+                    peso = c1.number_input("Peso (kg)", value=float(last_w) if last_w else 0.0, step=2.5)
+                    reps = c2.number_input("Reps", value=int(str(reps_reais).split('-')[0]), step=1)
+                    notas = c3.text_input("Notas")
+                    
+                    if st.form_submit_button("Gravar Série"):
+                        salvar_set(nome_display, peso, reps, rpe_real, notas)
+                        st.success("Registado!")
+                
+                tempo_descanso = 180 if item["tipo"] == "composto" and semana != 4 else 90
+                if st.button(f"⏱️ Descanso ({tempo_descanso}s)", key=f"t_{i}"):
+                    with st.empty():
+                        for s in range(tempo_descanso, 0, -1):
+                            st.metric("Descansa...", f"{s}s")
+                            time.sleep(1)
+                        st.success("BORA!")
+        st.success("Treino terminado! Não esqueças o cardio leve.")
+
+# --- ABA 2: HISTÓRICO ---
+with tab_historico:
+    st.header("Grimório de Treinos 📖")
+    df = get_data()
+    
+    if not df.empty:
+        # Filtros
+        lista_exercicios = df["Exercício"].unique()
+        filtro_ex = st.multiselect("Filtrar por exercício:", lista_exercicios)
+        
+        if filtro_ex:
+            df_filtrado = df[df["Exercício"].isin(filtro_ex)]
+        else:
+            df_filtrado = df
             
-            # Timer com base no tipo de exercício
-            tempo_descanso = 180 if item["tipo"] == "composto" and semana != 4 else 90
-            if st.button(f"⏱️ Descanso ({tempo_descanso}s)", key=f"t_{i}"):
-                with st.empty():
-                    for s in range(tempo_descanso, 0, -1):
-                        st.metric("Descansa...", f"{s}s")
-                        time.sleep(1)
-                    st.success("BORA!")
+        st.dataframe(
+            df_filtrado.sort_index(ascending=False), 
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
