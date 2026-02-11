@@ -131,8 +131,20 @@ st.title("Black Clover Workout ⚔️")
 # CRIAÇÃO DAS ABAS AQUI
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
 
+
 # --- ABA 1: TREINO ---
 with tab_treino:
+    # 1. GUIA RPE (NOVO)
+    with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
+        st.markdown("""
+        **RPE = Rate of Perceived Exertion (Esforço Percebido)**
+        
+        * 🔴 **RPE 10 (Falha Total):** Não consegues fazer mais nenhuma repetição.
+        * 🟠 **RPE 9 (Muito Pesado):** Conseguias fazer **apenas mais 1** repetição. (Foco da Semana 3)[cite: 66].
+        * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. (Foco das Semanas 1-2) [cite: 15, 26].
+        * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3 ou 4** repetições. Velocidade rápida. (Foco da Semana 4/Deload) [cite: 89].
+        """)
+
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
     else:
@@ -151,13 +163,17 @@ with tab_treino:
             
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 col_info1, col_info2 = st.columns(2)
+                
+                # 2. DESCRIÇÃO DINÂMICA MELHORADA
+                if rpe_real >= 9:
+                    rpe_text = "🔴 MUITO PESADO (Sobra 1 rep)"
+                elif rpe_real <= 7:
+                    rpe_text = "🟢 LEVE (Sobram 3-4 reps)"
+                else:
+                    rpe_text = "🟡 PESADO (Sobram 2 reps)"
+                
                 col_info1.markdown(f"**Meta:** {series_reais} Séries x {reps_reais} Reps")
-                
-                if rpe_real >= 9: rpe_desc = "🔴 MUITO PESADO"
-                elif rpe_real <= 6: rpe_desc = "🟢 LEVE (Técnica)"
-                else: rpe_desc = "🟡 MODERADO"
-                
-                col_info2.markdown(f"**RPE {rpe_real}:** {rpe_desc}")
+                col_info2.markdown(f"**{rpe_text}**") # RPE mais visível
 
                 if last_w:
                     st.caption(f"🔙 Anterior: {last_w}kg ({last_r} reps)")
@@ -166,7 +182,7 @@ with tab_treino:
                     c1, c2, c3 = st.columns([1,1,2])
                     peso = c1.number_input("Peso (kg)", value=float(last_w) if last_w else 0.0, step=2.5)
                     reps = c2.number_input("Reps", value=int(str(reps_reais).split('-')[0]), step=1)
-                    notas = c3.text_input("Notas")
+                    notas = c3.text_input("Notas", placeholder="Dificuldade?")
                     
                     if st.form_submit_button("Gravar Série"):
                         salvar_set(nome_display, peso, reps, rpe_real, notas)
@@ -179,25 +195,19 @@ with tab_treino:
                             st.metric("Descansa...", f"{s}s")
                             time.sleep(1)
                         st.success("BORA!")
-            # --- FIM DO LOOP DOS EXERCÍCIOS ---
-        
-        st.divider() # Uma linha separadora
-        
-        # Secção de Finalização
+
+        st.divider()
         st.markdown("### 🏁 Checkout")
         
-        col_fim1, col_fim2 = st.columns(2)
-        
-        with col_fim1:
-            st.checkbox("Cardio Final (5-10min)?")
-        with col_fim2:
-            st.checkbox("Alongamentos/Mobilidade?")
-            
+        c_end1, c_end2 = st.columns(2)
+        with c_end1: st.checkbox("Cardio Leve (5-10min)?")
+        with c_end2: st.checkbox("Mobilidade Final?")
+
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
-            st.balloons() # Lança balões no ecrã
+            st.balloons()
             st.success("TREINO CONCLUÍDO! O teu grimório está mais forte. 💪♣️")
             time.sleep(3)
-            st.rerun() # Reinicia a app para limpar o ecrã (opcional)
+            st.rerun()
 
 # --- ABA 2: HISTÓRICO ---
 with tab_historico:
@@ -221,4 +231,5 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
