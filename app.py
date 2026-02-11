@@ -190,25 +190,22 @@ with col_logo2:
     st.title("BLACK CLOVER PROJECT")
     st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
-# Adicionar uma imagem motivacional do Asta (opcional, no topo da aba de treino)
+# 1. CRIAR AS ABAS PRIMEIRO (Isto tem de vir antes de usares 'tab_treino')
+tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
+
+# 2. AGORA SIM, PODES COLOCAR A IMAGEM DENTRO DA ABA
 with tab_treino:
     st.image("https://wallpapers.com/images/hd/asta-demon-form-4k-wallpaper-dark-aesthetic-x7z7b6.jpg", use_column_width=True)
 
-# CRIAÇÃO DAS ABAS AQUI
-tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
-
-
-# --- ABA 1: TREINO ---
-with tab_treino:
-    # 1. GUIA RPE (NOVO)
+    # 3. GUIA RPE
     with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
         st.markdown("""
         **RPE = Rate of Perceived Exertion (Esforço Percebido)**
         
         * 🔴 **RPE 10 (Falha Total):** Não consegues fazer mais nenhuma repetição.
-        * 🟠 **RPE 9 (Muito Pesado):** Conseguias fazer **apenas mais 1** repetição. (Foco da Semana 3)[cite: 66].
-        * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. (Foco das Semanas 1-2) [cite: 15, 26].
-        * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3 ou 4** repetições. Velocidade rápida. (Foco da Semana 4/Deload) [cite: 89].
+        * 🟠 **RPE 9 (Muito Pesado):** Conseguias fazer **apenas mais 1** repetição. (Foco da Semana 3).
+        * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. (Foco das Semanas 1-2).
+        * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3 ou 4** repetições. Velocidade rápida. (Foco da Semana 4/Deload).
         """)
 
     if dia == "Descanso":
@@ -230,7 +227,7 @@ with tab_treino:
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 col_info1, col_info2 = st.columns(2)
                 
-                # 2. DESCRIÇÃO DINÂMICA MELHORADA
+                # DESCRIÇÃO DINÂMICA
                 if rpe_real >= 9:
                     rpe_text = "🔴 MUITO PESADO (Sobra 1 rep)"
                 elif rpe_real <= 7:
@@ -239,7 +236,7 @@ with tab_treino:
                     rpe_text = "🟡 PESADO (Sobram 2 reps)"
                 
                 col_info1.markdown(f"**Meta:** {series_reais} Séries x {reps_reais} Reps")
-                col_info2.markdown(f"**{rpe_text}**") # RPE mais visível
+                col_info2.markdown(f"**{rpe_text}**") 
 
                 if last_w:
                     st.caption(f"🔙 Anterior: {last_w}kg ({last_r} reps)")
@@ -297,7 +294,3 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
-
-
-
-
