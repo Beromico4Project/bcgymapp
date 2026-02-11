@@ -179,29 +179,6 @@ def salvar_progresso(exercicio, peso, rpe, notas):
     df = pd.concat([df, novo_registo], ignore_index=True)
     df.to_csv(NOME_ARQUIVO, index=False)
 
-# --- INTERFACE ---
-st.set_page_config(page_title="V-Shape Log", page_icon="📓")
-
-tab1, tab2 = st.tabs(["🏋️ Treino do Dia", "📈 Histórico"])
-
-with tab1:
-    st.title("Registo de Treino")
-    
-    # Seleção de exercício (Exemplo baseado no teu plano)
-    lista_exercicios = ["Supino Reto", "Remada Curvada", "Agachamento", "Leg Press", "Desenvolvimento"]
-    ex_selecionado = st.selectbox("Selecione o Exercício:", lista_exercicios)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        peso = st.number_input("Peso (kg):", min_value=0.0, step=0.5)
-    with col2:
-        rpe = st.slider("RPE (Esforço 1-10):", 1, 10, 8)
-    
-    notas = st.text_area("Notas do set (ex: 'Senti um pouco o joelho', 'Fácil'):")
-    
-    if st.button("Gravar Set"):
-        salvar_progresso(ex_selecionado, peso, rpe, notas)
-        st.success(f"Set de {ex_selecionado} gravado com sucesso!")
 
 st.set_page_config(page_title="Logs", page_icon="📈")
 
@@ -212,7 +189,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def get_data():
     return conn.read(ttl="0") # ttl=0 para atualizar sempre
 
-st.title("🚀 V-Shape Training Log")
+st.title("Log")
 
 tab1, tab2 = st.tabs(["📝 Registar Treino", "📊 Histórico"])
 
@@ -266,3 +243,4 @@ with tab2:
         st.dataframe(dados.sort_index(ascending=False), use_container_width=True)
     else:
         st.info("Ainda não há dados na folha de cálculo.")
+
