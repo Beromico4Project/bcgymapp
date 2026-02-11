@@ -179,7 +179,25 @@ with tab_treino:
                             st.metric("Descansa...", f"{s}s")
                             time.sleep(1)
                         st.success("BORA!")
-        st.success("Treino terminado! Não esqueças o cardio leve.")
+            # --- FIM DO LOOP DOS EXERCÍCIOS ---
+        
+        st.divider() # Uma linha separadora
+        
+        # Secção de Finalização
+        st.markdown("### 🏁 Checkout")
+        
+        col_fim1, col_fim2 = st.columns(2)
+        
+        with col_fim1:
+            st.checkbox("Cardio Final (5-10min)?")
+        with col_fim2:
+            st.checkbox("Alongamentos/Mobilidade?")
+            
+        if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
+            st.balloons() # Lança balões no ecrã
+            st.success("TREINO CONCLUÍDO! O teu grimório está mais forte. 💪♣️")
+            time.sleep(3)
+            st.rerun() # Reinicia a app para limpar o ecrã (opcional)
 
 # --- ABA 2: HISTÓRICO ---
 with tab_historico:
@@ -203,3 +221,4 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
