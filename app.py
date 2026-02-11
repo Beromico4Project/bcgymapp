@@ -3,66 +3,78 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import time
+import base64  # <--- 1. Import necessário para o fundo
 
-# --- 1. CONFIGURAÇÃO ---
+# --- 2. CONFIGURAÇÃO DA PÁGINA (Tem de ser a primeira instrução ST) ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
 
-# --- CSS PERSONALIZADO (BLACK CLOVER THEME) ---
+# --- 3. FUNÇÕES PARA O FUNDO DESFOCADO ---
+def get_base64(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+def set_background(png_file):
+    bin_str = get_base64(png_file)
+    page_bg_img = f"""
+    <style>
+    .stApp {{
+        background-image: url("data:image/png;base64,{bin_str}");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }}
+    .stApp::before {{
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.80); /* 80% Escuro para leitura */
+        backdrop-filter: blur(8px); /* Desfoque */
+        z-index: -1;
+    }}
+    </style>
+    """
+    st.markdown(page_bg_img, unsafe_allow_html=True)
+
+# --- 4. APLICAR O FUNDO ---
+# Certifica-te que o ficheiro 'banner.png' está na pasta!
+try:
+    set_background('banner.png') 
+except:
+    pass # Se não encontrar a imagem, continua sem fundo
+
+# --- 5. RESTO DO CSS (Botões, Títulos) ---
 st.markdown("""
     <style>
-    /* Fundo Principal */
-    .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
-    }
-    
-    /* Títulos (Asta Style) */
+    /* Títulos */
     h1, h2, h3 {
         color: #FF4B4B !important; 
+        text-shadow: 2px 2px 4px #000000;
         font-family: 'Arial Black', sans-serif;
         text-transform: uppercase;
     }
-    
-    /* Cartões Expansíveis */
+    /* Expander */
     .streamlit-expanderHeader {
-        background-color: #262730;
+        background-color: rgba(38, 39, 48, 0.8); /* Transparente */
         border-radius: 10px;
         color: #ffffff;
-        font-weight: bold;
-        border: 1px solid #4a4a4a;
+        border: 1px solid #FF4B4B;
     }
-    
-    /* Botões Primários */
+    /* Botões */
     div.stButton > button:first-child {
         background-color: #8B0000; 
         color: white;
-        border-radius: 20px;
         border: 2px solid #FF0000;
         font-weight: bold;
-    }
-    div.stButton > button:hover {
-        background-color: #FF0000;
-        border-color: #FFFFFF;
-    }
-
-    /* Tabs (Abas) */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #1E1E1E;
-        border-radius: 5px;
-        color: white;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #FF4B4B;
-        color: white;
     }
     </style>
 """, unsafe_allow_html=True)
 
+# --- 6. O RESTO DA TUA APP (Lógica e Dados) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 2. FUNÇÕES DE DADOS ---
@@ -273,4 +285,5 @@ with tab_historico:
         st.dataframe(df_show.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
+
 
