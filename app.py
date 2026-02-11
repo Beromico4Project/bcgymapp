@@ -143,7 +143,7 @@ def get_data():
     except:
         return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
 
-# --- NOVA FUNÇÃO: BUSCAR TODO O TREINO ANTERIOR ---
+# --- FUNÇÃO: BUSCAR TODO O TREINO ANTERIOR ---
 def get_treino_anterior(exercicio):
     df = get_data()
     if df.empty: return None, 0.0
@@ -152,14 +152,14 @@ def get_treino_anterior(exercicio):
     df_ex = df[df["Exercício"] == exercicio]
     if df_ex.empty: return None, 0.0
     
-    # Pegar a última data registada (assumindo ordem cronológica de inserção)
+    # Pegar a última data registada
     ultima_linha = df_ex.iloc[-1]
     ultima_data = ultima_linha["Data"]
     
     # Filtrar todas as séries dessa data
     treino_passado = df_ex[df_ex["Data"] == ultima_data]
     
-    # Retorna o DataFrame (colunas úteis) e o peso da última série para sugestão
+    # Retorna o DataFrame e o peso da última série
     cols_uteis = ["Peso", "Reps", "RPE", "Notas"]
     return treino_passado[cols_uteis], float(ultima_linha["Peso"])
 
@@ -245,14 +245,9 @@ def adaptar_nome(nome):
     if dor_costas and "Curvada" in nome: return f"{nome} ➡️ APOIADO"
     return nome
 
-# --- 7. CABEÇALHO ---
-col_esq, col_dir = st.columns([1, 4]) 
-with col_esq:
-    if os.path.exists("logo.png"): st.image("logo.png", width=90)
-    else: st.write("♣️")
-with col_dir:
-    st.title("BLACK CLOVER PROJECT")
-    st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
+# --- 7. CABEÇALHO (SEM LOGO) ---
+st.title("BLACK CLOVER PROJECT")
+st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
@@ -269,7 +264,7 @@ with tab_treino:
         for i, item in enumerate(treino_hoje):
             nome_display = adaptar_nome(item['ex'])
             
-            # --- ATUALIZAÇÃO: BUSCA HISTÓRICO COMPLETO ---
+            # --- BUSCA HISTÓRICO COMPLETO ---
             df_passado, peso_sugerido = get_treino_anterior(nome_display)
             
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
@@ -278,7 +273,7 @@ with tab_treino:
                 c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
                 c2.markdown(f"**{rpe_txt}**")
                 
-                # --- EXIBIÇÃO DA TABELA DA SEMANA PASSADA ---
+                # --- TABELA DE SÉRIES ANTERIORES ---
                 if df_passado is not None:
                     st.markdown("📜 **Séries Anteriores:**")
                     st.dataframe(df_passado, hide_index=True, use_container_width=True)
@@ -287,7 +282,6 @@ with tab_treino:
 
                 with st.form(key=f"form_{i}"):
                     cc1, cc2, cc3 = st.columns([1,1,2])
-                    # Usa o último peso conhecido como sugestão
                     peso = cc1.number_input("Kg", value=peso_sugerido, step=2.5)
                     reps = cc2.number_input("Reps", value=int(str(item['reps']).split('-')[0]), step=1)
                     notas = cc3.text_input("Obs")
