@@ -3,117 +3,125 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import time
-import base64  # <--- IMPORTANTE: Necessário para o fundo funcionar
+import base64
 
 # --- 1. CONFIGURAÇÃO ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
 
-# --- FUNÇÃO PARA CARREGAR IMAGEM DE FUNDO ---
+# --- FUNÇÃO DE FUNDO (AGRESSIVA) ---
 def get_base64(bin_file):
     try:
         with open(bin_file, 'rb') as f:
             data = f.read()
         return base64.b64encode(data).decode()
-    except FileNotFoundError:
+    except:
         return None
 
-# Carregar o banner
-bin_str = get_base64('banner.png')
-
-# Se não houver banner.png, usa um fundo preto padrão
-bg_image_css = ""
-if bin_str:
-    bg_image_css = f"""
+def set_background(png_file):
+    bin_str = get_base64(png_file)
+    if not bin_str:
+        return
+    
+    # CSS AVANÇADO PARA FUNDO
+    page_bg_img = f"""
+    <style>
+    /* 1. O Contentor Principal */
     .stApp {{
+        background: transparent;
+    }}
+
+    /* 2. A Imagem de Fundo (Pseudo-elemento) */
+    .stApp::before {{
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
         background-image: url("data:image/png;base64,{bin_str}");
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        background-attachment: fixed;
+        /* O FILTRO DE DESFOQUE AQUI: */
+        filter: blur(15px) brightness(0.4); /* Blur forte + Escurecer a imagem */
+        z-index: -1; /* Fica atrás de tudo */
+        transform: scale(1.1); /* Aumenta um pouco para evitar bordas brancas do blur */
     }}
-    /* Camada de Desfoque e Escuridão */
-    .stApp::before {{
-        content: "";
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.85); /* 85% de escuridão para ler bem o texto */
-        backdrop-filter: blur(12px);     /* Desfoque pesado */
-        z-index: -1;
+    
+    /* 3. Ajuste do Cabeçalho do Streamlit (para ser transparente) */
+    header {{
+        background: transparent !important;
     }}
+    </style>
     """
+    st.markdown(page_bg_img, unsafe_allow_html=True)
 
-# --- CSS PERSONALIZADO (BLACK CLOVER THEME + FONTS) ---
-st.markdown(f"""
+# Tenta aplicar o fundo
+set_background('banner.png')
+
+# --- CSS PERSONALIZADO (RESTANTE DO TEMA) ---
+st.markdown("""
     <style>
-    /* Importar Fontes Medievais do Google Fonts */
+    /* Importar Fontes */
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
 
-    /* Aplicar o Fundo */
-    {bg_image_css}
-    
-    /* Cor do Texto Geral */
-    .stApp {{
-        color: #E0E0E0;
-        font-family: 'MedievalSharp', cursive; /* Fonte do corpo */
+    /* Texto Geral */
+    .stApp, p, label, .stMarkdown {{
+        color: #E0E0E0 !important;
+        font-family: 'MedievalSharp', cursive !important;
     }}
     
-    /* Títulos (Asta Style - Cinzel Font) */
+    /* Títulos Épicos */
     h1, h2, h3 {{
         color: #FF4B4B !important; 
-        font-family: 'Cinzel', serif !important; /* Fonte Épica */
+        font-family: 'Cinzel', serif !important;
         text-transform: uppercase;
-        text-shadow: 0px 0px 10px rgba(255, 0, 0, 0.4); /* Brilho mágico leve */
+        text-shadow: 2px 2px 0px #000;
         font-weight: 900;
     }}
     
-    /* Cartões Expansíveis (Páginas do Grimório) */
-    .streamlit-expanderHeader {{
-        background-color: rgba(30, 30, 30, 0.9) !important;
-        border-radius: 8px;
-        color: #FFD700 !important; /* Dourado para contraste */
-        font-family: 'Cinzel', serif;
-        border: 1px solid #5a1a1a;
-    }}
-    
-    /* Inputs (Caixas de texto) */
-    .stTextInput input, .stNumberInput input, .stTextArea textarea {{
-        background-color: rgba(0, 0, 0, 0.5);
-        color: white;
-        border: 1px solid #444;
-    }}
-
-    /* Botões Primários (Terminar Treino) */
-    div.stButton > button:first-child {{
-        background: linear-gradient(180deg, #8B0000 0%, #300000 100%);
-        color: #FFD700;
-        border-radius: 4px; /* Mais quadrado, estilo antigo */
-        border: 1px solid #FF4B4B;
-        font-family: 'Cinzel', serif;
-        font-size: 18px;
-        text-shadow: 1px 1px 2px black;
-    }}
-    div.stButton > button:hover {{
-        background: linear-gradient(180deg, #FF0000 0%, #8B0000 100%);
-        border-color: #FFD700;
-        transform: scale(1.02);
-    }}
-
-    /* Tabs (Abas) */
+    /* ABAS (CORRIGIDO: NÃO TRANSPARENTE) */
     .stTabs [data-baseweb="tab-list"] {{
-        gap: 15px;
+        gap: 8px;
+        background-color: rgba(0,0,0,0.5); /* Fundo da barra de abas */
+        padding: 10px;
+        border-radius: 10px;
     }}
     .stTabs [data-baseweb="tab"] {{
         height: 50px;
-        background-color: rgba(0,0,0,0.6);
-        border: 1px solid #333;
+        background-color: #2E2E2E; /* Cinzento Escuro Sólido */
+        border: 2px solid #555;
         border-radius: 5px;
-        color: #AAA;
+        color: #FFF;
         font-family: 'Cinzel', serif;
+        flex-grow: 1; /* Esticar para ocupar espaço */
     }}
     .stTabs [aria-selected="true"] {{
-        background-color: #8B0000;
+        background-color: #8B0000 !important; /* Vermelho Sangue */
+        color: #FFD700 !important; /* Texto Dourado */
+        border: 2px solid #FF0000 !important;
+    }}
+
+    /* Cartões (Expanders) */
+    .streamlit-expanderHeader {{
+        background-color: #1A1A1A !important; /* Fundo Sólido Escuro */
+        border: 1px solid #FF4B4B;
+        color: #FFF !important;
+        font-family: 'Cinzel', serif;
+    }}
+    
+    /* Botões */
+    div.stButton > button:first-child {{
+        background: linear-gradient(180deg, #8B0000 0%, #500000 100%);
         color: #FFD700;
-        border: 1px solid #FF0000;
+        border: 2px solid #FF4B4B;
+        font-family: 'Cinzel', serif;
+        text-shadow: 1px 1px 2px black;
+    }}
+    div.stButton > button:hover {{
+        background: #FF0000;
+        border-color: #FFF;
+        transform: scale(1.05);
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -349,4 +357,5 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
