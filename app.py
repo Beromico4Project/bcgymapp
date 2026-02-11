@@ -74,6 +74,61 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+    <style>
+    /* Fundo Principal */
+    .stApp {
+        background-color: #0E1117;
+        color: #FAFAFA;
+    }
+    
+    /* Títulos (Asta Style) */
+    h1, h2, h3 {
+        color: #FF4B4B !important; 
+        font-family: 'Arial Black', sans-serif;
+        text-transform: uppercase;
+    }
+    
+    /* Cartões Expansíveis */
+    .streamlit-expanderHeader {
+        background-color: #262730;
+        border-radius: 10px;
+        color: #ffffff;
+        font-weight: bold;
+        border: 1px solid #4a4a4a;
+    }
+    
+    /* Botões Primários */
+    div.stButton > button:first-child {
+        background-color: #8B0000; 
+        color: white;
+        border-radius: 20px;
+        border: 2px solid #FF0000;
+        font-weight: bold;
+    }
+    div.stButton > button:hover {
+        background-color: #FF0000;
+        border-color: #FFFFFF;
+    }
+
+    /* Tabs (Abas) */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #1E1E1E;
+        border-radius: 5px;
+        color: white;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #FF4B4B;
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- 6. O RESTO DA TUA APP (Lógica e Dados) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
