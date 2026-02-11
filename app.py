@@ -66,23 +66,25 @@ st.markdown("""
         text-transform: uppercase;
     }
     
-    /* Abas (Tabs) */
+    /* ABAS SÓLIDAS (Mudança Aqui) */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: rgba(0,0,0,0.6);
+        background-color: #111111; /* Fundo preto sólido atrás das abas */
         padding: 10px;
         border-radius: 10px;
+        border: 1px solid #444;
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        background-color: #2E2E2E;
+        background-color: #2E2E2E; /* Cinzento Sólido (não transparente) */
         border: 1px solid #555;
         border-radius: 5px;
-        color: #FFF;
+        color: #AAA;
         font-family: 'Cinzel', serif;
+        flex-grow: 1; /* Esticar para preencher largura */
     }
     .stTabs [aria-selected="true"] {
-        background-color: #8B0000 !important;
+        background-color: #8B0000 !important; /* Vermelho Sólido */
         color: #FFD700 !important;
         border: 2px solid #FF0000 !important;
     }
@@ -334,3 +336,4 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
