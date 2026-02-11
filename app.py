@@ -246,15 +246,22 @@ def adaptar_nome(nome):
     return nome
 
 # --- 7. CABEÇALHO (SEM LOGO) ---
-st.title("BLACK CLOVER PROJECT")
+st.title("♣️BLACK CLOVER PROJECT♣️")
 st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
 
 with tab_treino:
-    with st.expander("ℹ️ Guia de RPE"):
-        st.markdown("* 🔴 **RPE 10:** Falha.\n* 🟠 **RPE 9:** 1 na reserva.\n* 🟡 **RPE 8:** 2 na reserva.\n* 🟢 **RPE 6:** Deload.")
+    with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
+        st.markdown("""
+        **RPE = Rate of Perceived Exertion (Esforço Percebido)**
+        
+        * 🔴 **RPE 10 (Falha Total):** Não consegues fazer mais nenhuma repetição.
+        * 🟠 **RPE 9 (Muito Pesado):** Conseguias fazer **apenas mais 1** repetição. (Foco da Semana 3).
+        * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. (Foco das Semanas 1-2).
+        * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3 ou 4** repetições. Velocidade rápida. (Foco da Semana 4/Deload).
+        """)
 
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
@@ -269,7 +276,7 @@ with tab_treino:
             
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 c1, c2 = st.columns(2)
-                rpe_txt = "🔴 MUITO PESADO" if item['rpe'] >= 9 else "🟢 LEVE" if item['rpe'] <= 6 else "🟡 PESADO"
+                rpe_txt = "🔴 MODO DEMONÍACO (FALHA)" if item['rpe'] >= 9 else "🟢 CONCENTRATE-TE SÓ (Sobram 3-4 reps)" if item['rpe'] <= 6 else "🟡 ALVO FORMIDÁVEL (Sobram 2 reps)"
                 c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
                 c2.markdown(f"**{rpe_txt}**")
                 
@@ -316,3 +323,4 @@ with tab_historico:
         st.dataframe(df_show.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
+
