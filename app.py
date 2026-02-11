@@ -6,6 +6,63 @@ import time
 
 # --- 1. CONFIGURAÇÃO ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
+
+# --- CSS PERSONALIZADO (BLACK CLOVER THEME) ---
+st.markdown("""
+    <style>
+    /* Fundo Principal */
+    .stApp {
+        background-color: #0E1117;
+        color: #FAFAFA;
+    }
+    
+    /* Títulos (Asta Style) */
+    h1, h2, h3 {
+        color: #FF4B4B !important; /* Vermelho Streamlit/Anti-Magia */
+        font-family: 'Arial Black', sans-serif;
+        text-transform: uppercase;
+    }
+    
+    /* Cartões Expansíveis (Páginas do Grimório) */
+    .streamlit-expanderHeader {
+        background-color: #262730;
+        border-radius: 10px;
+        color: #ffffff;
+        font-weight: bold;
+        border: 1px solid #4a4a4a;
+    }
+    
+    /* Botões Primários (Terminar Treino) */
+    div.stButton > button:first-child {
+        background-color: #8B0000; /* Vermelho Escuro */
+        color: white;
+        border-radius: 20px;
+        border: 2px solid #FF0000;
+        font-weight: bold;
+    }
+    div.stButton > button:hover {
+        background-color: #FF0000;
+        border-color: #FFFFFF;
+    }
+
+    /* Tabs (Abas) */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #1E1E1E;
+        border-radius: 5px;
+        color: white;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #FF4B4B;
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 2. FUNÇÕES DE DADOS ---
@@ -103,13 +160,13 @@ def gerar_treino_do_dia(dia, semana):
     return treino_final
 
 # --- 5. INTERFACE ---
-st.sidebar.title("♣️ Black Clover")
-st.sidebar.header("Planeamento")
+st.sidebar.title("♣️ Black Clover ♣️")
+st.sidebar.header("Workout APP")
 
 semana = st.sidebar.radio(
-    "Fase Atual:",
+    "Nível de Poder:",
     [1, 2, 3, 4],
-    format_func=lambda x: f"Semana {x}: {'Volume Moderado (RPE 8)' if x<=2 else 'INTENSIDADE MÁXIMA (RPE 9)' if x==3 else 'Deload (RPE 6)'}"
+    format_func=lambda x: f"Semana {x}: {'Treino de Cavaleiro Mágico (Base)' if x<=2 else 'MODO DEMÓNIO (Limite!!!)' if x==3 else 'Recuperação de Mana (Deload)'}"
 )
 
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
@@ -125,8 +182,17 @@ def adaptar_nome(nome):
         return f"{nome} ➡️ APOIADO"
     return nome
 
-# --- CORPO PRINCIPAL COM ABAS ---
-st.title("♣️ Black Clover Workout ♣️")
+# --- BANNER DO CAPITÃO ---
+col_logo1, col_logo2 = st.columns([1, 4])
+with col_logo1:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/4/4e/Black_Clover_Logo.png", width=80)
+with col_logo2:
+    st.title("BLACK CLOVER PROJECT")
+    st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
+
+# Adicionar uma imagem motivacional do Asta (opcional, no topo da aba de treino)
+with tab_treino:
+    st.image("https://wallpapers.com/images/hd/asta-demon-form-4k-wallpaper-dark-aesthetic-x7z7b6.jpg", use_column_width=True)
 
 # CRIAÇÃO DAS ABAS AQUI
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
@@ -203,9 +269,9 @@ with tab_treino:
         with c_end1: st.checkbox("Cardio Leve (5-10min)?")
         with c_end2: st.checkbox("Mobilidade Final?")
 
-        if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
+        if st.button("TERMINEI O TREINO (Superei Limites!)", type="primary"):
             st.balloons()
-            st.success("TREINO CONCLUÍDO! O teu grimório está mais forte. 💪♣️")
+            st.success("Fantástico! Ficaste mais perto de ser o Rei Mago. 💪♣️")
             time.sleep(3)
             st.rerun()
 
@@ -231,6 +297,7 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
 
 
 
