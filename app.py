@@ -3,63 +3,118 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import time
+import base64  # <--- IMPORTANTE: Necessário para o fundo funcionar
 
 # --- 1. CONFIGURAÇÃO ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
 
-# --- CSS PERSONALIZADO (BLACK CLOVER THEME) ---
-st.markdown("""
+# --- FUNÇÃO PARA CARREGAR IMAGEM DE FUNDO ---
+def get_base64(bin_file):
+    try:
+        with open(bin_file, 'rb') as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except FileNotFoundError:
+        return None
+
+# Carregar o banner
+bin_str = get_base64('banner.png')
+
+# Se não houver banner.png, usa um fundo preto padrão
+bg_image_css = ""
+if bin_str:
+    bg_image_css = f"""
+    .stApp {{
+        background-image: url("data:image/png;base64,{bin_str}");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }}
+    /* Camada de Desfoque e Escuridão */
+    .stApp::before {{
+        content: "";
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.85); /* 85% de escuridão para ler bem o texto */
+        backdrop-filter: blur(12px);     /* Desfoque pesado */
+        z-index: -1;
+    }}
+    """
+
+# --- CSS PERSONALIZADO (BLACK CLOVER THEME + FONTS) ---
+st.markdown(f"""
     <style>
-    /* Fundo Principal */
-    .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
-    }
+    /* Importar Fontes Medievais do Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
+
+    /* Aplicar o Fundo */
+    {bg_image_css}
     
-    /* Títulos (Asta Style) */
-    h1, h2, h3 {
-        color: #FF4B4B !important; /* Vermelho Streamlit/Anti-Magia */
-        font-family: 'Arial Black', sans-serif;
+    /* Cor do Texto Geral */
+    .stApp {{
+        color: #E0E0E0;
+        font-family: 'MedievalSharp', cursive; /* Fonte do corpo */
+    }}
+    
+    /* Títulos (Asta Style - Cinzel Font) */
+    h1, h2, h3 {{
+        color: #FF4B4B !important; 
+        font-family: 'Cinzel', serif !important; /* Fonte Épica */
         text-transform: uppercase;
-    }
+        text-shadow: 0px 0px 10px rgba(255, 0, 0, 0.4); /* Brilho mágico leve */
+        font-weight: 900;
+    }}
     
     /* Cartões Expansíveis (Páginas do Grimório) */
-    .streamlit-expanderHeader {
-        background-color: #262730;
-        border-radius: 10px;
-        color: #ffffff;
-        font-weight: bold;
-        border: 1px solid #4a4a4a;
-    }
+    .streamlit-expanderHeader {{
+        background-color: rgba(30, 30, 30, 0.9) !important;
+        border-radius: 8px;
+        color: #FFD700 !important; /* Dourado para contraste */
+        font-family: 'Cinzel', serif;
+        border: 1px solid #5a1a1a;
+    }}
     
-    /* Botões Primários (Terminar Treino) */
-    div.stButton > button:first-child {
-        background-color: #8B0000; /* Vermelho Escuro */
+    /* Inputs (Caixas de texto) */
+    .stTextInput input, .stNumberInput input, .stTextArea textarea {{
+        background-color: rgba(0, 0, 0, 0.5);
         color: white;
-        border-radius: 20px;
-        border: 2px solid #FF0000;
-        font-weight: bold;
-    }
-    div.stButton > button:hover {
-        background-color: #FF0000;
-        border-color: #FFFFFF;
-    }
+        border: 1px solid #444;
+    }}
+
+    /* Botões Primários (Terminar Treino) */
+    div.stButton > button:first-child {{
+        background: linear-gradient(180deg, #8B0000 0%, #300000 100%);
+        color: #FFD700;
+        border-radius: 4px; /* Mais quadrado, estilo antigo */
+        border: 1px solid #FF4B4B;
+        font-family: 'Cinzel', serif;
+        font-size: 18px;
+        text-shadow: 1px 1px 2px black;
+    }}
+    div.stButton > button:hover {{
+        background: linear-gradient(180deg, #FF0000 0%, #8B0000 100%);
+        border-color: #FFD700;
+        transform: scale(1.02);
+    }}
 
     /* Tabs (Abas) */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-    }
-    .stTabs [data-baseweb="tab"] {
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 15px;
+    }}
+    .stTabs [data-baseweb="tab"] {{
         height: 50px;
-        white-space: pre-wrap;
-        background-color: #1E1E1E;
+        background-color: rgba(0,0,0,0.6);
+        border: 1px solid #333;
         border-radius: 5px;
-        color: white;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #FF4B4B;
-        color: white;
-    }
+        color: #AAA;
+        font-family: 'Cinzel', serif;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background-color: #8B0000;
+        color: #FFD700;
+        border: 1px solid #FF0000;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -294,3 +349,4 @@ with tab_historico:
         )
     else:
         st.info("Ainda não tens registos no teu grimório. Começa a treinar!")
+
