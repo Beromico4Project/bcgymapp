@@ -38,7 +38,7 @@ def set_background(png_file):
         background-position: center;
         background-repeat: no-repeat;
         /* Cinza Escuro com 85% de opacidade */
-        filter: blur(12px) brightness(0.5); 
+        filter: blur(6px) brightness(0.5); 
         z-index: -1;
     }}
     /* Camada extra de Cinza Escuro Transparente */
@@ -247,7 +247,7 @@ def gerar_treino_do_dia(dia, semana):
     return treino_final
 
 # --- 6. INTERFACE SIDEBAR ---
-st.sidebar.title("♣️ Grimório")
+st.sidebar.title("♣️Grimório♣️")
 semana = st.sidebar.radio("Nível de Poder:", [1, 2, 3, 4], format_func=lambda x: f"Semana {x}: {'Base' if x<=2 else 'MODO DEMÓNIO (Limite)' if x==3 else 'Deload'}")
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
 st.sidebar.markdown("---")
@@ -260,11 +260,11 @@ def adaptar_nome(nome):
     return nome
 
 # --- 7. CABEÇALHO (SEM LOGO) ---
-st.title("♣️ BLACK CLOVER PROJECT ♣️")
+st.title("♣️BLACK CLOVER Workout♣️")
 st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
-tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📊 Analytics"])
+tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📊 Histórico"])
 
 with tab_treino:
     with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
@@ -303,7 +303,7 @@ with tab_treino:
 
                 # --- CALCULADORA DE AQUECIMENTO INTELIGENTE ---
                 if sug_peso > 0:
-                    with st.popover("🔥 Aquecimento Recomendado"):
+                    with st.popover("🔥 Calculo de Peso"):
                         st.markdown(f"**Carga Alvo Sugerida:** {sug_peso}kg")
                         st.text(f"Set 1: {int(sug_peso*0.5)}kg x 8-10 reps (50%)")
                         st.text(f"Set 2: {int(sug_peso*0.7)}kg x 4-5 reps (70%)")
@@ -340,7 +340,7 @@ with tab_treino:
             st.rerun()
 
 with tab_historico:
-    st.header("Grimório Analytics 📊")
+    st.header("Grimório de Batalha 📊")
     df = get_data()
     
     if not df.empty:
@@ -359,3 +359,4 @@ with tab_historico:
             st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
+
