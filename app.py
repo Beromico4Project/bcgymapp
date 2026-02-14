@@ -9,7 +9,7 @@ import os
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
 
-# --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
+# --- 2. FUNÇÕES VISUAIS & UTILS ---
 def get_base64(bin_file):
     try:
         with open(bin_file, 'rb') as f:
@@ -20,8 +20,7 @@ def get_base64(bin_file):
 
 def set_background(png_file):
     bin_str = get_base64(png_file)
-    if not bin_str:
-        return
+    if not bin_str: return
     
     st.markdown(f"""
     <style>
@@ -40,9 +39,10 @@ def set_background(png_file):
     </style>
     """, unsafe_allow_html=True)
 
+# Aplica o fundo
 set_background('banner.png')
 
-# --- 3. CSS DA INTERFACE ---
+# --- CSS TEMA (Cinza/Medieval) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
@@ -50,74 +50,58 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'MedievalSharp', cursive; color: #E0E0E0; }
     h1, h2, h3 { color: #FF4B4B !important; font-family: 'Cinzel', serif !important; text-transform: uppercase; text-shadow: 2px 2px 4px #000; }
     
-    /* ABAS */
+    /* UI ELEMENTS */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: rgba(30, 30, 30, 0.6); padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); }
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: rgba(50, 50, 50, 0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #CCC; font-family: 'Cinzel', serif; backdrop-filter: blur(5px); }
     .stTabs [aria-selected="true"] { background-color: rgba(139, 0, 0, 0.9) !important; color: #FFD700 !important; border: 1px solid #FF4B4B !important; }
     
-    /* CARTÕES */
     .streamlit-expanderHeader { background-color: rgba(45, 45, 45, 0.8) !important; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1); color: #FFF !important; font-family: 'Cinzel', serif; }
     .streamlit-expanderContent { background-color: rgba(30, 30, 30, 0.6) !important; border-radius: 0 0 8px 8px; border: 1px solid rgba(255, 255, 255, 0.05); }
     
-    /* INPUTS */
     .stTextInput input, .stNumberInput input, .stTextArea textarea { background-color: rgba(0, 0, 0, 0.4) !important; color: white !important; border: 1px solid #555 !important; border-radius: 5px; }
     
-    /* BOTÕES */
     div.stButton > button:first-child { background: linear-gradient(180deg, #8B0000 0%, #3a0000 100%); color: #FFD700; border: 1px solid #FF4B4B; font-family: 'Cinzel', serif; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
     div.stButton > button:hover { transform: scale(1.02); box-shadow: 0 0 15px rgba(255, 0, 0, 0.4); }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. CONEXÃO E DADOS ---
+# --- 3. LÓGICA & DADOS (MACROFACTOR STYLE) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
-    try:
-        # ttl=0 garante que os dados vêm sempre frescos (essencial para o preenchimento automático funcionar)
-        return conn.read(ttl="0")
-    except:
-        return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
+    try: return conn.read(ttl="0")
+    except: return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
 
-# --- FUNÇÃO 1: TABELA DA SEMANA PASSADA (Visualização) ---
-def get_treino_anterior(exercicio):
+# Cálculo de 1RM (Epley Formula)
+def calcular_1rm(peso, reps):
+    if reps == 1: return peso
+    # Epley Formula: Peso * (1 + Reps/30)
+    return round(peso * (1 + (reps / 30)), 1)
+
+def get_historico_detalhado(exercicio):
     df = get_data()
-    if df.empty: return None
+    if df.empty: return None, 0.0, 0
     
     df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty: return None
+    if df_ex.empty: return None, 0.0, 0
     
-    # Procura a última data DIFERENTE da data de hoje (para mostrar histórico real)
+    # Preenchimento Automático (Smart Logic)
+    # Se já treinou hoje, pega o último set de hoje. Se não, pega o último da semana passada.
+    ultimo_registo = df_ex.iloc[-1]
+    
+    # Dados para a tabela da semana passada (exclui hoje se houver)
     data_hoje = datetime.date.today().strftime("%d/%m/%Y")
     df_passado = df_ex[df_ex["Data"] != data_hoje]
     
-    if df_passado.empty: return None
-    
-    # Pega a última data disponível no histórico
-    ultima_data = df_passado.iloc[-1]["Data"]
-    return df_passado[df_passado["Data"] == ultima_data][["Peso", "Reps", "RPE", "Notas"]]
+    tabela_passada = None
+    if not df_passado.empty:
+        ultima_data_antiga = df_passado.iloc[-1]["Data"]
+        tabela_passada = df_passado[df_passado["Data"] == ultima_data_antiga].copy()
+        # Adiciona coluna de 1RM Estimado na tabela
+        tabela_passada["1RM (Est)"] = tabela_passada.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
+        tabela_passada = tabela_passada[["Peso", "Reps", "RPE", "1RM (Est)", "Notas"]]
 
-# --- FUNÇÃO 2: PREENCHIMENTO INTELIGENTE (MacroFactor Style) ---
-def get_sugestao_smart(exercicio, reps_alvo):
-    """
-    Retorna o Peso e Reps do ÚLTIMO registo absoluto.
-    Se acabaste de fazer o Set 1 hoje, retorna o Set 1.
-    Se ainda não treinaste hoje, retorna o último treino da semana passada.
-    """
-    df = get_data()
-    
-    # Valor padrão se nunca tiveres treinado
-    reps_padrao = int(str(reps_alvo).split('-')[0])
-    
-    if df.empty: return 0.0, reps_padrao
-    
-    # Filtra pelo exercício
-    df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty: return 0.0, reps_padrao
-    
-    # Pega o registo absolutamente mais recente
-    ultimo = df_ex.iloc[-1]
-    
-    return float(ultimo["Peso"]), int(ultimo["Reps"])
+    return tabela_passada, float(ultimo_registo["Peso"]), int(ultimo_registo["Reps"])
 
 def salvar_set(exercicio, peso, reps, rpe, notas):
     df_existente = get_data()
@@ -132,7 +116,7 @@ def salvar_set(exercicio, peso, reps, rpe, notas):
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
     conn.update(data=df_final)
 
-# --- 5. BASE DE DADOS TREINOS ---
+# --- 4. BASE DE TREINOS ---
 treinos_base = {
     "Segunda (Upper Força)": [
         {"ex": "Supino Reto", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
@@ -175,8 +159,7 @@ def gerar_treino_do_dia(dia, semana):
     for item in treino_base:
         novo_item = item.copy()
         if semana == 3: # Choque
-            if item["tipo"] == "composto":
-                novo_item["series"] += 1; novo_item["rpe"] = 9
+            if item["tipo"] == "composto": novo_item["series"] += 1; novo_item["rpe"] = 9
             else: novo_item["rpe"] = 9
         elif semana == 4: # Deload
             novo_item["series"] = max(2, item["series"] - 1); novo_item["rpe"] = 6
@@ -184,48 +167,40 @@ def gerar_treino_do_dia(dia, semana):
         treino_final.append(novo_item)
     return treino_final
 
-# --- 6. INTERFACE SIDEBAR ---
+# --- 5. INTERFACE SIDEBAR ---
 st.sidebar.title("♣️ Grimório")
-semana = st.sidebar.radio("Nível de Poder:", [1, 2, 3, 4], format_func=lambda x: f"Semana {x}: {'Base' if x<=2 else 'MODO DEMÓNIO' if x==3 else 'Deload'}")
+semana = st.sidebar.radio("Fase:", [1, 2, 3, 4], format_func=lambda x: f"S{x}: {'Base' if x<=2 else 'MODO DEMÓNIO' if x==3 else 'Deload'}")
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
 st.sidebar.markdown("---")
-dor_joelho = st.sidebar.checkbox("⚠️ Dor no Joelho")
-dor_costas = st.sidebar.checkbox("⚠️ Dor nas Costas")
+dor_joelho = st.sidebar.checkbox("⚠️ Joelho")
+dor_costas = st.sidebar.checkbox("⚠️ Costas")
 
 def adaptar_nome(nome):
     if dor_joelho and ("Agachamento" in nome or "Afundo" in nome): return f"{nome} ➡️ LEG PRESS"
     if dor_costas and "Curvada" in nome: return f"{nome} ➡️ APOIADO"
     return nome
 
-# --- 7. CABEÇALHO ---
-col_esq, col_dir = st.columns([1, 4]) 
-with col_esq:
-    if os.path.exists("logo.png"): st.image("logo.png", width=90)
-    else: st.write("♣️")
-with col_dir:
-    st.title("BLACK CLOVER PROJECT")
-    st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
+# --- CABEÇALHO (SEM LOGO) ---
+st.title("BLACK CLOVER PROJECT")
+st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
-# --- 8. CORPO PRINCIPAL ---
-tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
+# --- CORPO PRINCIPAL ---
+tab_treino, tab_historico = st.tabs(["🔥 Treino", "📊 Analytics"])
 
 with tab_treino:
     with st.expander("ℹ️ Guia de RPE"):
         st.markdown("* 🔴 **RPE 10:** Falha.\n* 🟠 **RPE 9:** 1 na reserva.\n* 🟡 **RPE 8:** 2 na reserva.\n* 🟢 **RPE 6:** Deload.")
 
     if dia == "Descanso":
-        st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
+        st.info("Descanso ativo. Caminhada e Mobilidade.")
     else:
         treino_hoje = gerar_treino_do_dia(dia, semana)
         
         for i, item in enumerate(treino_hoje):
             nome_display = adaptar_nome(item['ex'])
             
-            # 1. Busca histórico antigo para a tabela (Visual)
-            df_passado = get_treino_anterior(nome_display)
-            
-            # 2. Busca sugestão SMART para o Input (Preenchimento Automático)
-            sug_peso, sug_reps = get_sugestao_smart(nome_display, item['reps'])
+            # Busca dados: Tabela Antiga + Sugestão Smart
+            df_passado, sug_peso, sug_reps = get_historico_detalhado(nome_display)
             
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 c1, c2 = st.columns(2)
@@ -233,27 +208,33 @@ with tab_treino:
                 c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
                 c2.markdown(f"**{rpe_txt}**")
                 
-                # Tabela da Semana Passada
+                # --- FUNCIONALIDADE 1: HISTÓRICO COM 1RM ---
                 if df_passado is not None:
-                    st.markdown("📜 **Histórico Anterior:**")
+                    st.markdown("📜 **Séries Anteriores:**")
                     st.dataframe(df_passado, hide_index=True, use_container_width=True)
                 else:
-                    st.caption("Sem histórico anterior.")
+                    st.caption("Primeira vez neste exercício.")
+
+                # --- FUNCIONALIDADE 2: CALCULADORA DE AQUECIMENTO (MacroFactor Style) ---
+                if sug_peso > 0:
+                    with st.popover("🔥 Calcular Aquecimento"):
+                        st.markdown(f"**Carga de Trabalho:** {sug_peso}kg")
+                        st.text(f"1. {int(sug_peso*0.5)}kg x 10 reps (50%)")
+                        st.text(f"2. {int(sug_peso*0.7)}kg x 5 reps (70%)")
+                        st.text(f"3. {int(sug_peso*0.9)}kg x 2 reps (90%)")
 
                 with st.form(key=f"form_{i}"):
                     cc1, cc2, cc3 = st.columns([1,1,2])
-                    
-                    # --- AQUI ESTÁ A MAGIA DO PREENCHIMENTO AUTOMÁTICO ---
-                    # O 'value' vem da função smart: se gravaste set 1, aparece aqui o set 1.
+                    # Preenchimento Automático
                     peso = cc1.number_input("Kg", value=sug_peso, step=2.5)
                     reps = cc2.number_input("Reps", value=sug_reps, step=1)
-                    
                     notas = cc3.text_input("Obs")
-                    if st.form_submit_button("Gravar"):
+                    
+                    if st.form_submit_button("Gravar Set"):
                         salvar_set(nome_display, peso, reps, item['rpe'], notas)
                         st.success("Salvo!")
-                        time.sleep(1)
-                        st.rerun() # Reinicia para atualizar o próximo set com os dados deste!
+                        time.sleep(0.5)
+                        st.rerun()
                 
                 tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
                 if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
@@ -264,21 +245,34 @@ with tab_treino:
                         st.success("BORA!")
         
         st.divider()
-        if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
+        if st.button("TERMINAR TREINO", type="primary"):
             st.balloons()
-            if os.path.exists("success.png"):
-                st.image("success.png")
-            else:
-                st.success("LIMITS SURPASSED!")
+            if os.path.exists("success.png"): st.image("success.png")
+            else: st.success("LIMITS SURPASSED!")
             time.sleep(3)
             st.rerun()
 
 with tab_historico:
-    st.header("Grimório 📖")
+    st.header("Grimório Analytics 📊")
     df = get_data()
+    
     if not df.empty:
-        filtro = st.multiselect("Filtrar:", df["Exercício"].unique())
-        df_show = df[df["Exercício"].isin(filtro)] if filtro else df
-        st.dataframe(df_show.sort_index(ascending=False), use_container_width=True, hide_index=True)
+        # Filtros
+        lista_exercicios = df["Exercício"].unique()
+        filtro_ex = st.selectbox("Escolhe um Feitiço (Exercício):", lista_exercicios)
+        
+        if filtro_ex:
+            # Dados filtrados
+            df_chart = df[df["Exercício"] == filtro_ex].copy()
+            
+            # --- FUNCIONALIDADE 3: GRÁFICO DE PROGRESSÃO DE FORÇA ---
+            # Calcula 1RM estimado para cada ponto para ver a tendência real de força
+            df_chart["1RM Estimado"] = df_chart.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
+            
+            st.subheader(f"Evolução de Força: {filtro_ex}")
+            st.line_chart(df_chart, x="Data", y="1RM Estimado", color="#FF4B4B")
+            
+            st.markdown("### Histórico Detalhado")
+            st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
