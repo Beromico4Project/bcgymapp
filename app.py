@@ -23,114 +23,48 @@ def set_background(png_file):
     if not bin_str:
         return
     
-    # CSS para o Fundo Desfocado
     st.markdown(f"""
     <style>
-    .stApp {{
-        background: transparent;
-    }}
+    .stApp {{ background: transparent; }}
     .stApp::before {{
-        content: "";
-        position: fixed;
-        top: 0; left: 0; width: 100vw; height: 100vh;
+        content: ""; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
         background-image: url("data:image/png;base64,{bin_str}");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        /* Cinza Escuro com 85% de opacidade */
-        filter: blur(12px) brightness(0.5); 
-        z-index: -1;
+        background-size: cover; background-position: center; background-repeat: no-repeat;
+        filter: blur(12px) brightness(0.5); z-index: -1;
     }}
-    /* Camada extra de Cinza Escuro Transparente */
     .stApp::after {{
-        content: "";
-        position: fixed;
-        top: 0; left: 0; width: 100vw; height: 100vh;
-        background-color: rgba(20, 20, 20, 0.85); 
-        z-index: -1;
+        content: ""; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background-color: rgba(20, 20, 20, 0.85); z-index: -1;
     }}
     header {{ background: transparent !important; }}
     </style>
     """, unsafe_allow_html=True)
 
-# Aplica o fundo
 set_background('banner.png')
 
 # --- 3. CSS DA INTERFACE ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'MedievalSharp', cursive;
-        color: #E0E0E0;
-    }
     
-    h1, h2, h3 {
-        color: #FF4B4B !important; 
-        font-family: 'Cinzel', serif !important;
-        text-shadow: 2px 2px 4px #000;
-        text-transform: uppercase;
-    }
+    html, body, [class*="css"] { font-family: 'MedievalSharp', cursive; color: #E0E0E0; }
+    h1, h2, h3 { color: #FF4B4B !important; font-family: 'Cinzel', serif !important; text-transform: uppercase; text-shadow: 2px 2px 4px #000; }
     
-    /* ABAS (TABS) */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: rgba(30, 30, 30, 0.6);
-        padding: 10px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        background-color: rgba(50, 50, 50, 0.7);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 6px;
-        color: #CCC;
-        font-family: 'Cinzel', serif;
-        backdrop-filter: blur(5px);
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: rgba(139, 0, 0, 0.9) !important;
-        color: #FFD700 !important;
-        border: 1px solid #FF4B4B !important;
-        box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
-    }
-
-    /* CARTÕES EXPANSÍVEIS */
-    .streamlit-expanderHeader {
-        background-color: rgba(45, 45, 45, 0.8) !important;
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: #FFF !important;
-        font-family: 'Cinzel', serif;
-    }
-    .streamlit-expanderContent {
-        background-color: rgba(30, 30, 30, 0.6) !important;
-        border-radius: 0 0 8px 8px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    /* Inputs */
-    .stTextInput input, .stNumberInput input, .stTextArea textarea {
-        background-color: rgba(0, 0, 0, 0.4) !important;
-        color: white !important;
-        border: 1px solid #555 !important;
-        border-radius: 5px;
-    }
-
-    /* Botões */
-    div.stButton > button:first-child {
-        background: linear-gradient(180deg, #8B0000 0%, #3a0000 100%);
-        color: #FFD700;
-        border: 1px solid #FF4B4B;
-        font-family: 'Cinzel', serif;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    div.stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
-    }
+    /* ABAS */
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: rgba(30, 30, 30, 0.6); padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .stTabs [data-baseweb="tab"] { height: 50px; background-color: rgba(50, 50, 50, 0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #CCC; font-family: 'Cinzel', serif; backdrop-filter: blur(5px); }
+    .stTabs [aria-selected="true"] { background-color: rgba(139, 0, 0, 0.9) !important; color: #FFD700 !important; border: 1px solid #FF4B4B !important; }
+    
+    /* CARTÕES */
+    .streamlit-expanderHeader { background-color: rgba(45, 45, 45, 0.8) !important; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1); color: #FFF !important; font-family: 'Cinzel', serif; }
+    .streamlit-expanderContent { background-color: rgba(30, 30, 30, 0.6) !important; border-radius: 0 0 8px 8px; border: 1px solid rgba(255, 255, 255, 0.05); }
+    
+    /* INPUTS */
+    .stTextInput input, .stNumberInput input, .stTextArea textarea { background-color: rgba(0, 0, 0, 0.4) !important; color: white !important; border: 1px solid #555 !important; border-radius: 5px; }
+    
+    /* BOTÕES */
+    div.stButton > button:first-child { background: linear-gradient(180deg, #8B0000 0%, #3a0000 100%); color: #FFD700; border: 1px solid #FF4B4B; font-family: 'Cinzel', serif; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    div.stButton > button:hover { transform: scale(1.02); box-shadow: 0 0 15px rgba(255, 0, 0, 0.4); }
     </style>
 """, unsafe_allow_html=True)
 
@@ -139,29 +73,51 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
     try:
+        # ttl=0 garante que os dados vêm sempre frescos (essencial para o preenchimento automático funcionar)
         return conn.read(ttl="0")
     except:
         return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
 
-# --- FUNÇÃO: BUSCAR TODO O TREINO ANTERIOR ---
+# --- FUNÇÃO 1: TABELA DA SEMANA PASSADA (Visualização) ---
 def get_treino_anterior(exercicio):
     df = get_data()
-    if df.empty: return None, 0.0
+    if df.empty: return None
     
-    # Filtrar pelo exercício
     df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty: return None, 0.0
+    if df_ex.empty: return None
     
-    # Pegar a última data registada
-    ultima_linha = df_ex.iloc[-1]
-    ultima_data = ultima_linha["Data"]
+    # Procura a última data DIFERENTE da data de hoje (para mostrar histórico real)
+    data_hoje = datetime.date.today().strftime("%d/%m/%Y")
+    df_passado = df_ex[df_ex["Data"] != data_hoje]
     
-    # Filtrar todas as séries dessa data
-    treino_passado = df_ex[df_ex["Data"] == ultima_data]
+    if df_passado.empty: return None
     
-    # Retorna o DataFrame e o peso da última série
-    cols_uteis = ["Peso", "Reps", "RPE", "Notas"]
-    return treino_passado[cols_uteis], float(ultima_linha["Peso"])
+    # Pega a última data disponível no histórico
+    ultima_data = df_passado.iloc[-1]["Data"]
+    return df_passado[df_passado["Data"] == ultima_data][["Peso", "Reps", "RPE", "Notas"]]
+
+# --- FUNÇÃO 2: PREENCHIMENTO INTELIGENTE (MacroFactor Style) ---
+def get_sugestao_smart(exercicio, reps_alvo):
+    """
+    Retorna o Peso e Reps do ÚLTIMO registo absoluto.
+    Se acabaste de fazer o Set 1 hoje, retorna o Set 1.
+    Se ainda não treinaste hoje, retorna o último treino da semana passada.
+    """
+    df = get_data()
+    
+    # Valor padrão se nunca tiveres treinado
+    reps_padrao = int(str(reps_alvo).split('-')[0])
+    
+    if df.empty: return 0.0, reps_padrao
+    
+    # Filtra pelo exercício
+    df_ex = df[df["Exercício"] == exercicio]
+    if df_ex.empty: return 0.0, reps_padrao
+    
+    # Pega o registo absolutamente mais recente
+    ultimo = df_ex.iloc[-1]
+    
+    return float(ultimo["Peso"]), int(ultimo["Reps"])
 
 def salvar_set(exercicio, peso, reps, rpe, notas):
     df_existente = get_data()
@@ -220,21 +176,17 @@ def gerar_treino_do_dia(dia, semana):
         novo_item = item.copy()
         if semana == 3: # Choque
             if item["tipo"] == "composto":
-                novo_item["series"] += 1 
-                novo_item["rpe"] = 9
-                if novo_item["reps"] == "5": pass 
-            else:
-                novo_item["rpe"] = 9
+                novo_item["series"] += 1; novo_item["rpe"] = 9
+            else: novo_item["rpe"] = 9
         elif semana == 4: # Deload
-            novo_item["series"] = max(2, item["series"] - 1)
-            novo_item["rpe"] = 6
+            novo_item["series"] = max(2, item["series"] - 1); novo_item["rpe"] = 6
             if item["reps"] == "5": novo_item["reps"] = "6"
         treino_final.append(novo_item)
     return treino_final
 
 # --- 6. INTERFACE SIDEBAR ---
 st.sidebar.title("♣️ Grimório")
-semana = st.sidebar.radio("Nível de Poder:", [1, 2, 3, 4], format_func=lambda x: f"Semana {x}: {'Base' if x<=2 else 'MODO DEMÓNIO (Limite)' if x==3 else 'Deload'}")
+semana = st.sidebar.radio("Nível de Poder:", [1, 2, 3, 4], format_func=lambda x: f"Semana {x}: {'Base' if x<=2 else 'MODO DEMÓNIO' if x==3 else 'Deload'}")
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
 st.sidebar.markdown("---")
 dor_joelho = st.sidebar.checkbox("⚠️ Dor no Joelho")
@@ -245,23 +197,21 @@ def adaptar_nome(nome):
     if dor_costas and "Curvada" in nome: return f"{nome} ➡️ APOIADO"
     return nome
 
-# --- 7. CABEÇALHO (SEM LOGO) ---
-st.title("♣️BLACK CLOVER PROJECT♣️")
-st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
+# --- 7. CABEÇALHO ---
+col_esq, col_dir = st.columns([1, 4]) 
+with col_esq:
+    if os.path.exists("logo.png"): st.image("logo.png", width=90)
+    else: st.write("♣️")
+with col_dir:
+    st.title("BLACK CLOVER PROJECT")
+    st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
 
 with tab_treino:
-    with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
-        st.markdown("""
-        **RPE = Rate of Perceived Exertion (Esforço Percebido)**
-        
-        * 🔴 **RPE 10 (Falha Total):** Não consegues fazer mais nenhuma repetição.
-        * 🟠 **RPE 9 (Muito Pesado):** Conseguias fazer **apenas mais 1** repetição. (Foco da Semana 3).
-        * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. (Foco das Semanas 1-2).
-        * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3 ou 4** repetições. Velocidade rápida. (Foco da Semana 4/Deload).
-        """)
+    with st.expander("ℹ️ Guia de RPE"):
+        st.markdown("* 🔴 **RPE 10:** Falha.\n* 🟠 **RPE 9:** 1 na reserva.\n* 🟡 **RPE 8:** 2 na reserva.\n* 🟢 **RPE 6:** Deload.")
 
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
@@ -271,30 +221,39 @@ with tab_treino:
         for i, item in enumerate(treino_hoje):
             nome_display = adaptar_nome(item['ex'])
             
-            # --- BUSCA HISTÓRICO COMPLETO ---
-            df_passado, peso_sugerido = get_treino_anterior(nome_display)
+            # 1. Busca histórico antigo para a tabela (Visual)
+            df_passado = get_treino_anterior(nome_display)
+            
+            # 2. Busca sugestão SMART para o Input (Preenchimento Automático)
+            sug_peso, sug_reps = get_sugestao_smart(nome_display, item['reps'])
             
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 c1, c2 = st.columns(2)
-                rpe_txt = "🔴 MODO DEMONÍACO (FALHA)" if item['rpe'] >= 9 else "🟢 CONCENTRATE-TE SÓ (Sobram 3-4 reps)" if item['rpe'] <= 6 else "🟡 ALVO FORMIDÁVEL (Sobram 2 reps)"
+                rpe_txt = "🔴 MUITO PESADO" if item['rpe'] >= 9 else "🟢 LEVE" if item['rpe'] <= 6 else "🟡 PESADO"
                 c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
                 c2.markdown(f"**{rpe_txt}**")
                 
-                # --- TABELA DE SÉRIES ANTERIORES ---
+                # Tabela da Semana Passada
                 if df_passado is not None:
-                    st.markdown("📜 **Séries Anteriores:**")
+                    st.markdown("📜 **Histórico Anterior:**")
                     st.dataframe(df_passado, hide_index=True, use_container_width=True)
                 else:
-                    st.caption("Sem registos anteriores.")
+                    st.caption("Sem histórico anterior.")
 
                 with st.form(key=f"form_{i}"):
                     cc1, cc2, cc3 = st.columns([1,1,2])
-                    peso = cc1.number_input("Kg", value=peso_sugerido, step=2.5)
-                    reps = cc2.number_input("Reps", value=int(str(item['reps']).split('-')[0]), step=1)
+                    
+                    # --- AQUI ESTÁ A MAGIA DO PREENCHIMENTO AUTOMÁTICO ---
+                    # O 'value' vem da função smart: se gravaste set 1, aparece aqui o set 1.
+                    peso = cc1.number_input("Kg", value=sug_peso, step=2.5)
+                    reps = cc2.number_input("Reps", value=sug_reps, step=1)
+                    
                     notas = cc3.text_input("Obs")
                     if st.form_submit_button("Gravar"):
                         salvar_set(nome_display, peso, reps, item['rpe'], notas)
                         st.success("Salvo!")
+                        time.sleep(1)
+                        st.rerun() # Reinicia para atualizar o próximo set com os dados deste!
                 
                 tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
                 if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
@@ -323,4 +282,3 @@ with tab_historico:
         st.dataframe(df_show.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
-
