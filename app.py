@@ -38,7 +38,7 @@ def set_background(png_file):
         background-position: center;
         background-repeat: no-repeat;
         /* Cinza Escuro com 85% de opacidade */
-        filter: blur(6px) brightness(0.5); 
+        filter: blur(4px) brightness(0.5); 
         z-index: -1;
     }}
     /* Camada extra de Cinza Escuro Transparente */
@@ -359,4 +359,5 @@ with tab_historico:
             st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
+
 
