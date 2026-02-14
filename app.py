@@ -139,53 +139,43 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
     try:
-        # ttl="0" garante dados frescos para o auto-preenchimento funcionar bem
+        # ttl=0 garante leitura fresca para o autofill funcionar a cada série
         return conn.read(ttl="0")
     except:
         return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
 
-# --- FUNÇÃO 1: TABELA VISUAL DA SEMANA PASSADA ---
-def get_treino_anterior_tabela(exercicio):
+# Cálculo de 1RM (Epley Formula)
+def calcular_1rm(peso, reps):
+    if reps <= 0: return 0
+    if reps == 1: return peso
+    return round(peso * (1 + (reps / 30)), 1)
+
+# --- FUNÇÃO MACROFACTOR: HISTÓRICO + AUTO-FILL ---
+def get_historico_detalhado(exercicio, reps_alvo_str):
     df = get_data()
-    if df.empty: return None
+    reps_padrao = int(str(reps_alvo_str).split('-')[0])
     
+    if df.empty: return None, 0.0, reps_padrao
+    
+    # Filtrar pelo exercício
     df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty: return None
+    if df_ex.empty: return None, 0.0, reps_padrao
     
-    # Ignora os dados de hoje para mostrar apenas o "passado"
+    # Preenchimento Automático (Pega o ÚLTIMO set absoluto, mesmo que seja de hoje)
+    ultimo_registo = df_ex.iloc[-1]
+    
+    # Histórico de visualização (Exclui os sets de hoje para a tabela mostrar apenas o treino anterior)
     data_hoje = datetime.date.today().strftime("%d/%m/%Y")
     df_passado = df_ex[df_ex["Data"] != data_hoje]
     
-    if df_passado.empty: return None
-    
-    # Pega a última data disponível
-    ultima_data = df_passado.iloc[-1]["Data"]
-    
-    # Filtra e retorna
-    cols_uteis = ["Peso", "Reps", "RPE", "Notas"]
-    return df_passado[df_passado["Data"] == ultima_data][cols_uteis]
-
-# --- FUNÇÃO 2: SUGESTÃO SMART (MACROFACTOR STYLE) ---
-def get_sugestao_smart(exercicio, reps_alvo_str):
-    """
-    Retorna o último peso/reps registado ABSOLUTO.
-    Se gravaste o Set 1 hoje, retorna esses valores para o Set 2.
-    Se não, retorna do último treino.
-    """
-    df = get_data()
-    
-    # Valor padrão das reps alvo (ex: de "8-10" pega 8)
-    reps_padrao = int(str(reps_alvo_str).split('-')[0])
-    
-    if df.empty: return 0.0, reps_padrao
-    
-    df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty: return 0.0, reps_padrao
-    
-    # Pega o registo mais recente de todos (incluindo hoje)
-    ultimo_registo = df_ex.iloc[-1]
-    
-    return float(ultimo_registo["Peso"]), int(ultimo_registo["Reps"])
+    tabela_passada = None
+    if not df_passado.empty:
+        ultima_data_antiga = df_passado.iloc[-1]["Data"]
+        tabela_passada = df_passado[df_passado["Data"] == ultima_data_antiga].copy()
+        tabela_passada["1RM (Est)"] = tabela_passada.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
+        tabela_passada = tabela_passada[["Peso", "Reps", "RPE", "1RM (Est)", "Notas"]]
+        
+    return tabela_passada, float(ultimo_registo["Peso"]), int(ultimo_registo["Reps"])
 
 def salvar_set(exercicio, peso, reps, rpe, notas):
     df_existente = get_data()
@@ -270,11 +260,11 @@ def adaptar_nome(nome):
     return nome
 
 # --- 7. CABEÇALHO (SEM LOGO) ---
-st.title("♣️BLACK CLOVER PROJECT♣️")
+st.title("♣️ BLACK CLOVER PROJECT ♣️")
 st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
-tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📜 Histórico"])
+tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📊 Analytics"])
 
 with tab_treino:
     with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
@@ -295,30 +285,32 @@ with tab_treino:
         for i, item in enumerate(treino_hoje):
             nome_display = adaptar_nome(item['ex'])
             
-            # 1. Tabela Visual (Semana Passada)
-            df_tabela = get_treino_anterior_tabela(nome_display)
-            
-            # 2. Sugestão Smart (MacroFactor) para Input
-            sug_peso, sug_reps = get_sugestao_smart(nome_display, item['reps'])
+            # --- BUSCA HISTÓRICO COMPLETO + SUGESTÃO SMART ---
+            df_passado, sug_peso, sug_reps = get_historico_detalhado(nome_display, item['reps'])
             
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 c1, c2 = st.columns(2)
-                rpe_txt = "🔴 MODO DEMONÍACO (FALHA)" if item['rpe'] >= 9 else "🟢 CONCENTRA-TE SÓ (Sobram 3-4 reps)" if item['rpe'] <= 6 else "🟡 ALVO FORMIDÁVEL (Sobram 2 reps)"
+                rpe_txt = "🔴 MODO DEMONÍACO (FALHA)" if item['rpe'] >= 9 else "🟢 CONCENTRATE-TE SÓ (Sobram 3-4 reps)" if item['rpe'] <= 6 else "🟡 ALVO FORMIDÁVEL (Sobram 2 reps)"
                 c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
                 c2.markdown(f"**{rpe_txt}**")
                 
-                # --- TABELA DE SÉRIES ANTERIORES ---
-                if df_tabela is not None:
-                    st.markdown("📜 **Séries Anteriores:**")
-                    st.dataframe(df_tabela, hide_index=True, use_container_width=True)
+                # --- TABELA DE SÉRIES ANTERIORES (C/ 1RM) ---
+                if df_passado is not None:
+                    st.markdown("📜 **Séries Anteriores (Último Treino):**")
+                    st.dataframe(df_passado, hide_index=True, use_container_width=True)
                 else:
                     st.caption("Sem registos anteriores.")
 
+                # --- CALCULADORA DE AQUECIMENTO INTELIGENTE ---
+                if sug_peso > 0:
+                    with st.popover("🔥 Aquecimento Recomendado"):
+                        st.markdown(f"**Carga Alvo Sugerida:** {sug_peso}kg")
+                        st.text(f"Set 1: {int(sug_peso*0.5)}kg x 8-10 reps (50%)")
+                        st.text(f"Set 2: {int(sug_peso*0.7)}kg x 4-5 reps (70%)")
+                        st.text(f"Set 3: {int(sug_peso*0.9)}kg x 1-2 reps (90%)")
+
                 with st.form(key=f"form_{i}"):
                     cc1, cc2, cc3 = st.columns([1,1,2])
-                    
-                    # --- AUTO-PREENCHIMENTO INTELIGENTE ---
-                    # Value = Sugestão baseada no último set feito
                     peso = cc1.number_input("Kg", value=sug_peso, step=2.5)
                     reps = cc2.number_input("Reps", value=sug_reps, step=1)
                     notas = cc3.text_input("Obs")
@@ -326,8 +318,8 @@ with tab_treino:
                     if st.form_submit_button("Gravar"):
                         salvar_set(nome_display, peso, reps, item['rpe'], notas)
                         st.success("Salvo!")
-                        time.sleep(1) # Pequena pausa
-                        st.rerun()    # Reinicia a app para o próximo set ter os dados atualizados!
+                        time.sleep(0.5)
+                        st.rerun() # Atualiza o UI instantaneamente para preencher a próxima série
                 
                 tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
                 if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
@@ -348,11 +340,22 @@ with tab_treino:
             st.rerun()
 
 with tab_historico:
-    st.header("Grimório 📖")
+    st.header("Grimório Analytics 📊")
     df = get_data()
+    
     if not df.empty:
-        filtro = st.multiselect("Filtrar:", df["Exercício"].unique())
-        df_show = df[df["Exercício"].isin(filtro)] if filtro else df
-        st.dataframe(df_show.sort_index(ascending=False), use_container_width=True, hide_index=True)
+        lista_exercicios = df["Exercício"].unique()
+        filtro_ex = st.selectbox("Escolhe um Feitiço (Exercício):", lista_exercicios)
+        
+        if filtro_ex:
+            # Filtra os dados e calcula progressão de força (1RM)
+            df_chart = df[df["Exercício"] == filtro_ex].copy()
+            df_chart["1RM Estimado"] = df_chart.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
+            
+            st.subheader(f"Progressão de Força: {filtro_ex}")
+            st.line_chart(df_chart, x="Data", y="1RM Estimado", color="#FF4B4B")
+            
+            st.markdown("### Histórico Completo")
+            st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
