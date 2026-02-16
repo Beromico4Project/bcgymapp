@@ -133,6 +133,55 @@ def get_data():
     except:
         return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
 
+def checklist_xp(aquecimento: bool, alongamento: bool, cardio: bool, justificativa: str = ""):
+    xp = 0
+    xp += 20 if aquecimento else 0
+    xp += 20 if alongamento else 0
+    xp += 20 if cardio else 0
+
+    ok = aquecimento and alongamento and cardio
+
+    justificativa_ok = len(str(justificativa).strip()) >= 8
+
+    # bónus (disciplina)
+    if ok:
+        xp += 20
+    elif justificativa_ok:
+        xp += 10  # “coach credit”: não fez tudo, mas explicou
+
+    return xp, ok
+
+def get_last_streak(df: pd.DataFrame):
+    # streak = dias consecutivos com checklist OK
+    if df.empty or "Checklist_OK" not in df.columns or "Data" not in df.columns:
+        return 0
+
+    df2 = df.copy()
+    df2 = df2[df2["Checklist_OK"].astype(str).str.lower().isin(["true", "1", "yes"])]
+    if df2.empty:
+        return 0
+
+    # datas únicas (dd/mm/yyyy)
+    datas = sorted({str(x) for x in df2["Data"].dropna().tolist()})
+    datas_dt = []
+    for s in datas:
+        try:
+            datas_dt.append(datetime.datetime.strptime(s, "%d/%m/%Y").date())
+        except:
+            pass
+    if not datas_dt:
+        return 0
+
+    datas_dt = sorted(set(datas_dt))
+    streak = 1
+    # conta consecutivos a partir do último dia registado
+    for i in range(len(datas_dt) - 1, 0, -1):
+        if (datas_dt[i] - datas_dt[i - 1]).days == 1:
+            streak += 1
+        else:
+            break
+    return streak
+
 # Cálculo de 1RM (Fórmula de Epley)
 def calcular_1rm(peso, reps):
     try:
@@ -233,12 +282,18 @@ def get_historico_detalhado(exercicio, reps_alvo_str):
     return None, peso_sugerido, int(str(reps_alvo_str).split('-')[0])
 
 
-def salvar_sets_agrupados(exercicio, lista_sets):
+def salvar_sets_agrupados(exercicio, lista_sets, aquecimento, alongamento, cardio, justificativa=""):
     df_existente = get_data()
 
     pesos = ",".join([str(s["peso"]) for s in lista_sets])
     reps = ",".join([str(s["reps"]) for s in lista_sets])
     rpes = ",".join([str(s["rpe"]) for s in lista_sets])
+
+    xp, ok = checklist_xp(aquecimento, alongamento, cardio, justificativa)
+
+    # streak: conta apenas dias com checklist completo
+    streak_atual = get_last_streak(df_existente)
+    streak_guardar = streak_atual + (1 if ok else 0)
 
     novo_dado = pd.DataFrame([{
         "Data": datetime.date.today().strftime("%d/%m/%Y"),
@@ -246,7 +301,13 @@ def salvar_sets_agrupados(exercicio, lista_sets):
         "Peso": pesos,
         "Reps": reps,
         "RPE": rpes,
-        "Notas": ""
+        "Notas": str(justificativa).strip(),
+        "Aquecimento": aquecimento,
+        "Alongamento": alongamento,
+        "Cardio": cardio,
+        "XP": xp,
+        "Streak": streak_guardar,
+        "Checklist_OK": ok
     }])
 
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
@@ -372,25 +433,28 @@ with tab_treino:
         * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3-4** repetições.
         """)
 
-    with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
-        st.markdown(""" ... """)
-
-    # 👇 COLOCAR AQUI
-    st.markdown("## 🛡️ Preparação Obrigatória")
+    st.markdown("## 🛡️ Disciplina do Atleta (Coach Mode)")
 
     col1, col2, col3 = st.columns(3)
-
-    aquecimento = col1.checkbox("🔥 Aquecimento 5-10min")
-    alongamento = col2.checkbox("🧘 Alongamento Dinâmico")
-    cardio = col3.checkbox("🏃 Cardio 10-15min")
-
-    if aquecimento and alongamento and cardio:
-        st.success("Preparação completa. Corpo pronto para batalha.")
-    elif aquecimento or alongamento or cardio:
-        st.info("Preparação parcial. Recomenda-se completar tudo.")
-    else:
-        st.warning("⚠️ Sem preparação. Risco aumentado de lesão.")
-
+    aquecimento = col1.checkbox("🔥 Aquecimento 5–10 min", value=True)
+    alongamento = col2.checkbox("🧘 Mobilidade/Alongamento dinâmico", value=True)
+    cardio = col3.checkbox("🏃 Cardio 10–15 min", value=False)
+    
+    justificativa = ""
+    if not (aquecimento and alongamento and cardio):
+        st.info("Coach: se não fizeres tudo, escreve uma justificativa (ganhas algum XP extra).")
+        justificativa = st.text_input("Justificativa (opcional):", "")
+    
+    xp_pre, ok_checklist = checklist_xp(aquecimento, alongamento, cardio, justificativa)
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("XP previsto hoje", f"{xp_pre}")
+    c2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
+    c3.metric("Streak atual", f"{get_last_streak(get_data())}")
+    
+    if not ok_checklist:
+        st.warning("Checklist incompleto: sem stress — mas tenta melhorar para reduzir risco e subir performance.")
+    
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e mobilidade.")
     else:
@@ -429,7 +493,7 @@ with tab_treino:
                         lista_sets.append({"peso": peso, "reps": reps, "rpe": item["rpe"]})
                 
                     if st.form_submit_button("Gravar Exercício"):
-                        salvar_sets_agrupados(nome_display, lista_sets)
+                        salvar_sets_agrupados(nome_display, lista_sets, aquecimento, alongamento, cardio, justificativa)
                         st.success("Exercício completo salvo!")
                         time.sleep(0.5)
                         st.rerun()
@@ -442,18 +506,39 @@ with tab_treino:
                             time.sleep(1)
                         st.success("BORA!")
         st.divider()
+        
+        pode_terminar = ok_checklist or (not ok_checklist and len(motivo.strip()) >= 5)
+
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
+            if not ok_checklist:
+                st.info("Coach note: tenta bater o checklist completo no próximo treino 😉")
             st.balloons()
-            if os.path.exists("success.png"):
-                st.image("success.png")
-            else:
-                st.success("LIMITES SUPERADOS!")
-            time.sleep(3)
-            st.experimental_rerun()
+            time.sleep(2)
+            st.rerun()
+
+
 
 with tab_historico:
     st.header("Grimório de Batalha 📊")
     df = get_data()
+
+    st.subheader("🧠 Disciplina")
+
+    if not df.empty:
+        if "Checklist_OK" in df.columns:
+            ok_rate = (df["Checklist_OK"].astype(str).str.lower().isin(["true", "1", "yes"])).mean()
+            st.metric("Checklist completo (taxa)", f"{ok_rate*100:.0f}%")
+    
+        if "XP" in df.columns:
+            xp_total = pd.to_numeric(df["XP"], errors="coerce").fillna(0).sum()
+            st.metric("XP total", f"{int(xp_total)}")
+    
+        if "Notas" in df.columns:
+            st.caption("Justificativas recentes:")
+            st.dataframe(df[["Data", "Exercício", "Notas"]].tail(10), hide_index=True, use_container_width=True)
+    
+        if "Streak" in df.columns:
+            st.metric("Streak (último)", f"{int(pd.to_numeric(df['Streak'], errors='coerce').fillna(0).max())}")
 
     if df.empty:
         st.info("Ainda sem registos.")
@@ -555,4 +640,5 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
 
