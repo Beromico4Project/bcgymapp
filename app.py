@@ -161,11 +161,15 @@ def get_historico_detalhado(exercicio, reps_alvo_str):
         return None, 0.0, int(str(reps_alvo_str).split('-')[0])
 
     # Progressão simples
-    if rpe_medio <= 8:
-        peso_sugerido = round(peso_medio * 1.025, 1)
+    if rpe_medio <= 7:
+        peso_sugerido = round(peso_medio * 1.05, 1)   # sobe 5%
+    elif rpe_medio <= 8:
+        peso_sugerido = round(peso_medio * 1.025, 1)  # sobe 2.5%
+    elif rpe_medio >= 9:
+        peso_sugerido = round(peso_medio * 0.97, 1)   # reduz 3%
     else:
         peso_sugerido = peso_medio
-
+        
     return None, peso_sugerido, int(str(reps_alvo_str).split('-')[0])
 
 
@@ -387,7 +391,7 @@ with tab_historico:
             df_chart = df[df["Exercício"] == filtro_ex].copy()
             df_chart["1RM Estimado"] = df_chart.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
             st.subheader(f"Progressão de Força: {filtro_ex}")
-            st.line_chart(df_chart, x="Data", y="1RM Estimado", color="#FF4B4B")
+            st.line_chart(df_chart, x="Data", y="1RM Estimado")
             st.markdown("### Histórico Completo")
             st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
@@ -402,5 +406,6 @@ with tab_historico:
         st.write(overtraining)
     else:
         st.success("Volume equilibrado.")
+
 
 
