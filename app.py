@@ -131,7 +131,10 @@ def get_data():
     try:
         return conn.read(ttl="0")  # ttl=0 for fresh read
     except:
-        return pd.DataFrame(columns=["Data", "Exercício", "Peso", "Reps", "RPE", "Notas"])
+        return pd.DataFrame(columns=[
+            "Data","Exercício","Peso","Reps","RPE","Notas",
+            "Aquecimento","Alongamento","Cardio","XP","Streak","Checklist_OK"])
+
 
 def checklist_xp(aquecimento: bool, alongamento: bool, cardio: bool, justificativa: str = ""):
     xp = 0
@@ -199,8 +202,8 @@ def calcular_rank(xp_total: int, streak_max: int, checklist_rate: float):
 # Cálculo de 1RM (Fórmula de Epley)
 def calcular_1rm(peso, reps):
     try:
-        pesos = [float(p) for p in str(peso).split(",")]
-        repeticoes = [int(r) for r in str(reps).split(",")]
+        pesos = [float(p) for p in str(peso).split(",") if str(p).strip() not in ["", "nan", "None"]]
+        repeticoes = [int(float(r)) for r in str(reps).split(",") if str(r).strip() not in ["", "nan", "None"]]
 
         lista_1rm = []
 
@@ -305,9 +308,19 @@ def salvar_sets_agrupados(exercicio, lista_sets, aquecimento, alongamento, cardi
 
     xp, ok = checklist_xp(aquecimento, alongamento, cardio, justificativa)
 
-    # streak: conta apenas dias com checklist completo
     streak_atual = get_last_streak(df_existente)
-    streak_guardar = streak_atual + (1 if ok else 0)
+
+    hoje = datetime.date.today().strftime("%d/%m/%Y")
+    ja_ha_ok_hoje = False
+    if not df_existente.empty and "Data" in df_existente.columns and "Checklist_OK" in df_existente.columns:
+        ja_ha_ok_hoje = ((df_existente["Data"].astype(str) == hoje) &
+                         (df_existente["Checklist_OK"].astype(str).str.lower().isin(["true","1","yes"]))).any()
+
+    if ok and not ja_ha_ok_hoje:
+        streak_guardar = streak_atual + 1
+    else:
+        streak_guardar = streak_atual
+
 
     novo_dado = pd.DataFrame([{
         "Data": datetime.date.today().strftime("%d/%m/%Y"),
@@ -340,7 +353,7 @@ mapa_musculos = {
     "Elevação Lateral": "Ombros",
     "Face Pull": "Ombros",
     "Agachamento Livre": "Quadríceps",
-    "Hack Squat/Leg Press": "Quadríceps",
+    "Hack Squat / Leg Press": "Quadríceps",
     "Leg Press": "Quadríceps",
     "Hip Thrust": "Glúteos",
     "Mesa Flexora": "Posterior",
@@ -546,8 +559,6 @@ with tab_treino:
                             time.sleep(1)
                         st.success("BORA!")
         st.divider()
-        
-        pode_terminar = ok_checklist or (not ok_checklist and len(justificativa.strip()) >= 5)
 
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
             if not ok_checklist:
@@ -724,6 +735,7 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
 
 
 
