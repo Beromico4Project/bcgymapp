@@ -53,7 +53,7 @@ def set_background(png_file):
     </style>
     """, unsafe_allow_html=True)
 
-# Aplica o fundo
+# Aplica o fundo (certifica-te que tens um ficheiro banner.png ou remove esta linha)
 set_background('banner.png')
 
 # --- 3. CSS DA INTERFACE ---
@@ -153,7 +153,11 @@ def calcular_1rm(peso, reps):
 # --- FUNÇÃO MACROFACTOR: HISTÓRICO + AUTO-FILL ---
 def get_historico_detalhado(exercicio, reps_alvo_str):
     df = get_data()
-    reps_padrao = int(str(reps_alvo_str).split('-')[0])
+    # Tenta extrair um número base das reps (ex: "8-10" vira 8)
+    try:
+        reps_padrao = int(str(reps_alvo_str).split('-')[0])
+    except:
+        reps_padrao = 8
     
     if df.empty: return None, 0.0, reps_padrao
     
@@ -190,60 +194,83 @@ def salvar_set(exercicio, peso, reps, rpe, notas):
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
     conn.update(data=df_final)
 
-# --- 5. BASE DE DADOS TREINOS ---
+# --- 5. BASE DE DADOS TREINOS COMPLETA ---
 treinos_base = {
     "Segunda (Upper Força)": [
-        {"ex": "Supino Reto", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
+        {"ex": "Supino Reto (Barra)", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
         {"ex": "Remada Curvada", "series": 4, "reps": "6", "rpe": 8, "tipo": "composto"},
         {"ex": "Desenvolvimento Militar", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Puxada Frente", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Face Pull", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"}
+        {"ex": "Puxada Frente (Barra/Polia)", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Face Pull", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Rosca Direta", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Extensão Tríceps Testa", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Prancha Lateral", "series": 3, "reps": "20s", "rpe": 7, "tipo": "core"}
     ],
     "Terça (Lower Força)": [
         {"ex": "Agachamento Livre", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
-        {"ex": "Stiff", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Afundo", "series": 3, "reps": "8", "rpe": 7, "tipo": "acessorio"},
+        {"ex": "Stiff (Romeno)", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
+        {"ex": "Afundo (Split Squat)", "series": 3, "reps": "8", "rpe": 7, "tipo": "acessorio"},
         {"ex": "Leg Press", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Gémeos", "series": 4, "reps": "12", "rpe": 8, "tipo": "isolado"}
+        {"ex": "Gémeos Sentado", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Bird-dog (Core)", "series": 3, "reps": "8", "rpe": 7, "tipo": "core"}
     ],
     "Quinta (Upper Hipertrofia)": [
         {"ex": "Supino Inclinado Halter", "series": 3, "reps": "10", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Puxada Lateral", "series": 4, "reps": "8-10", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Remada Baixa", "series": 3, "reps": "10", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Puxada Lateral (Aberta)", "series": 4, "reps": "8-10", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Remada Baixa Sentada", "series": 3, "reps": "8-10", "rpe": 8, "tipo": "acessorio"},
         {"ex": "Desenv. Arnold", "series": 3, "reps": "10", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Elevação Lateral", "series": 3, "reps": "12", "rpe": 9, "tipo": "isolado"}
+        {"ex": "Elevação Lateral", "series": 3, "reps": "12", "rpe": 9, "tipo": "isolado"},
+        {"ex": "Encolhimento Ombros", "series": 3, "reps": "10", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Rosca Martelo", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Paralela Assistida (Tríceps)", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Prancha Lateral", "series": 3, "reps": "20s", "rpe": 7, "tipo": "core"}
     ],
     "Sexta (Lower Hipertrofia)": [
-        {"ex": "Hack Squat/Leg Press", "series": 4, "reps": "10", "rpe": 7, "tipo": "composto"},
-        {"ex": "Hip Thrust", "series": 3, "reps": "10", "rpe": 7, "tipo": "acessorio"},
+        {"ex": "Hack Squat ou Leg Press", "series": 4, "reps": "10", "rpe": 7, "tipo": "composto"},
+        {"ex": "Hip Thrust", "series": 3, "reps": "8-10", "rpe": 7, "tipo": "acessorio"},
+        {"ex": "Stiff (Romeno)", "series": 3, "reps": "10", "rpe": 7, "tipo": "acessorio"},
+        {"ex": "Mesa Flexora (Leg Curl)", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"},
         {"ex": "Cadeira Extensora", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Mesa Flexora", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"}
+        {"ex": "Avanço Leve (Sem carga extra)", "series": 2, "reps": "10", "rpe": 6, "tipo": "isolado"},
+        {"ex": "Gémeos em Pé", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Abdominais Bicicleta", "series": 3, "reps": "15", "rpe": 7, "tipo": "core"}
     ],
     "Sábado (Ombros/Braços)": [
         {"ex": "Press Militar", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
         {"ex": "Elevação Lateral Unilateral", "series": 3, "reps": "12", "rpe": 10, "tipo": "isolado"},
         {"ex": "Remada Curvada Supinada", "series": 3, "reps": "8", "rpe": 8, "tipo": "composto"},
-        {"ex": "Pallof Press", "series": 3, "reps": "12", "rpe": 7, "tipo": "core"}
+        {"ex": "Remada Alta", "series": 3, "reps": "10", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Paralela Assistida", "series": 3, "reps": "10", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Rosca Direta", "series": 3, "reps": "10", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Pallof Press", "series": 3, "reps": "12", "rpe": 7, "tipo": "core"},
+        {"ex": "Prancha Frontal", "series": 3, "reps": "30s", "rpe": 7, "tipo": "core"}
     ]
 }
 
 def gerar_treino_do_dia(dia, semana):
     treino_base = treinos_base.get(dia, [])
     treino_final = []
+    
     for item in treino_base:
         novo_item = item.copy()
-        if semana == 3: # Choque
+        
+        # --- LÓGICA DE PERIODIZAÇÃO ---
+        if semana == 3: # Semana de Choque (Intensidade Máxima)
             if item["tipo"] == "composto":
                 novo_item["series"] += 1 
                 novo_item["rpe"] = 9
-                if novo_item["reps"] == "5": pass 
+                # Mantém reps baixas se for 5, senão mantém normal
             else:
                 novo_item["rpe"] = 9
-        elif semana == 4: # Deload
+                
+        elif semana == 4: # Deload (Recuperação Ativa)
             novo_item["series"] = max(2, item["series"] - 1)
             novo_item["rpe"] = 6
+            # Aumenta ligeiramente reps se for muito baixo para compensar carga leve
             if item["reps"] == "5": novo_item["reps"] = "6"
+            
         treino_final.append(novo_item)
+        
     return treino_final
 
 # --- 6. INTERFACE SIDEBAR ---
@@ -255,8 +282,10 @@ dor_joelho = st.sidebar.checkbox("⚠️ Dor no Joelho")
 dor_costas = st.sidebar.checkbox("⚠️ Dor nas Costas")
 
 def adaptar_nome(nome):
-    if dor_joelho and ("Agachamento" in nome or "Afundo" in nome): return f"{nome} ➡️ LEG PRESS"
+    if dor_joelho and ("Agachamento" in nome or "Afundo" in nome or "Avanço" in nome): return f"{nome} ➡️ LEG PRESS/SEM CARGA"
+    if dor_joelho and ("Extensora" in nome): return f"{nome} ➡️ LEVE/ISOMETRIA"
     if dor_costas and "Curvada" in nome: return f"{nome} ➡️ APOIADO"
+    if dor_costas and "Stiff" in nome: return f"{nome} ➡️ ELEVAÇÃO PÉLVICA"
     return nome
 
 # --- 7. CABEÇALHO (SEM LOGO) ---
@@ -279,8 +308,14 @@ with tab_treino:
 
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e Mobilidade.")
+        if os.path.exists("rest_mode.png"): # Opcional se tiveres imagem
+            st.image("rest_mode.png")
     else:
         treino_hoje = gerar_treino_do_dia(dia, semana)
+        
+        # Barra de Progresso do Treino
+        progresso = st.progress(0)
+        total_exercicios = len(treino_hoje)
         
         for i, item in enumerate(treino_hoje):
             nome_display = adaptar_nome(item['ex'])
@@ -288,10 +323,19 @@ with tab_treino:
             # --- BUSCA HISTÓRICO COMPLETO + SUGESTÃO SMART ---
             df_passado, sug_peso, sug_reps = get_historico_detalhado(nome_display, item['reps'])
             
+            # Expande automaticamente apenas o primeiro exercício
             with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
                 c1, c2 = st.columns(2)
-                rpe_txt = "🔴 MODO DEMONÍACO (FALHA)" if item['rpe'] >= 9 else "🟢 CONCENTRATE-TE SÓ (Sobram 3-4 reps)" if item['rpe'] <= 6 else "🟡 ALVO FORMIDÁVEL (Sobram 2 reps)"
-                c1.markdown(f"**Meta:** {item['series']}x{item['reps']}")
+                
+                # Texto dinâmico de RPE
+                if item['rpe'] >= 9:
+                    rpe_txt = "🔴 MODO DEMONÍACO (FALHA -1)"
+                elif item['rpe'] <= 6:
+                    rpe_txt = "🟢 TÉCNICA PURA (Sobram 3-4 reps)"
+                else:
+                    rpe_txt = "🟡 PESADO (Sobram 2 reps)"
+                
+                c1.markdown(f"**Meta:** {item['series']} Séries x {item['reps']} Reps")
                 c2.markdown(f"**{rpe_txt}**")
                 
                 # --- TABELA DE SÉRIES ANTERIORES (C/ 1RM) ---
@@ -301,28 +345,30 @@ with tab_treino:
                 else:
                     st.caption("Sem registos anteriores.")
 
-                # --- CALCULADORA DE AQUECIMENTO INTELIGENTE ---
-                if sug_peso > 0:
-                    with st.popover("🔥 Calculo de Peso"):
-                        st.markdown(f"**Carga Alvo Sugerida:** {sug_peso}kg")
-                        st.text(f"Set 1: {int(sug_peso*0.5)}kg x 8-10 reps (50%)")
-                        st.text(f"Set 2: {int(sug_peso*0.7)}kg x 4-5 reps (70%)")
-                        st.text(f"Set 3: {int(sug_peso*0.9)}kg x 1-2 reps (90%)")
+                # --- CALCULADORA DE AQUECIMENTO INTELIGENTE (Só para compostos/pesados) ---
+                if sug_peso > 20 and item['tipo'] == 'composto':
+                    with st.popover("🔥 Aquecimento Sugerido"):
+                        st.markdown(f"**Carga de Trabalho:** {sug_peso}kg")
+                        st.text(f"1. {int(sug_peso*0.5)}kg x 10 reps")
+                        st.text(f"2. {int(sug_peso*0.7)}kg x 5 reps")
+                        st.text(f"3. {int(sug_peso*0.9)}kg x 1 rep")
 
-                with st.form(key=f"form_{i}"):
+                # --- FORMULÁRIO DE REGISTO ---
+                with st.form(key=f"form_{dia}_{i}"):
                     cc1, cc2, cc3 = st.columns([1,1,2])
-                    peso = cc1.number_input("Kg", value=sug_peso, step=2.5)
+                    peso = cc1.number_input("Kg", value=sug_peso, step=1.0) # Step 1.0 para halteres/maquinas
                     reps = cc2.number_input("Reps", value=sug_reps, step=1)
-                    notas = cc3.text_input("Obs")
+                    notas = cc3.text_input("Obs", placeholder="Dor? Facilidade?")
                     
-                    if st.form_submit_button("Gravar"):
+                    if st.form_submit_button("Gravar Série"):
                         salvar_set(nome_display, peso, reps, item['rpe'], notas)
                         st.success("Salvo!")
                         time.sleep(0.5)
-                        st.rerun() # Atualiza o UI instantaneamente para preencher a próxima série
+                        st.rerun() 
                 
+                # Botão de Descanso
                 tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
-                if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
+                if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{dia}_{i}"):
                     with st.empty():
                         for s in range(tempo, 0, -1):
                             st.metric("Recupera...", f"{s}s")
@@ -332,19 +378,14 @@ with tab_treino:
         st.divider()
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
             st.balloons()
-            if os.path.exists("success.png"):
-                st.image("success.png")
-            else:
-                st.success("LIMITS SURPASSED!")
-            time.sleep(3)
-            st.rerun()
-
+            st.success("LIMITS SURPASSED! Bom descanso.")
+            
 with tab_historico:
     st.header("Grimório de Batalha 📊")
     df = get_data()
     
     if not df.empty:
-        lista_exercicios = df["Exercício"].unique()
+        lista_exercicios = sorted(df["Exercício"].unique())
         filtro_ex = st.selectbox("Escolhe um Feitiço (Exercício):", lista_exercicios)
         
         if filtro_ex:
@@ -353,11 +394,10 @@ with tab_historico:
             df_chart["1RM Estimado"] = df_chart.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
             
             st.subheader(f"Progressão de Força: {filtro_ex}")
+            # Gráfico de Linha com Pontos
             st.line_chart(df_chart, x="Data", y="1RM Estimado", color="#FF4B4B")
             
             st.markdown("### Histórico Completo")
             st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
-        st.info("Ainda sem registos.")
-
-
+        st.info("Ainda sem registos. Começa a treinar!")
