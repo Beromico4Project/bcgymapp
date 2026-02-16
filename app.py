@@ -433,7 +433,7 @@ with tab_treino:
         * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3-4** repetições.
         """)
 
-    st.markdown("## 🛡️ Disciplina do Atleta (Coach Mode)")
+    st.markdown("## 🛡️ Disciplina do Atleta")
 
     col1, col2, col3 = st.columns(3)
     aquecimento = col1.checkbox("🔥 Aquecimento 5–10 min", value=True)
@@ -640,5 +640,6 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
 
 
