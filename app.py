@@ -389,43 +389,31 @@ with tab_historico:
     st.header("Grimório de Batalha 📊")
     df = get_data()
     
-    st.subheader("📊 Volume Semanal por Grupo Muscular")
+        # --- DASHBOARD PRO: Volume por grupo muscular + Overtraining ---
+    st.subheader("📊 Volume Semanal (Séries) por Grupo Muscular")
 
-    if not df.empty:
+    if df.empty:
+        st.info("Ainda sem registos.")
+    else:
         df_volume = df.copy()
-        df_volume["Peso"] = df_volume["Peso"].astype(str)
-        df_volume["Series"] = df_volume["Peso"].apply(lambda x: len(x.split(",")))
-    
-        df_volume["Grupo"] = df_volume["Exercício"].map(mapa_musculos)
-        volume_semana = df_volume.groupby("Grupo")["Series"].sum()
-    
+
+        # Conta séries por linha (se estiver agrupado por vírgulas, conta quantos pesos existem)
+        df_volume["Series"] = df_volume["Peso"].astype(str).apply(lambda x: len(x.split(",")))
+
+        # Mapeia exercício -> grupo (se não existir no mapa, fica "Outro")
+        df_volume["Grupo"] = df_volume["Exercício"].map(mapa_musculos).fillna("Outro")
+
+        volume_semana = df_volume.groupby("Grupo")["Series"].sum().sort_values(ascending=False)
+
         st.bar_chart(volume_semana)
 
-    
-    if not df.empty:
-        lista_exercicios = sorted(df["Exercício"].unique())
-        filtro_ex = st.selectbox("Escolhe um Feitiço (Exercício):", lista_exercicios)
-        if filtro_ex:
-            df_chart = df[df["Exercício"] == filtro_ex].copy()
-            df_chart["1RM Estimado"] = df_chart.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
-            st.subheader(f"Progressão de Força: {filtro_ex}")
-            st.line_chart(df_chart, x="Data", y="1RM Estimado")
-            st.markdown("### Histórico Completo")
-            st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
-    else:
-        st.info("Ainda sem registos.")
+        st.subheader("⚠️ Análise de Fadiga (Overtraining)")
+        overtraining = volume_semana[volume_semana > 20]
 
-    st.subheader("⚠️ Análise de Fadiga")
+        if not overtraining.empty:
+            st.warning("Possível excesso de volume em:")
+            st.write(overtraining)
+        else:
+            st.success("Volume equilibrado (≤ 20 séries por grupo).")
 
-    overtraining = volume_semana[volume_semana > 20]
-    
-    if not overtraining.empty:
-        st.warning("Possível excesso de volume em:")
-        st.write(overtraining)
-    else:
-        st.success("Volume equilibrado.")
-
-
-
-
-
+    st.divider()
