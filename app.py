@@ -182,6 +182,20 @@ def get_last_streak(df: pd.DataFrame):
             break
     return streak
 
+def calcular_rank(xp_total: int, streak_max: int, checklist_rate: float):
+    """
+    checklist_rate: 0.0 a 1.0
+    """
+    # thresholds simples e motivadores
+    if xp_total >= 2500 and streak_max >= 21 and checklist_rate >= 0.80:
+        return "💎 PLATINA", "Elite"
+    if xp_total >= 1500 and streak_max >= 14 and checklist_rate >= 0.70:
+        return "🥇 OURO", "Consistente"
+    if xp_total >= 700 and streak_max >= 7 and checklist_rate >= 0.60:
+        return "🥈 PRATA", "Em evolução"
+    return "🥉 BRONZE", "A construir base"
+
+
 # Cálculo de 1RM (Fórmula de Epley)
 def calcular_1rm(peso, reps):
     try:
@@ -454,7 +468,33 @@ with tab_treino:
     
     if not ok_checklist:
         st.warning("Checklist incompleto: sem stress — mas tenta melhorar para reduzir risco e subir performance.")
+
+    df_rank = get_data()
+
+    if df_rank.empty or "XP" not in df_rank.columns:
+        st.info("Rank: começa a registar treinos para desbloquear níveis.")
+    else:
+        xp_total = int(pd.to_numeric(df_rank["XP"], errors="coerce").fillna(0).sum())
     
+        if "Streak" in df_rank.columns:
+            streak_max = int(pd.to_numeric(df_rank["Streak"], errors="coerce").fillna(0).max())
+        else:
+            streak_max = 0
+    
+        if "Checklist_OK" in df_rank.columns:
+            checklist_rate = float(df_rank["Checklist_OK"].astype(str).str.lower().isin(["true","1","yes"]).mean())
+        else:
+            checklist_rate = 0.0
+    
+        rank, subtitulo = calcular_rank(xp_total, streak_max, checklist_rate)
+    
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🏅 Rank", rank)
+        c2.metric("✨ XP Total", xp_total)
+        c3.metric("🔥 Streak Máx", streak_max)
+        c4.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
+        st.caption(f"Estado: **{subtitulo}**")
+
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e mobilidade.")
     else:
@@ -516,11 +556,55 @@ with tab_treino:
             time.sleep(2)
             st.rerun()
 
-
-
 with tab_historico:
     st.header("Grimório de Batalha 📊")
     df = get_data()
+
+    st.subheader("🏆 Ranking & Metas")
+
+    if df.empty or "XP" not in df.columns:
+        st.info("Ainda sem dados suficientes para ranking.")
+    else:
+        xp_total = int(pd.to_numeric(df["XP"], errors="coerce").fillna(0).sum())
+    
+        streak_max = int(pd.to_numeric(df["Streak"], errors="coerce").fillna(0).max()) if "Streak" in df.columns else 0
+        checklist_rate = float(df["Checklist_OK"].astype(str).str.lower().isin(["true","1","yes"]).mean()) if "Checklist_OK" in df.columns else 0.0
+    
+        rank, subtitulo = calcular_rank(xp_total, streak_max, checklist_rate)
+    
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🏅 Rank Atual", rank)
+        c2.metric("✨ XP Total", xp_total)
+        c3.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
+    
+        st.caption(f"Status: **{subtitulo}** | 🔥 Streak Máx: **{streak_max}** dias")
+    
+        # Metas para subir
+        st.markdown("### 🎯 Metas para subir de nível")
+        metas = []
+        if rank.startswith("🥉"):
+            metas = [
+                "Chegar a **700 XP**",
+                "Fazer **streak máximo 7 dias**",
+                "Manter checklist completo em **≥ 60%** dos registos",
+            ]
+        elif rank.startswith("🥈"):
+            metas = [
+                "Chegar a **1500 XP**",
+                "Fazer **streak máximo 14 dias**",
+                "Manter checklist completo em **≥ 70%** dos registos",
+            ]
+        elif rank.startswith("🥇"):
+            metas = [
+                "Chegar a **2500 XP**",
+                "Fazer **streak máximo 21 dias**",
+                "Manter checklist completo em **≥ 80%** dos registos",
+            ]
+        else:
+            metas = ["Manter consistência. Agora é refinar performance e prevenir lesão. 💎"]
+    
+        for m in metas:
+            st.write("• " + m)
 
     st.subheader("🧠 Disciplina")
 
@@ -640,6 +724,7 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
 
 
 
