@@ -547,7 +547,7 @@ with tab_treino:
                         st.success("BORA!")
         st.divider()
         
-        pode_terminar = ok_checklist or (not ok_checklist and len(motivo.strip()) >= 5)
+        pode_terminar = ok_checklist or (not ok_checklist and len(justificativa.strip()) >= 5)
 
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
             if not ok_checklist:
@@ -724,6 +724,7 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
 
 
 
