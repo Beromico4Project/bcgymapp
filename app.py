@@ -278,42 +278,44 @@ mapa_musculos = {
 }
 
 treinos_base = {
-    "Segunda (Push Força)": [
+
+    "Segunda (Upper Força)": [
         {"ex": "Supino Reto", "series": 4, "reps": "4-6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Desenvolvimento Militar", "series": 3, "reps": "5-6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Dips", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Tríceps Corda", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"}
+        {"ex": "Remada Curvada", "series": 4, "reps": "5-6", "rpe": 8, "tipo": "composto"},
+        {"ex": "Desenvolvimento Militar", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
+        {"ex": "Rosca Direta", "series": 2, "reps": "8-10", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Tríceps Testa", "series": 2, "reps": "8-10", "rpe": 8, "tipo": "isolado"},
     ],
 
-    "Terça (Pull Força)": [
+    "Terça (Lower Força)": [
         {"ex": "Agachamento Livre", "series": 4, "reps": "4-6", "rpe": 8, "tipo": "composto"},
         {"ex": "Levantamento Terra Romeno", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "composto"},
-        {"ex": "Remada Curvada", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Ab Wheel / Prancha", "series": 3, "reps": "10-15", "rpe": 7, "tipo": "core"}
+        {"ex": "Leg Press", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Gémeos", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
     ],
 
-    "Quinta (Push Hipertrofia)": [
+    "Quinta (Upper Hipertrofia)": [
         {"ex": "Supino Inclinado Halter", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Desenv. Arnold", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Elevação Lateral", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
-        {"ex": "Tríceps Testa", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"}
-    ],
-
-    "Sexta (Pull Hipertrofia)": [
-        {"ex": "Puxada Alta", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Puxada Frente", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
         {"ex": "Remada Baixa", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Face Pull", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
-        {"ex": "Rosca Direta", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "isolado"}
+        {"ex": "Elevação Lateral", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
+        {"ex": "Tríceps Corda", "series": 2, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
     ],
 
-    "Sábado (Legs Hipertrofia)": [
+    "Sexta (Lower Hipertrofia)": [
         {"ex": "Hack Squat / Leg Press", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "composto"},
         {"ex": "Hip Thrust", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
         {"ex": "Mesa Flexora", "series": 3, "reps": "10-15", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Gémeos", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"}
+        {"ex": "Gémeos", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
+    ],
+
+    "Sábado (Upper Volume Extra)": [
+        {"ex": "Press Militar", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "composto"},
+        {"ex": "Puxada Lateral", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Face Pull", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
+        {"ex": "Rosca Direta", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
     ]
 }
-
 
 def gerar_treino_do_dia(dia, semana):
     treino_base = treinos_base.get(dia, [])
@@ -369,6 +371,25 @@ with tab_treino:
         * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. 
         * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3-4** repetições.
         """)
+
+    with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
+        st.markdown(""" ... """)
+
+    # 👇 COLOCAR AQUI
+    st.markdown("## 🛡️ Preparação Obrigatória")
+
+    col1, col2, col3 = st.columns(3)
+
+    aquecimento = col1.checkbox("🔥 Aquecimento 5-10min")
+    alongamento = col2.checkbox("🧘 Alongamento Dinâmico")
+    cardio = col3.checkbox("🏃 Cardio 10-15min")
+
+    if aquecimento and alongamento and cardio:
+        st.success("Preparação completa. Corpo pronto para batalha.")
+    elif aquecimento or alongamento or cardio:
+        st.info("Preparação parcial. Recomenda-se completar tudo.")
+    else:
+        st.warning("⚠️ Sem preparação. Risco aumentado de lesão.")
 
     if dia == "Descanso":
         st.info("Hoje é dia de descanso ativo. Caminhada 30min e mobilidade.")
@@ -534,3 +555,4 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
