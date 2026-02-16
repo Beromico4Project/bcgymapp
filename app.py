@@ -135,9 +135,27 @@ def get_data():
 
 # Cálculo de 1RM (Fórmula de Epley)
 def calcular_1rm(peso, reps):
-    if reps <= 0: return 0
-    if reps == 1: return peso
-    return round(peso * (1 + (reps / 30)), 1)
+    try:
+        pesos = [float(p) for p in str(peso).split(",")]
+        repeticoes = [int(r) for r in str(reps).split(",")]
+
+        lista_1rm = []
+
+        for p, r in zip(pesos, repeticoes):
+            if r <= 0:
+                continue
+            if r == 1:
+                lista_1rm.append(p)
+            else:
+                lista_1rm.append(p * (1 + (r / 30)))
+
+        if lista_1rm:
+            return round(max(lista_1rm), 1)  # pega o melhor 1RM
+        else:
+            return 0
+
+    except:
+        return 0
 
 # Histórico detalhado + auto-fill
 def get_historico_detalhado(exercicio, reps_alvo_str):
@@ -406,6 +424,7 @@ with tab_historico:
         st.write(overtraining)
     else:
         st.success("Volume equilibrado.")
+
 
 
 
