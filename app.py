@@ -348,7 +348,7 @@ with tab_treino:
                         salvar_sets_agrupados(nome_display, lista_sets)
                         st.success("Exercício completo salvo!")
                         time.sleep(0.5)
-                        st.experimental_rerun()
+                        st.rerun()
 
                 tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
                 if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
@@ -406,6 +406,7 @@ with tab_historico:
         st.write(overtraining)
     else:
         st.success("Volume equilibrado.")
+
 
 
 
