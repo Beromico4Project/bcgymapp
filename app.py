@@ -142,74 +142,111 @@ def calcular_1rm(peso, reps):
 # Histórico detalhado + auto-fill
 def get_historico_detalhado(exercicio, reps_alvo_str):
     df = get_data()
-    reps_padrao = int(str(reps_alvo_str).split('-')[0])
-    if df.empty: 
-        return None, 0.0, reps_padrao
-    df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty: 
-        return None, 0.0, reps_padrao
-    ultimo_registo = df_ex.iloc[-1]
-    data_hoje = datetime.date.today().strftime("%d/%m/%Y")
-    df_passado = df_ex[df_ex["Data"] != data_hoje]
-    tabela_passada = None
-    if not df_passado.empty:
-        ultima_data_antiga = df_passado.iloc[-1]["Data"]
-        tabela_passada = df_passado[df_passado["Data"] == ultima_data_antiga].copy()
-        tabela_passada["1RM (Est)"] = tabela_passada.apply(lambda x: calcular_1rm(x["Peso"], x["Reps"]), axis=1)
-        tabela_passada = tabela_passada[["Peso", "Reps", "RPE", "1RM (Est)", "Notas"]]
-    return tabela_passada, float(ultimo_registo["Peso"]), int(ultimo_registo["Reps"])
 
-def salvar_set(exercicio, peso, reps, rpe, notas):
+    if df.empty:
+        return None, 0.0, int(str(reps_alvo_str).split('-')[0])
+
+    df_ex = df[df["Exercício"] == exercicio]
+    if df_ex.empty:
+        return None, 0.0, int(str(reps_alvo_str).split('-')[0])
+
+    ultimo = df_ex.iloc[-1]
+
+    try:
+        pesos = [float(p) for p in str(ultimo["Peso"]).split(",")]
+        rpes = [float(r) for r in str(ultimo["RPE"]).split(",")]
+        peso_medio = sum(pesos) / len(pesos)
+        rpe_medio = sum(rpes) / len(rpes)
+    except:
+        return None, 0.0, int(str(reps_alvo_str).split('-')[0])
+
+    # Progressão simples
+    if rpe_medio <= 8:
+        peso_sugerido = round(peso_medio * 1.025, 1)
+    else:
+        peso_sugerido = peso_medio
+
+    return None, peso_sugerido, int(str(reps_alvo_str).split('-')[0])
+
+
+def salvar_sets_agrupados(exercicio, lista_sets):
     df_existente = get_data()
+
+    pesos = ",".join([str(s["peso"]) for s in lista_sets])
+    reps = ",".join([str(s["reps"]) for s in lista_sets])
+    rpes = ",".join([str(s["rpe"]) for s in lista_sets])
+
     novo_dado = pd.DataFrame([{
         "Data": datetime.date.today().strftime("%d/%m/%Y"),
         "Exercício": exercicio,
-        "Peso": peso,
+        "Peso": pesos,
         "Reps": reps,
-        "RPE": rpe,
-        "Notas": notas
+        "RPE": rpes,
+        "Notas": ""
     }])
+
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
     conn.update(data=df_final)
 
 # --- 5. BASE DE DADOS TREINOS (configurada para coincidir com o plano) ---
+mapa_musculos = {
+    "Supino Reto": "Peito",
+    "Supino Inclinado Halter": "Peito",
+    "Dips": "Peito",
+    "Desenvolvimento Militar": "Ombros",
+    "Desenv. Arnold": "Ombros",
+    "Elevação Lateral": "Ombros",
+    "Puxada Alta": "Costas",
+    "Remada Curvada": "Costas",
+    "Remada Baixa": "Costas",
+    "Levantamento Terra Romeno": "Posterior",
+    "Agachamento Livre": "Quadríceps",
+    "Hack Squat / Leg Press": "Quadríceps",
+    "Hip Thrust": "Glúteos",
+    "Mesa Flexora": "Posterior",
+    "Gémeos": "Panturrilha",
+    "Rosca Direta": "Bíceps",
+    "Tríceps Testa": "Tríceps",
+    "Tríceps Corda": "Tríceps"
+}
+
 treinos_base = {
-    "Segunda (Upper Força)": [
-        {"ex": "Supino Reto", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
-        {"ex": "Remada Curvada", "series": 4, "reps": "6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Desenvolvimento Militar", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Puxada Frente", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Face Pull", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Rosca Direta", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
+    "Segunda (Push Força)": [
+        {"ex": "Supino Reto", "series": 4, "reps": "4-6", "rpe": 8, "tipo": "composto"},
+        {"ex": "Desenvolvimento Militar", "series": 3, "reps": "5-6", "rpe": 8, "tipo": "composto"},
+        {"ex": "Dips", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Tríceps Corda", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"}
+    ],
+
+    "Terça (Pull Força)": [
+        {"ex": "Agachamento Livre", "series": 4, "reps": "4-6", "rpe": 8, "tipo": "composto"},
+        {"ex": "Levantamento Terra Romeno", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "composto"},
+        {"ex": "Remada Curvada", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Ab Wheel / Prancha", "series": 3, "reps": "10-15", "rpe": 7, "tipo": "core"}
+    ],
+
+    "Quinta (Push Hipertrofia)": [
+        {"ex": "Supino Inclinado Halter", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Desenv. Arnold", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Elevação Lateral", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
         {"ex": "Tríceps Testa", "series": 2, "reps": "10-12", "rpe": 8, "tipo": "isolado"}
     ],
-    "Terça (Lower Força)": [
-        {"ex": "Agachamento Livre", "series": 4, "reps": "5", "rpe": 8, "tipo": "composto"},
-        {"ex": "Leg Press", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Gémeos", "series": 4, "reps": "12", "rpe": 8, "tipo": "isolado"}
+
+    "Sexta (Pull Hipertrofia)": [
+        {"ex": "Puxada Alta", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Remada Baixa", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Face Pull", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
+        {"ex": "Rosca Direta", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "isolado"}
     ],
-    "Quinta (Upper Hipertrofia)": [
-        {"ex": "Supino Inclinado Halter", "series": 3, "reps": "10", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Puxada Lateral", "series": 4, "reps": "8-10", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Remada Baixa", "series": 3, "reps": "10", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Desenv. Arnold", "series": 3, "reps": "8", "rpe": 9, "tipo": "acessorio"},
-        {"ex": "Elevação Lateral", "series": 3, "reps": "8", "rpe": 9, "tipo": "isolado"}
-    ],
-    "Sexta (Lower Hipertrofia)": [
-        {"ex": "Hack Squat/Leg Press", "series": 4, "reps": "10", "rpe": 7, "tipo": "composto"},
-        {"ex": "Hip Thrust", "series": 3, "reps": "10", "rpe": 7, "tipo": "acessorio"},
-        {"ex": "Cadeira Extensora", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Mesa Flexora", "series": 3, "reps": "12", "rpe": 8, "tipo": "isolado"}
-    ],
-    "Sábado (Ombros/Braços)": [
-        {"ex": "Press Militar", "series": 4, "reps": "6", "rpe": 9, "tipo": "composto"},
-        {"ex": "Elevação Lateral", "series": 3, "reps": "8", "rpe": 9, "tipo": "isolado"},
-        {"ex": "Face Pull", "series": 3, "reps": "15", "rpe": 9, "tipo": "isolado"},
-        {"ex": "Rosca Direta", "series": 3, "reps": "10", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Tríceps Testa", "series": 3, "reps": "10", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Pallof Press", "series": 3, "reps": "12", "rpe": 7, "tipo": "core"}
+
+    "Sábado (Legs Hipertrofia)": [
+        {"ex": "Hack Squat / Leg Press", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "composto"},
+        {"ex": "Hip Thrust", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
+        {"ex": "Mesa Flexora", "series": 3, "reps": "10-15", "rpe": 8, "tipo": "isolado"},
+        {"ex": "Gémeos", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"}
     ]
 }
+
 
 def gerar_treino_do_dia(dia, semana):
     treino_base = treinos_base.get(dia, [])
@@ -225,10 +262,8 @@ def gerar_treino_do_dia(dia, semana):
                 novo_item["rpe"] = 9
         # Ajustes para semana 4 (deload)
         elif semana == 4:
-            novo_item["series"] = max(2, item["series"] - 1)
+            novo_item["series"] = max(2, int(item["series"] * 0.6))
             novo_item["rpe"] = 6
-            if item["reps"] == "5":
-                novo_item["reps"] = "6"
         treino_final.append(novo_item)
     return treino_final
 
@@ -295,16 +330,22 @@ with tab_treino:
                         st.write(f"Set 1: {int(sug_peso*0.5)} kg × 8-10 reps (50%)")
                         st.write(f"Set 2: {int(sug_peso*0.7)} kg × 4-5 reps (70%)")
                         st.write(f"Set 3: {int(sug_peso*0.9)} kg × 1-2 reps (90%)")
+                lista_sets = []
+
                 with st.form(key=f"form_{i}"):
-                    cc1, cc2, cc3 = st.columns([1,1,2])
-                    peso = cc1.number_input("Kg", value=sug_peso, step=2.5)
-                    reps = cc2.number_input("Reps", value=sug_reps, step=1)
-                    notas = cc3.text_input("Obs")
-                    if st.form_submit_button("Gravar"):
-                        salvar_set(nome_display, peso, reps, item['rpe'], notas)
-                        st.success("Salvo!")
+                    for s in range(item["series"]):
+                        st.markdown(f"### Série {s+1}")
+                        c1, c2 = st.columns(2)
+                        peso = c1.number_input(f"Kg S{s+1}", value=sug_peso, step=2.5, key=f"peso_{i}_{s}")
+                        reps = c2.number_input(f"Reps S{s+1}", value=sug_reps, step=1, key=f"reps_{i}_{s}")
+                        lista_sets.append({"peso": peso, "reps": reps, "rpe": item["rpe"]})
+                
+                    if st.form_submit_button("Gravar Exercício"):
+                        salvar_sets_agrupados(nome_display, lista_sets)
+                        st.success("Exercício completo salvo!")
                         time.sleep(0.5)
                         st.experimental_rerun()
+
                 tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
                 if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
                     with st.empty():
@@ -325,6 +366,20 @@ with tab_treino:
 with tab_historico:
     st.header("Grimório de Batalha 📊")
     df = get_data()
+    
+    st.subheader("📊 Volume Semanal por Grupo Muscular")
+
+    if not df.empty:
+        df_volume = df.copy()
+        df_volume["Peso"] = df_volume["Peso"].astype(str)
+        df_volume["Series"] = df_volume["Peso"].apply(lambda x: len(x.split(",")))
+    
+        df_volume["Grupo"] = df_volume["Exercício"].map(mapa_musculos)
+        volume_semana = df_volume.groupby("Grupo")["Series"].sum()
+    
+        st.bar_chart(volume_semana)
+
+    
     if not df.empty:
         lista_exercicios = sorted(df["Exercício"].unique())
         filtro_ex = st.selectbox("Escolhe um Feitiço (Exercício):", lista_exercicios)
@@ -337,3 +392,15 @@ with tab_historico:
             st.dataframe(df_chart.sort_index(ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Ainda sem registos.")
+
+    st.subheader("⚠️ Análise de Fadiga")
+
+    overtraining = volume_semana[volume_semana > 20]
+    
+    if not overtraining.empty:
+        st.warning("Possível excesso de volume em:")
+        st.write(overtraining)
+    else:
+        st.success("Volume equilibrado.")
+
+
