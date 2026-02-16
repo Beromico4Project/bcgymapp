@@ -156,6 +156,48 @@ def calcular_1rm(peso, reps):
 
     except:
         return 0
+        
+def _parse_list_floats(v):
+    """Aceita '10,20,30' ou 10 -> [10.0,20.0,30.0]"""
+    s = str(v).strip()
+    if s == "" or s.lower() == "nan":
+        return []
+    return [float(x) for x in s.split(",") if str(x).strip() != ""]
+
+def _parse_list_ints(v):
+    s = str(v).strip()
+    if s == "" or s.lower() == "nan":
+        return []
+    return [int(float(x)) for x in s.split(",") if str(x).strip() != ""]
+
+def series_count_row(row):
+    return len(_parse_list_floats(row.get("Peso", "")))
+
+def tonnage_row(row):
+    pesos = _parse_list_floats(row.get("Peso", ""))
+    reps = _parse_list_ints(row.get("Reps", ""))
+    return float(sum(p * r for p, r in zip(pesos, reps)))
+
+def avg_rpe_row(row):
+    rpes = _parse_list_floats(row.get("RPE", ""))
+    return float(sum(rpes) / len(rpes)) if rpes else 0.0
+
+def parse_data_ddmmyyyy(s):
+    # "16/02/2026" -> datetime.date
+    return datetime.datetime.strptime(str(s), "%d/%m/%Y").date()
+
+def add_calendar_week(df_in):
+    df = df_in.copy()
+    df["Data_dt"] = df["Data"].apply(parse_data_ddmmyyyy)
+    iso = df["Data_dt"].apply(lambda d: d.isocalendar())  # (year, week, weekday)
+    df["ISO_Ano"] = iso.apply(lambda t: t[0])
+    df["ISO_Semana"] = iso.apply(lambda t: t[1])
+    df["Semana_ID"] = df.apply(lambda x: f"{int(x['ISO_Ano'])}-W{int(x['ISO_Semana']):02d}", axis=1)
+    return df
+
+def best_1rm_row(row):
+    # usa a tua calcular_1rm atual (que já suporta vírgulas)
+    return float(calcular_1rm(row.get("Peso", ""), row.get("Reps", "")))
 
 # Histórico detalhado + auto-fill
 def get_historico_detalhado(exercicio, reps_alvo_str):
@@ -214,22 +256,25 @@ def salvar_sets_agrupados(exercicio, lista_sets):
 mapa_musculos = {
     "Supino Reto": "Peito",
     "Supino Inclinado Halter": "Peito",
-    "Dips": "Peito",
-    "Desenvolvimento Militar": "Ombros",
-    "Desenv. Arnold": "Ombros",
-    "Elevação Lateral": "Ombros",
-    "Puxada Alta": "Costas",
     "Remada Curvada": "Costas",
+    "Puxada Frente": "Costas",
+    "Puxada Lateral": "Costas",
     "Remada Baixa": "Costas",
-    "Levantamento Terra Romeno": "Posterior",
+    "Desenvolvimento Militar": "Ombros",
+    "Press Militar": "Ombros",
+    "Elevação Lateral": "Ombros",
+    "Face Pull": "Ombros",
     "Agachamento Livre": "Quadríceps",
-    "Hack Squat / Leg Press": "Quadríceps",
+    "Hack Squat/Leg Press": "Quadríceps",
+    "Leg Press": "Quadríceps",
     "Hip Thrust": "Glúteos",
     "Mesa Flexora": "Posterior",
+    "Levantamento Terra Romeno": "Posterior",
     "Gémeos": "Panturrilha",
     "Rosca Direta": "Bíceps",
     "Tríceps Testa": "Tríceps",
-    "Tríceps Corda": "Tríceps"
+    "Tríceps Corda": "Tríceps",
+    "Pallof Press": "Core",
 }
 
 treinos_base = {
@@ -388,32 +433,104 @@ with tab_treino:
 with tab_historico:
     st.header("Grimório de Batalha 📊")
     df = get_data()
-    
-        # --- DASHBOARD PRO: Volume por grupo muscular + Overtraining ---
-    st.subheader("📊 Volume Semanal (Séries) por Grupo Muscular")
 
     if df.empty:
         st.info("Ainda sem registos.")
     else:
-        df_volume = df.copy()
+        # ---- Preparação ----
+        dfp = add_calendar_week(df)
 
-        # Conta séries por linha (se estiver agrupado por vírgulas, conta quantos pesos existem)
-        df_volume["Series"] = df_volume["Peso"].astype(str).apply(lambda x: len(x.split(",")))
+        # filtro por semana (calendário)
+        semanas = sorted(dfp["Semana_ID"].unique())
+        semana_sel = st.selectbox("Seleciona a semana (ISO):", semanas, index=len(semanas)-1)
 
-        # Mapeia exercício -> grupo (se não existir no mapa, fica "Outro")
-        df_volume["Grupo"] = df_volume["Exercício"].map(mapa_musculos).fillna("Outro")
+        dfw = dfp[dfp["Semana_ID"] == semana_sel].copy()
+        dfw["Grupo"] = dfw["Exercício"].map(mapa_musculos).fillna("Outro")
+        dfw["Séries"] = dfw.apply(series_count_row, axis=1)
+        dfw["Tonnage"] = dfw.apply(tonnage_row, axis=1)
+        dfw["RPE_médio"] = dfw.apply(avg_rpe_row, axis=1)
+        dfw["1RM Estimado"] = dfw.apply(best_1rm_row, axis=1)
 
-        volume_semana = df_volume.groupby("Grupo")["Series"].sum().sort_values(ascending=False)
+        # ---- KPIs topo ----
+        total_series = int(dfw["Séries"].sum())
+        total_tonnage = float(dfw["Tonnage"].sum())
+        rpe_medio_semana = float(dfw["RPE_médio"].mean()) if len(dfw) else 0.0
 
-        st.bar_chart(volume_semana)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Séries na Semana", f"{total_series}")
+        c2.metric("Tonnage na Semana", f"{total_tonnage:.0f} kg")
+        c3.metric("RPE Médio (linhas)", f"{rpe_medio_semana:.1f}")
 
-        st.subheader("⚠️ Análise de Fadiga (Overtraining)")
-        overtraining = volume_semana[volume_semana > 20]
+        st.divider()
 
-        if not overtraining.empty:
-            st.warning("Possível excesso de volume em:")
-            st.write(overtraining)
+        # ---- Volume por grupo ----
+        st.subheader("📊 Séries por Grupo Muscular (semana)")
+        vol_grupo = dfw.groupby("Grupo")["Séries"].sum().sort_values(ascending=False)
+        st.bar_chart(vol_grupo)
+
+        # ---- Tonnage por grupo ----
+        st.subheader("🏋️ Tonnage por Grupo Muscular (semana)")
+        ton_grupo = dfw.groupby("Grupo")["Tonnage"].sum().sort_values(ascending=False)
+        st.bar_chart(ton_grupo)
+
+        st.divider()
+
+        # ---- Fadiga + Deload recomendação ----
+        st.subheader("⚠️ Índice de Fadiga + Deload")
+        # índice simples: tonnage normalizada + séries * rpe
+        # (não é “científico perfeito”, mas é MUITO útil para decisão)
+        fadiga = (dfw["Séries"] * dfw["RPE_médio"]).sum()
+        st.metric("Fadiga (Σ Séries × RPE)", f"{fadiga:.1f}")
+
+        over_vol = vol_grupo[vol_grupo > 20]
+        over_int = rpe_medio_semana >= 8.7
+        red_flag = (not over_vol.empty) or over_int or (fadiga >= 140)
+
+        if not over_vol.empty:
+            st.warning("Volume alto (>20 séries) em:")
+            st.write(over_vol)
+
+        if red_flag:
+            st.error("Recomendação: **DELOAD** na próxima semana (reduz ~40% volume e RPE ~6).")
         else:
-            st.success("Volume equilibrado (≤ 20 séries por grupo).")
+            st.success("Sem sinais fortes de deload. Mantém progressão.")
 
-    st.divider()
+        st.divider()
+
+        # ---- PR Detector ----
+        st.subheader("🏆 PRs (Recordes) por Exercício")
+        # calcula melhor 1RM histórico por exercício
+        df_all = dfp.copy()
+        df_all["1RM Estimado"] = df_all.apply(best_1rm_row, axis=1)
+
+        best_hist = df_all.groupby("Exercício")["1RM Estimado"].max()
+        best_week = dfw.groupby("Exercício")["1RM Estimado"].max()
+
+        prs = []
+        for ex, val_week in best_week.items():
+            val_hist = float(best_hist.get(ex, 0))
+            # PR se o melhor da semana == melhor histórico e >0
+            if val_week > 0 and abs(val_week - val_hist) < 1e-9:
+                prs.append((ex, val_week))
+
+        if prs:
+            st.success("Novos PRs detetados nesta semana:")
+            st.dataframe(pd.DataFrame(prs, columns=["Exercício", "1RM Estimado (PR)"]), hide_index=True, use_container_width=True)
+        else:
+            st.info("Sem PRs nesta semana.")
+
+        st.divider()
+
+        # ---- Progressão por exercício (gráfico) ----
+        st.subheader("📈 Progressão de Força (1RM Estimado)")
+        lista_exercicios = sorted(dfp["Exercício"].unique())
+        filtro_ex = st.selectbox("Escolhe um Exercício:", lista_exercicios)
+
+        df_chart = dfp[dfp["Exercício"] == filtro_ex].copy()
+        df_chart["1RM Estimado"] = df_chart.apply(best_1rm_row, axis=1)
+        df_chart = df_chart.sort_values("Data_dt")
+
+        st.line_chart(df_chart, x="Data_dt", y="1RM Estimado")
+
+        st.markdown("### Histórico Completo (filtrado)")
+        st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
