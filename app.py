@@ -126,82 +126,130 @@ st.markdown("""
 
 st.markdown("""
 <style>
-/* ===== SIDEBAR CONTAINER ===== */
-section[data-testid="stSidebar"] {
-  background: rgba(10, 10, 10, 0.55) !important;
-  border-right: 1px solid rgba(255, 75, 75, 0.35) !important;
-  backdrop-filter: blur(10px);
+/* =========================
+   SIDEBAR: Grimório PRO
+   ========================= */
+section[data-testid="stSidebar"]{
+  background: rgba(10,10,10,0.62) !important;
+  border-right: 1px solid rgba(255,75,75,0.35) !important;
+  backdrop-filter: blur(12px);
 }
 
-section[data-testid="stSidebar"] > div {
-  padding-top: 18px;
+section[data-testid="stSidebar"] > div{
+  padding-top: 10px !important;
 }
 
-/* ===== TÍTULOS / TEXTO ===== */
-section[data-testid="stSidebar"] h1,
-section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3 {
-  color: #FFD700 !important;
-  text-shadow: 0 0 10px rgba(255, 215, 0, 0.18);
-  letter-spacing: 0.08em;
+/* “Selo” do topo */
+.sidebar-seal{
+  position: relative;
+  padding: 14px 14px 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(20,20,20,0.75), rgba(10,10,10,0.55));
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+  margin: 8px 10px 12px 10px;
 }
 
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] span {
-  color: rgba(224,224,224,0.95) !important;
+.sidebar-seal::before{
+  content: "♣";
+  position: absolute;
+  right: 14px;
+  top: 10px;
+  font-size: 22px;
+  color: rgba(255, 215, 0, 0.85);
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.18);
 }
 
-/* ===== “CARD” PARA BLOCOS ===== */
-.sidebar-card {
-  background: rgba(20, 20, 20, 0.55);
+.sidebar-seal-title{
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  letter-spacing: .12em;
+  color: #FFD700;
+  text-shadow: 0 0 14px rgba(255, 215, 0, 0.18);
+  margin: 0;
+}
+
+.sidebar-seal-sub{
+  margin: 6px 0 0 0;
+  color: rgba(224,224,224,0.85);
+  font-size: 12px;
+}
+
+/* Cards */
+.sidebar-card{
+  background: rgba(20,20,20,0.55);
   border: 1px solid rgba(255,255,255,0.08);
-  border-left: 3px solid rgba(255, 75, 75, 0.7);
+  border-left: 3px solid rgba(255, 75, 75, 0.75);
   padding: 12px 12px;
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: 0 10px 22px rgba(0,0,0,0.35);
-  margin-bottom: 12px;
+  margin: 0 10px 12px 10px;
 }
 
-/* ===== INPUTS ===== */
+.sidebar-card h3{
+  font-family: 'Cinzel', serif;
+  color: #FFD700 !important;
+  letter-spacing: .08em;
+  margin: 0 0 6px 0;
+  text-shadow: 0 0 10px rgba(255,215,0,0.16);
+}
+
+/* Divisor “runa” */
+.rune-divider{
+  margin: 10px 0 8px 0;
+  height: 1px;
+  border: none;
+  background: linear-gradient(90deg, transparent, rgba(255,75,75,0.7), transparent);
+  position: relative;
+}
+.rune-divider::after{
+  content: "✦";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: -10px;
+  font-size: 12px;
+  color: rgba(255,215,0,0.80);
+  text-shadow: 0 0 10px rgba(255,215,0,0.20);
+  background: rgba(10,10,10,0.60);
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Inputs e selects na sidebar */
 section[data-testid="stSidebar"] input,
-section[data-testid="stSidebar"] textarea {
+section[data-testid="stSidebar"] textarea{
   background: rgba(0,0,0,0.35) !important;
   border: 1px solid rgba(255,255,255,0.12) !important;
   color: #fff !important;
-  border-radius: 10px !important;
+  border-radius: 12px !important;
 }
 
-/* Selectbox */
-section[data-testid="stSidebar"] [data-baseweb="select"] > div {
+section[data-testid="stSidebar"] [data-baseweb="select"] > div{
   background: rgba(0,0,0,0.35) !important;
   border: 1px solid rgba(255,255,255,0.12) !important;
-  border-radius: 10px !important;
+  border-radius: 12px !important;
 }
 
-/* Radio / Checkbox container */
-section[data-testid="stSidebar"] div[role="radiogroup"],
-section[data-testid="stSidebar"] label[data-testid="stWidgetLabel"] {
+section[data-testid="stSidebar"] div[role="radiogroup"]{
   background: rgba(0,0,0,0.18);
   border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 10px;
 }
 
-/* Divider (linha) */
-section[data-testid="stSidebar"] hr {
-  border: none;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,75,75,0.6), transparent);
-  margin: 14px 0;
+/* Remove hr default */
+section[data-testid="stSidebar"] hr{
+  border: none !important;
+  height: 0 !important;
+  margin: 0 !important;
 }
 
-/* ===== SCROLLBAR ===== */
-section[data-testid="stSidebar"] ::-webkit-scrollbar {
-  width: 10px;
-}
+/* Scrollbar */
+section[data-testid="stSidebar"] ::-webkit-scrollbar { width: 10px; }
 section[data-testid="stSidebar"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 75, 75, 0.35);
+  background: rgba(255,75,75,0.35);
   border-radius: 999px;
 }
 section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
@@ -209,7 +257,6 @@ section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
 }
 </style>
 """, unsafe_allow_html=True)
-
 
 # --- 4. CONEXÃO E DADOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -512,20 +559,32 @@ def gerar_treino_do_dia(dia, semana):
     return treino_final
 
 # --- 6. INTERFACE SIDEBAR ---
+st.sidebar.markdown("""
+<div class="sidebar-seal">
+  <h2 class="sidebar-seal-title">♣ GRIMÓRIO</h2>
+  <p class="sidebar-seal-sub">Disciplina • Força • Hipertrofia</p>
+</div>
+""", unsafe_allow_html=True)
+
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.title("♣️Grimório♣️")
+st.sidebar.markdown("<h3>⚔️ Nível de Poder</h3>", unsafe_allow_html=True)
+
 semana = st.sidebar.radio(
     "Nível de Poder:",
     [1, 2, 3, 4],
     format_func=lambda x: f"Semana {x}: {'Base' if x<=2 else 'MODO DEMÓNIO (Limite)' if x==3 else 'Deload'}"
 )
+
+st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("### ⚠️ Estado do Corpo")
-dor_joelho = st.sidebar.checkbox("Dor no Joelho")
-dor_costas = st.sidebar.checkbox("Dor nas Costas")
+st.sidebar.markdown("<h3>⚠️ Estado do Corpo</h3>", unsafe_allow_html=True)
+
+dor_joelho = st.sidebar.checkbox("⚠️ Dor no Joelho")
+dor_costas = st.sidebar.checkbox("⚠️ Dor nas Costas")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 def adaptar_nome(nome):
@@ -827,6 +886,7 @@ with tab_historico:
 
         st.markdown("### Histórico Completo (filtrado)")
         st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
+
 
 
 
