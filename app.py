@@ -251,11 +251,15 @@ section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 SCHEMA_COLUMNS = [
-    "Data","Perfil","Dia","Bloco",
+    "Data","Perfil","Dia","Bloco","Plano_ID",
     "Exercício","Peso","Reps","RIR","Notas",
     "Aquecimento","Mobilidade","Cardio","Tendões","Core","Cooldown",
     "XP","Streak","Checklist_OK"
 ]
+
+PROFILES_WORKSHEET = "Perfis"
+PROFILES_COLUMNS = ["Perfil","Criado_em","Plano_ID","Ativo"]
+PROFILES_BACKUP_PATH = "offline_profiles.csv"
 
 
 BACKUP_PATH = "offline_backup.csv"
@@ -285,6 +289,75 @@ def _load_offline_backup() -> pd.DataFrame:
         except Exception:
             return pd.DataFrame(columns=SCHEMA_COLUMNS)
     return pd.DataFrame(columns=SCHEMA_COLUMNS)
+
+
+def _save_offline_profiles(df: pd.DataFrame):
+    try:
+        df.to_csv(PROFILES_BACKUP_PATH, index=False, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+def _load_offline_profiles() -> pd.DataFrame:
+    if os.path.exists(PROFILES_BACKUP_PATH):
+        try:
+            df = pd.read_csv(PROFILES_BACKUP_PATH, dtype=str, keep_default_na=False)
+            for c in PROFILES_COLUMNS:
+                if c not in df.columns:
+                    df[c] = None
+            return df[PROFILES_COLUMNS]
+        except Exception:
+            return pd.DataFrame(columns=PROFILES_COLUMNS)
+    return pd.DataFrame(columns=PROFILES_COLUMNS)
+
+def _conn_read_worksheet(worksheet: str) -> pd.DataFrame:
+    """Tenta ler uma worksheet específica. Se a lib não suportar worksheet=, levanta."""
+    return _retry(lambda: conn.read(ttl="0", worksheet=worksheet), tries=2)
+
+def _conn_update_worksheet(df: pd.DataFrame, worksheet: str):
+    """Tenta atualizar uma worksheet específica. Se a lib não suportar worksheet=, levanta."""
+    return _retry(lambda: conn.update(data=df, worksheet=worksheet), tries=2)
+
+def get_profiles_df():
+    """Perfis ficam na worksheet 'Perfis'. Se não existir / sem permissão, faz fallback."""
+    try:
+        dfp = _conn_read_worksheet(PROFILES_WORKSHEET)
+        if dfp is None or dfp.empty:
+            dfp = pd.DataFrame(columns=PROFILES_COLUMNS)
+        for c in PROFILES_COLUMNS:
+            if c not in dfp.columns:
+                dfp[c] = None
+        dfp = dfp[PROFILES_COLUMNS].copy()
+        # limpa duplicados / vazios
+        dfp["Perfil"] = dfp["Perfil"].astype(str).str.strip()
+        dfp = dfp[dfp["Perfil"] != ""]
+        dfp = dfp.drop_duplicates(subset=["Perfil"], keep="last")
+        _save_offline_profiles(dfp)
+        return dfp, True, ""
+    except Exception as e:
+        # fallback offline
+        dfp_off = _load_offline_profiles()
+        if dfp_off is not None and not dfp_off.empty:
+            return dfp_off, False, f"{e}"
+        return pd.DataFrame(columns=PROFILES_COLUMNS), False, f"{e}"
+
+def save_profiles_df(dfp: pd.DataFrame):
+    try:
+        _conn_update_worksheet(dfp[PROFILES_COLUMNS], PROFILES_WORKSHEET)
+        _save_offline_profiles(dfp[PROFILES_COLUMNS])
+        return True, ""
+    except Exception as e:
+        _save_offline_profiles(dfp[PROFILES_COLUMNS])
+        return False, str(e)
+
+def get_plan_id_for_profile(perfil: str, dfp: pd.DataFrame):
+    if dfp is not None and not dfp.empty:
+        row = dfp[dfp["Perfil"].astype(str) == str(perfil)]
+        if not row.empty:
+            pid = str(row.iloc[0].get("Plano_ID", "")).strip()
+            if pid:
+                return pid
+    return "Base"
 
 def _retry(fn, tries=3):
     last = None
@@ -540,6 +613,7 @@ def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justif
         "Perfil": str(perfil),
         "Dia": str(dia),
         "Bloco": str(bloco),
+        "Plano_ID": str(st.session_state.get("plano_id_sel","Base")),
         "Exercício": str(exercicio),
         "Peso": pesos,
         "Reps": reps,
@@ -700,8 +774,11 @@ treinos_base = {
     },
 }
 
-def gerar_treino_do_dia(dia, week):
-    cfg = treinos_base.get(dia, None)
+PLANOS = {"Base": treinos_base}
+
+def gerar_treino_do_dia(dia, week, treinos_dict=None):
+    treinos_dict = treinos_dict or treinos_base
+    cfg = treinos_dict.get(dia, None)
     if not cfg:
         return {"bloco":"—","sessao":"","protocolos":{}, "exercicios":[]}
     bloco = cfg["bloco"]
@@ -733,49 +810,88 @@ st.sidebar.markdown("""
 df_all = get_data()
 
 # PERFIL
+def _reset_daily_state():
+    """Reseta checklists e inputs do dia quando muda Perfil/Semana/Dia (evita checks marcados por defeito)."""
+    prefixes = ("chk_", "peso_", "reps_", "rir_", "rest_")
+    for k in list(st.session_state.keys()):
+        if any(str(k).startswith(p) for p in prefixes):
+            try:
+                del st.session_state[k]
+            except Exception:
+                pass
+
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>👤 Perfil</h3>", unsafe_allow_html=True)
-perfis = sorted([p for p in df_all["Perfil"].dropna().astype(str).unique().tolist() if p.strip() != ""])
+
+df_profiles, profiles_ok, profiles_err = get_profiles_df()
+
+# lista de perfis (preferencialmente da worksheet Perfis)
+perfis = []
+if df_profiles is not None and not df_profiles.empty:
+    perfis = sorted(df_profiles["Perfil"].dropna().astype(str).str.strip().unique().tolist())
+else:
+    # fallback: inferir do histórico (sem criar linhas fake)
+    perfis = sorted([p for p in df_all["Perfil"].dropna().astype(str).unique().tolist() if p.strip() != ""])
+    if not profiles_ok:
+        st.sidebar.caption("⚠️ Para guardar perfis sem sujar o histórico, cria uma aba chamada **Perfis** na tua Google Sheet (e partilha com o service account).")
+
 if not perfis:
     perfis = ["Principal"]
-perfil_sel = st.sidebar.selectbox("Seleciona o perfil:", perfis, index=0, key="perfil_sel")
+
+perfil_sel = st.sidebar.selectbox(
+    "Seleciona o perfil:",
+    perfis,
+    index=0,
+    key="perfil_sel",
+    on_change=_reset_daily_state
+)
+
+# plano do perfil (preparado para ter planos diferentes no futuro)
+plano_id_sel = get_plan_id_for_profile(perfil_sel, df_profiles) if df_profiles is not None else "Base"
+if plano_id_sel not in PLANOS:
+    plano_id_sel = "Base"
+st.session_state["plano_id_sel"] = plano_id_sel
+st.sidebar.caption(f"📘 Plano: **{plano_id_sel}**")
 
 with st.sidebar.expander("➕ Criar novo perfil"):
     novo_perfil = st.text_input("Nome do perfil", "")
     if st.button("Criar Perfil"):
         np = str(novo_perfil).strip()
-        if np:
-            dummy = pd.DataFrame([{
-                "Data": datetime.date.today().strftime("%d/%m/%Y"),
-                "Perfil": np,
-                "Dia": "Setup",
-                "Bloco": "Setup",
-                "Exercício": "Setup",
-                "Peso": "",
-                "Reps": "",
-                "RIR": "",
-                "Notas": "perfil criado",
-                "Aquecimento": False,
-                "Mobilidade": False,
-                "Cardio": False,
-                "Tendões": False,
-                "Core": False,
-                "Cooldown": False,
-                "XP": 0,
-                "Streak": 0,
-                "Checklist_OK": False,
-            }])
-            df_new = pd.concat([df_all, dummy], ignore_index=True)
-            ok_p, err_p = safe_update_sheet(df_new)
-            if ok_p:
-                st.success("Perfil criado!")
-            else:
-                st.error("Não consegui criar o perfil na Google Sheet. Guardei localmente (offline_backup.csv).")
-                st.code(err_p)
-            time.sleep(0.6)
-            st.rerun()
-        else:
+        if not np:
             st.warning("Escreve um nome.")
+        elif np in perfis:
+            st.warning("Esse perfil já existe.")
+        else:
+            # só grava em 'Perfis' (sem linha Setup no histórico)
+            dfp_new = df_profiles.copy() if df_profiles is not None else pd.DataFrame(columns=PROFILES_COLUMNS)
+            if dfp_new is None or dfp_new.empty:
+                dfp_new = pd.DataFrame(columns=PROFILES_COLUMNS)
+
+            hoje_iso = datetime.date.today().strftime("%Y-%m-%d")
+            novo = pd.DataFrame([{
+                "Perfil": np,
+                "Criado_em": hoje_iso,
+                "Plano_ID": "Base",
+                "Ativo": "true",
+            }])
+
+            dfp_new = pd.concat([dfp_new, novo], ignore_index=True)
+            for c in PROFILES_COLUMNS:
+                if c not in dfp_new.columns:
+                    dfp_new[c] = None
+            dfp_new = dfp_new[PROFILES_COLUMNS].copy()
+
+            ok_p, err_p = save_profiles_df(dfp_new)
+            if ok_p:
+                st.success("Perfil criado (na aba Perfis)!")
+                time.sleep(0.6)
+                st.rerun()
+            else:
+                sa = _service_account_email()
+                st.error("Não consegui gravar o perfil na Google Sheet (aba 'Perfis').")
+                if sa:
+                    st.caption(f"Partilha a Sheet com: {sa} (Editor) e cria uma aba chamada **Perfis**.")
+                st.code(err_p)
 
 
 # --- Google Sheets: estado + backup ---
@@ -809,13 +925,16 @@ st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # SEMANA (8)
 st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
-semana = st.sidebar.radio("Semana do ciclo:", list(range(1,9)), format_func=semana_label, index=0)
+semana = st.sidebar.radio("Semana do ciclo:", list(range(1,9)), format_func=semana_label, index=0, key="semana_sel", on_change=_reset_daily_state)
 
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # DIA
-dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()), index=0)
-st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_base[dia]['sessao']}**")
+# Plano ativo (preparado para suportar planos diferentes por perfil no futuro)
+treinos_dict = PLANOS.get(st.session_state.get("plano_id_sel", "Base"), treinos_base)
+
+dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_dict.keys()), index=0, key="dia_sel", on_change=_reset_daily_state)
+st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # FLAGS
@@ -843,7 +962,7 @@ st.title("♣️BLACK CLOVER Workout♣️")
 st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
-tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📊 Histórico"])
+tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Histórico", "🏅 Ranking"])
 
 with tab_treino:
     with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
@@ -857,7 +976,7 @@ with tab_treino:
 Dor articular pontiaguda = troca variação no dia.
 """)
 
-    cfg = gerar_treino_do_dia(dia, semana)
+    cfg = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict)
     bloco = cfg["bloco"]
     prot = cfg["protocolos"]
 
@@ -873,14 +992,14 @@ Dor articular pontiaguda = troca variação no dia.
     }
 
     c1,c2,c3 = st.columns(3)
-    req["aquecimento"] = c1.checkbox("🔥 Aquecimento", value=True)
-    req["mobilidade"] = c2.checkbox("🧘 Mobilidade", value=True)
-    req["cardio"] = c3.checkbox("🏃 Cardio Zona 2", value=req["cardio_req"], disabled=(not req["cardio_req"]))
+    req["aquecimento"] = c1.checkbox("🔥 Aquecimento", value=False, key="chk_aquecimento")
+    req["mobilidade"] = c2.checkbox("🧘 Mobilidade", value=False, key="chk_mobilidade")
+    req["cardio"] = c3.checkbox("🏃 Cardio Zona 2", value=False, key="chk_cardio", disabled=(not req["cardio_req"]))
 
     c4,c5,c6 = st.columns(3)
-    req["tendoes"] = c4.checkbox("🦾 Tendões", value=req["tendoes_req"], disabled=(not req["tendoes_req"]))
-    req["core"] = c5.checkbox("🧱 Core escoliose", value=req["core_req"], disabled=(not req["core_req"]))
-    req["cooldown"] = c6.checkbox("😮‍💨 Cool-down", value=True)
+    req["tendoes"] = c4.checkbox("🦾 Tendões", value=False, key="chk_tendoes", disabled=(not req["tendoes_req"]))
+    req["core"] = c5.checkbox("🧱 Core escoliose", value=False, key="chk_core", disabled=(not req["core_req"]))
+    req["cooldown"] = c6.checkbox("😮‍💨 Cool-down", value=False, key="chk_cooldown")
 
     justificativa = ""
     xp_pre, ok_checklist = checklist_xp(req, justificativa="")
@@ -1045,6 +1164,38 @@ with tab_historico:
     if dfp.empty:
         st.info("Ainda sem registos neste perfil.")
     else:
+        # Filtros (Dia / Bloco / Datas)
+        f1,f2,f3 = st.columns(3)
+        dias_opts = sorted(dfp["Dia"].dropna().astype(str).unique().tolist())
+        blocos_opts = sorted(dfp["Bloco"].dropna().astype(str).unique().tolist())
+
+        dias_filtrados = f1.multiselect("Filtrar por Dia", dias_opts, default=[])
+        blocos_filtrados = f2.multiselect("Filtrar por Bloco", blocos_opts, default=[])
+
+        datas_dt = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dropna()
+        if not datas_dt.empty:
+            dmin = datas_dt.min().date()
+            dmax = datas_dt.max().date()
+            intervalo = f3.date_input("Filtrar por datas", value=(dmin, dmax))
+            try:
+                if isinstance(intervalo, (list, tuple)) and len(intervalo) == 2:
+                    di, df_ = intervalo[0], intervalo[1]
+                    dfp["_Data_dt"] = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce")
+                    dfp = dfp.dropna(subset=["_Data_dt"])
+                    dfp = dfp[(dfp["_Data_dt"].dt.date >= di) & (dfp["_Data_dt"].dt.date <= df_)]
+                    dfp = dfp.drop(columns=["_Data_dt"])
+            except Exception:
+                pass
+
+        if dias_filtrados:
+            dfp = dfp[dfp["Dia"].astype(str).isin([str(x) for x in dias_filtrados])]
+        if blocos_filtrados:
+            dfp = dfp[dfp["Bloco"].astype(str).isin([str(x) for x in blocos_filtrados])]
+
+        if dfp.empty:
+            st.info("Sem registos com esses filtros.")
+            st.stop()
+
         xp_total = int(pd.to_numeric(dfp["XP"], errors="coerce").fillna(0).sum())
         streak_max = int(pd.to_numeric(dfp["Streak"], errors="coerce").fillna(0).max())
         checklist_rate = float(dfp["Checklist_OK"].apply(_to_bool).mean())
@@ -1128,3 +1279,63 @@ with tab_historico:
                 ],
                 use_container_width=True, hide_index=True
             )
+
+
+with tab_ranking:
+    st.header("Top Ranking dos Perfis 🏅")
+
+    df_rank_all = get_data().copy()
+    # ignora linhas de setup/ruído
+    df_rank_all = df_rank_all[df_rank_all["Bloco"].astype(str).str.lower() != "setup"]
+    df_rank_all = df_rank_all[df_rank_all["Dia"].astype(str).str.lower() != "setup"]
+    df_rank_all = df_rank_all[df_rank_all["Exercício"].astype(str).str.lower() != "setup"]
+
+    if df_rank_all.empty:
+        st.info("Ainda não há registos suficientes para criar ranking.")
+    else:
+        rows = []
+        for perfil, d in df_rank_all.groupby("Perfil"):
+            d = d.copy()
+            xp_total = int(pd.to_numeric(d["XP"], errors="coerce").fillna(0).sum())
+            streak_max = int(pd.to_numeric(d["Streak"], errors="coerce").fillna(0).max()) if "Streak" in d.columns else 0
+            checklist_rate = float(d["Checklist_OK"].apply(_to_bool).mean()) if "Checklist_OK" in d.columns else 0.0
+            sessoes = int(d[["Data","Dia"]].drop_duplicates().shape[0])
+
+            tier, subt = calcular_rank(xp_total, streak_max, checklist_rate)
+            tier_ord = {"💎 PLATINA": 4, "🥇 OURO": 3, "🥈 PRATA": 2, "🥉 BRONZE": 1}.get(tier, 0)
+
+            score = float(xp_total) + float(streak_max)*50.0 + float(checklist_rate)*500.0 + float(sessoes)*10.0
+
+            rows.append({
+                "Perfil": str(perfil),
+                "Tier": tier,
+                "Score": round(score, 1),
+                "XP Total": xp_total,
+                "Streak Máx": streak_max,
+                "Checklist %": round(checklist_rate*100, 0),
+                "Sessões": sessoes,
+                "_tier_ord": tier_ord
+            })
+
+        rank_df = pd.DataFrame(rows)
+        rank_df = rank_df.sort_values(["_tier_ord", "Score", "XP Total"], ascending=[False, False, False]).drop(columns=["_tier_ord"])
+        rank_df.insert(0, "Posição", range(1, len(rank_df)+1))
+
+        # pódio
+        top3 = rank_df.head(3)
+        if not top3.empty:
+            p1,p2,p3 = st.columns(3)
+            if len(top3) >= 1:
+                p1.metric("🥇 #1", top3.iloc[0]["Perfil"], f"{top3.iloc[0]['Tier']} • {top3.iloc[0]['XP Total']} XP")
+            if len(top3) >= 2:
+                p2.metric("🥈 #2", top3.iloc[1]["Perfil"], f"{top3.iloc[1]['Tier']} • {top3.iloc[1]['XP Total']} XP")
+            if len(top3) >= 3:
+                p3.metric("🥉 #3", top3.iloc[2]["Perfil"], f"{top3.iloc[2]['Tier']} • {top3.iloc[2]['XP Total']} XP")
+
+        st.dataframe(
+            rank_df[["Posição","Perfil","Tier","Score","XP Total","Streak Máx","Checklist %","Sessões"]],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.caption("Score = XP + (Streak×50) + (Checklist×500) + (Sessões×10). Isto é só para ranking — não muda o teu treino.")
