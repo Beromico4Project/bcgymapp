@@ -1059,6 +1059,9 @@ with tab_historico:
         st.divider()
 
         dfw_all = add_calendar_week(dfp)
+        if not dfw_all.empty:
+            # coluna derivada necessária para PRs (evita KeyError)
+            dfw_all["1RM Estimado"] = dfw_all.apply(best_1rm_row, axis=1)
         if dfw_all.empty:
             st.warning("Há registos, mas sem datas válidas (esperado: dd/mm/aaaa).")
         else:
