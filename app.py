@@ -5,6 +5,7 @@ import pandas as pd
 import datetime
 import time
 import base64
+import os
 
 # =========================================================
 # ♣ BLACK CLOVER WORKOUT — RIR Edition (8 semanas + perfis)
@@ -256,16 +257,77 @@ SCHEMA_COLUMNS = [
     "XP","Streak","Checklist_OK"
 ]
 
+
+BACKUP_PATH = "offline_backup.csv"
+
+def _service_account_email():
+    try:
+        return st.secrets.get("connections", {}).get("gsheets", {}).get("credentials", {}).get("client_email", None)
+    except Exception:
+        return None
+
+def _save_offline_backup(df: pd.DataFrame):
+    try:
+        df.to_csv(BACKUP_PATH, index=False, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+def _load_offline_backup() -> pd.DataFrame:
+    if os.path.exists(BACKUP_PATH):
+        try:
+            df = pd.read_csv(BACKUP_PATH, dtype=str, keep_default_na=False)
+            # garantir schema
+            for c in SCHEMA_COLUMNS:
+                if c not in df.columns:
+                    df[c] = None
+            return df[SCHEMA_COLUMNS]
+        except Exception:
+            return pd.DataFrame(columns=SCHEMA_COLUMNS)
+    return pd.DataFrame(columns=SCHEMA_COLUMNS)
+
+def _retry(fn, tries=3):
+    last = None
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            # backoff simples (rate limit / falhas transitórias)
+            time.sleep(0.6 * (2 ** i))
+    raise last
+
+def safe_read_sheet() -> pd.DataFrame:
+    try:
+        df = _retry(lambda: conn.read(ttl="0"), tries=2)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=SCHEMA_COLUMNS)
+        return df
+    except Exception:
+        # fallback offline (evita app morrer)
+        return _load_offline_backup()
+
+def safe_update_sheet(df: pd.DataFrame):
+    # tenta gravar na Sheet; se falhar, guarda backup local e devolve erro
+    try:
+        _retry(lambda: conn.update(data=normalize_for_save(df)), tries=2)
+        # espelha também localmente para não perder histórico se a Sheet cair depois
+        _save_offline_backup(normalize_for_save(df))
+        return True, ""
+    except Exception as e:
+        _save_offline_backup(normalize_for_save(df))
+        return False, str(e)
+
+
 def _to_bool(x):
     s = str(x).strip().lower()
     return s in ["true","1","yes","y","sim"]
 
 def get_data():
-    """Lê a sheet e garante schema (migração RPE->RIR e Alongamento->Mobilidade)."""
-    try:
-        df = conn.read(ttl="0")
-    except Exception:
-        df = pd.DataFrame(columns=SCHEMA_COLUMNS)
+    """Lê a sheet e garante schema (migração RPE->RIR e Alongamento->Mobilidade).
+    Se a Google Sheet falhar, usa um backup local (offline_backup.csv).
+    """
+    df = safe_read_sheet()
 
     if df is None or df.empty:
         df = pd.DataFrame(columns=SCHEMA_COLUMNS)
@@ -495,7 +557,16 @@ def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justif
     }])
 
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
-    conn.update(data=normalize_for_save(df_final))
+    ok_save, err = safe_update_sheet(df_final)
+    if not ok_save:
+        sa = _service_account_email()
+        msg = "❌ Não consegui gravar na Google Sheet. Vou guardar localmente (offline_backup.csv) para não perder o treino."
+        if sa:
+            msg += f"\n\n✅ Confere se a Sheet está partilhada com o service account: {sa}"
+        st.error(msg)
+        st.code(err)
+        return False
+    return True
 
 # --- PLANO (8 semanas) ---
 def semana_label(w):
@@ -695,13 +766,45 @@ with st.sidebar.expander("➕ Criar novo perfil"):
                 "Checklist_OK": False,
             }])
             df_new = pd.concat([df_all, dummy], ignore_index=True)
-            conn.update(data=normalize_for_save(df_new))
-            st.success("Perfil criado!")
+            ok_p, err_p = safe_update_sheet(df_new)
+            if ok_p:
+                st.success("Perfil criado!")
+            else:
+                st.error("Não consegui criar o perfil na Google Sheet. Guardei localmente (offline_backup.csv).")
+                st.code(err_p)
             time.sleep(0.6)
             st.rerun()
         else:
             st.warning("Escreve um nome.")
 
+
+# --- Google Sheets: estado + backup ---
+st.sidebar.subheader("📄 Google Sheets")
+_ok_conn, _err_conn = True, ""
+try:
+    _ = conn.read(ttl="0")
+except Exception as _e:
+    _ok_conn, _err_conn = False, str(_e)
+
+if _ok_conn:
+    st.sidebar.success("Conectado ✅")
+else:
+    st.sidebar.error("Sem acesso ❌")
+    sa = _service_account_email()
+    if sa:
+        st.sidebar.caption(f"Partilha a Sheet com: {sa}")
+    if _err_conn:
+        st.sidebar.code(_err_conn)
+
+bk_df = _load_offline_backup()
+if bk_df is not None and not bk_df.empty:
+    st.sidebar.download_button(
+        "⬇️ Download backup (CSV)",
+        data=bk_df.to_csv(index=False).encode("utf-8"),
+        file_name="offline_backup.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # SEMANA (8)
@@ -887,10 +990,11 @@ Dor articular pontiaguda = troca variação no dia.
                         lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
                     if st.form_submit_button("Gravar Exercício"):
-                        salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
-                        st.success("Exercício gravado!")
-                        time.sleep(0.4)
-                        st.rerun()
+                        ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
+                        if ok_gravou:
+                            st.success("Exercício gravado!")
+                            time.sleep(0.4)
+                            st.rerun()
 
                 rest_s = st.slider("⏱️ Descanso (segundos)", min_value=30, max_value=300,
                                    value=int(item["descanso_s"]), step=15, key=f"rest_{i}")
