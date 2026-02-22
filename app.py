@@ -1,10 +1,14 @@
+
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import time
 import base64
-import os
+
+# =========================================================
+# ♣ BLACK CLOVER WORKOUT — RIR Edition (8 semanas + perfis)
+# =========================================================
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
@@ -15,7 +19,7 @@ def get_base64(bin_file):
         with open(bin_file, 'rb') as f:
             data = f.read()
         return base64.b64encode(data).decode()
-    except:
+    except Exception:
         return None
 
 def set_background(png_file):
@@ -61,7 +65,7 @@ st.markdown("""
         color: #E0E0E0;
     }
     h1, h2, h3 {
-        color: #FF4B4B !important; 
+        color: #FF4B4B !important;
         font-family: 'Cinzel', serif !important;
         text-shadow: 2px 2px 4px #000;
         text-transform: uppercase;
@@ -134,10 +138,7 @@ section[data-testid="stSidebar"]{
   border-right: 1px solid rgba(255,75,75,0.35) !important;
   backdrop-filter: blur(12px);
 }
-
-section[data-testid="stSidebar"] > div{
-  padding-top: 10px !important;
-}
+section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
 
 /* “Selo” do topo */
 .sidebar-seal{
@@ -149,7 +150,6 @@ section[data-testid="stSidebar"] > div{
   box-shadow: 0 14px 30px rgba(0,0,0,0.35);
   margin: 8px 10px 12px 10px;
 }
-
 .sidebar-seal::before{
   content: "♣";
   position: absolute;
@@ -159,7 +159,6 @@ section[data-testid="stSidebar"] > div{
   color: rgba(255, 215, 0, 0.85);
   text-shadow: 0 0 12px rgba(255, 215, 0, 0.18);
 }
-
 .sidebar-seal-title{
   font-family: 'Cinzel', serif;
   font-weight: 900;
@@ -168,7 +167,6 @@ section[data-testid="stSidebar"] > div{
   text-shadow: 0 0 14px rgba(255, 215, 0, 0.18);
   margin: 0;
 }
-
 .sidebar-seal-sub{
   margin: 6px 0 0 0;
   color: rgba(224,224,224,0.85);
@@ -185,7 +183,6 @@ section[data-testid="stSidebar"] > div{
   box-shadow: 0 10px 22px rgba(0,0,0,0.35);
   margin: 0 10px 12px 10px;
 }
-
 .sidebar-card h3{
   font-family: 'Cinzel', serif;
   color: #FFD700 !important;
@@ -225,25 +222,16 @@ section[data-testid="stSidebar"] textarea{
   color: #fff !important;
   border-radius: 12px !important;
 }
-
 section[data-testid="stSidebar"] [data-baseweb="select"] > div{
   background: rgba(0,0,0,0.35) !important;
   border: 1px solid rgba(255,255,255,0.12) !important;
   border-radius: 12px !important;
 }
-
 section[data-testid="stSidebar"] div[role="radiogroup"]{
   background: rgba(0,0,0,0.18);
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 14px;
   padding: 10px;
-}
-
-/* Remove hr default */
-section[data-testid="stSidebar"] hr{
-  border: none !important;
-  height: 0 !important;
-  margin: 0 !important;
 }
 
 /* Scrollbar */
@@ -261,69 +249,158 @@ section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
 # --- 4. CONEXÃO E DADOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+SCHEMA_COLUMNS = [
+    "Data","Perfil","Dia","Bloco",
+    "Exercício","Peso","Reps","RIR","Notas",
+    "Aquecimento","Mobilidade","Cardio","Tendões","Core","Cooldown",
+    "XP","Streak","Checklist_OK"
+]
+
+def _to_bool(x):
+    s = str(x).strip().lower()
+    return s in ["true","1","yes","y","sim"]
+
 def get_data():
+    """Lê a sheet e garante schema (migração RPE->RIR e Alongamento->Mobilidade)."""
     try:
-        return conn.read(ttl="0")  # ttl=0 for fresh read
-    except:
-        return pd.DataFrame(columns=[
-            "Data","Exercício","Peso","Reps","RPE","Notas",
-            "Aquecimento","Alongamento","Cardio","XP","Streak","Checklist_OK"])
+        df = conn.read(ttl="0")
+    except Exception:
+        df = pd.DataFrame(columns=SCHEMA_COLUMNS)
 
+    if df is None or df.empty:
+        df = pd.DataFrame(columns=SCHEMA_COLUMNS)
 
-def checklist_xp(aquecimento: bool, alongamento: bool, cardio: bool, justificativa: str = ""):
-    xp = 0
-    xp += 20 if aquecimento else 0
-    xp += 20 if alongamento else 0
-    xp += 20 if cardio else 0
+    if "RPE" in df.columns and "RIR" not in df.columns:
+        df = df.rename(columns={"RPE":"RIR"})
+    if "Alongamento" in df.columns and "Mobilidade" not in df.columns:
+        df = df.rename(columns={"Alongamento":"Mobilidade"})
 
-    ok = aquecimento and alongamento and cardio
+    for c in SCHEMA_COLUMNS:
+        if c not in df.columns:
+            df[c] = None
 
-    justificativa_ok = len(str(justificativa).strip()) >= 8
+    return df[SCHEMA_COLUMNS]
 
-    # bónus (disciplina)
-    if ok:
-        xp += 20
-    elif justificativa_ok:
-        xp += 10  # “coach credit”: não fez tudo, mas explicou
+def normalize_for_save(df):
+    for c in SCHEMA_COLUMNS:
+        if c not in df.columns:
+            df[c] = None
+    return df[SCHEMA_COLUMNS]
 
-    return xp, ok
-
-def get_last_streak(df: pd.DataFrame):
-    # streak = dias consecutivos com checklist OK
-    if df.empty or "Checklist_OK" not in df.columns or "Data" not in df.columns:
-        return 0
-
-    df2 = df.copy()
-    df2 = df2[df2["Checklist_OK"].astype(str).str.lower().isin(["true", "1", "yes"])]
-    if df2.empty:
-        return 0
-
-    # datas únicas (dd/mm/yyyy)
-    datas = sorted({str(x) for x in df2["Data"].dropna().tolist()})
-    datas_dt = []
-    for s in datas:
+def _parse_list_floats(v):
+    s = str(v).strip()
+    if s == "" or s.lower() in ["nan","none"]:
+        return []
+    out = []
+    for x in s.split(","):
+        x = str(x).strip()
+        if x == "":
+            continue
         try:
-            datas_dt.append(datetime.datetime.strptime(s, "%d/%m/%Y").date())
-        except:
-            pass
-    if not datas_dt:
-        return 0
+            out.append(float(x))
+        except Exception:
+            try:
+                out.append(float(x.replace("kg","").strip()))
+            except Exception:
+                pass
+    return out
 
-    datas_dt = sorted(set(datas_dt))
+def _parse_list_ints(v):
+    s = str(v).strip()
+    if s == "" or s.lower() in ["nan","none"]:
+        return []
+    out = []
+    for x in s.split(","):
+        x = str(x).strip()
+        if x == "":
+            continue
+        try:
+            out.append(int(float(x)))
+        except Exception:
+            pass
+    return out
+
+def series_count_row(row):
+    return len(_parse_list_floats(row.get("Peso","")))
+
+def tonnage_row(row):
+    pesos = _parse_list_floats(row.get("Peso",""))
+    reps = _parse_list_ints(row.get("Reps",""))
+    return float(sum(p*r for p,r in zip(pesos,reps)))
+
+def avg_rir_row(row):
+    rirs = _parse_list_floats(row.get("RIR",""))
+    return float(sum(rirs)/len(rirs)) if rirs else 0.0
+
+def calcular_1rm(peso, reps):
+    pesos = _parse_list_floats(peso)
+    repeticoes = _parse_list_ints(reps)
+    vals = []
+    for p,r in zip(pesos,repeticoes):
+        if r <= 0:
+            continue
+        if r == 1:
+            vals.append(p)
+        else:
+            vals.append(p * (1 + (r/30)))
+    return round(max(vals), 1) if vals else 0.0
+
+def best_1rm_row(row):
+    return float(calcular_1rm(row.get("Peso",""), row.get("Reps","")))
+
+def add_calendar_week(df_in):
+    df = df_in.copy()
+    df["Data_dt"] = pd.to_datetime(df["Data"], dayfirst=True, errors="coerce")
+    df = df.dropna(subset=["Data_dt"])
+    iso = df["Data_dt"].dt.isocalendar()
+    df["ISO_Ano"] = iso["year"].astype(int)
+    df["ISO_Semana"] = iso["week"].astype(int)
+    df["Semana_ID"] = df.apply(lambda x: f"{int(x['ISO_Ano'])}-W{int(x['ISO_Semana']):02d}", axis=1)
+    return df
+
+def checklist_xp(req, justificativa=""):
+    """req tem chaves: aquecimento,mobilidade,cardio,tendoes,core,cooldown e *_req"""
+    base_points = {"aquecimento":20,"mobilidade":20,"cardio":20,"tendoes":15,"core":15,"cooldown":10}
+    xp = 0
+    ok_all_required = True
+    any_missing_required = False
+    for k,pts in base_points.items():
+        done = bool(req.get(k, False))
+        required = bool(req.get(f"{k}_req", False))
+        if done:
+            xp += pts
+        if required and not done:
+            ok_all_required = False
+            any_missing_required = True
+    justificativa_ok = len(str(justificativa).strip()) >= 8
+    if ok_all_required:
+        xp += 20
+    elif any_missing_required and justificativa_ok:
+        xp += 10
+    return xp, ok_all_required
+
+def get_last_streak(df, perfil):
+    if df.empty:
+        return 0
+    dfp = df[df["Perfil"].astype(str) == str(perfil)].copy()
+    if dfp.empty:
+        return 0
+    dfp = dfp[dfp["Checklist_OK"].apply(_to_bool)]
+    if dfp.empty:
+        return 0
+    datas = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dt.date.dropna().unique().tolist()
+    if not datas:
+        return 0
+    datas = sorted(set(datas))
     streak = 1
-    # conta consecutivos a partir do último dia registado
-    for i in range(len(datas_dt) - 1, 0, -1):
-        if (datas_dt[i] - datas_dt[i - 1]).days == 1:
+    for i in range(len(datas)-1, 0, -1):
+        if (datas[i] - datas[i-1]).days == 1:
             streak += 1
         else:
             break
     return streak
 
-def calcular_rank(xp_total: int, streak_max: int, checklist_rate: float):
-    """
-    checklist_rate: 0.0 a 1.0
-    """
-    # thresholds simples e motivadores
+def calcular_rank(xp_total, streak_max, checklist_rate):
     if xp_total >= 2500 and streak_max >= 21 and checklist_rate >= 0.80:
         return "💎 PLATINA", "Elite"
     if xp_total >= 1500 and streak_max >= 14 and checklist_rate >= 0.70:
@@ -332,231 +409,247 @@ def calcular_rank(xp_total: int, streak_max: int, checklist_rate: float):
         return "🥈 PRATA", "Em evolução"
     return "🥉 BRONZE", "A construir base"
 
-
-# Cálculo de 1RM (Fórmula de Epley)
-def calcular_1rm(peso, reps):
-    try:
-        pesos = [float(p) for p in str(peso).split(",") if str(p).strip() not in ["", "nan", "None"]]
-        repeticoes = [int(float(r)) for r in str(reps).split(",") if str(r).strip() not in ["", "nan", "None"]]
-
-        lista_1rm = []
-
-        for p, r in zip(pesos, repeticoes):
-            if r <= 0:
-                continue
-            if r == 1:
-                lista_1rm.append(p)
-            else:
-                lista_1rm.append(p * (1 + (r / 30)))
-
-        if lista_1rm:
-            return round(max(lista_1rm), 1)  # pega o melhor 1RM
-        else:
-            return 0
-
-    except:
-        return 0
-        
-def _parse_list_floats(v):
-    """Aceita '10,20,30' ou 10 -> [10.0,20.0,30.0]"""
-    s = str(v).strip()
-    if s == "" or s.lower() == "nan":
-        return []
-    return [float(x) for x in s.split(",") if str(x).strip() != ""]
-
-def _parse_list_ints(v):
-    s = str(v).strip()
-    if s == "" or s.lower() == "nan":
-        return []
-    return [int(float(x)) for x in s.split(",") if str(x).strip() != ""]
-
-def series_count_row(row):
-    return len(_parse_list_floats(row.get("Peso", "")))
-
-def tonnage_row(row):
-    pesos = _parse_list_floats(row.get("Peso", ""))
-    reps = _parse_list_ints(row.get("Reps", ""))
-    return float(sum(p * r for p, r in zip(pesos, reps)))
-
-def avg_rpe_row(row):
-    rpes = _parse_list_floats(row.get("RPE", ""))
-    return float(sum(rpes) / len(rpes)) if rpes else 0.0
-
-def parse_data_ddmmyyyy(s):
-    # "16/02/2026" -> datetime.date
-    return datetime.datetime.strptime(str(s), "%d/%m/%Y").date()
-
-def add_calendar_week(df_in):
-    df = df_in.copy()
-    df["Data_dt"] = df["Data"].apply(parse_data_ddmmyyyy)
-    iso = df["Data_dt"].apply(lambda d: d.isocalendar())  # (year, week, weekday)
-    df["ISO_Ano"] = iso.apply(lambda t: t[0])
-    df["ISO_Semana"] = iso.apply(lambda t: t[1])
-    df["Semana_ID"] = df.apply(lambda x: f"{int(x['ISO_Ano'])}-W{int(x['ISO_Semana']):02d}", axis=1)
-    return df
-
-def best_1rm_row(row):
-    # usa a tua calcular_1rm atual (que já suporta vírgulas)
-    return float(calcular_1rm(row.get("Peso", ""), row.get("Reps", "")))
-
-# Histórico detalhado + auto-fill
-def get_historico_detalhado(exercicio, reps_alvo_str):
-    df = get_data()
-
+def get_historico_detalhado(df, perfil, exercicio):
+    """FIX histórico: devolve o último registo em dataframe, + médias."""
     if df.empty:
-        return None, 0.0, int(str(reps_alvo_str).split('-')[0])
+        return None, 0.0, 0.0, None
+    dfp = df[(df["Perfil"].astype(str)==str(perfil)) & (df["Exercício"].astype(str)==str(exercicio))].copy()
+    if dfp.empty:
+        return None, 0.0, 0.0, None
+    dfp["Data_dt"] = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce")
+    dfp = dfp.dropna(subset=["Data_dt"]).sort_values("Data_dt")
+    if dfp.empty:
+        return None, 0.0, 0.0, None
+    ultimo = dfp.iloc[-1]
+    pesos = _parse_list_floats(ultimo["Peso"])
+    reps = _parse_list_ints(ultimo["Reps"])
+    rirs = _parse_list_floats(ultimo["RIR"])
+    rows = []
+    n = max(len(pesos), len(reps), len(rirs))
+    for i in range(n):
+        rows.append({
+            "Set": i+1,
+            "Peso (kg)": pesos[i] if i < len(pesos) else None,
+            "Reps": reps[i] if i < len(reps) else None,
+            "RIR": rirs[i] if i < len(rirs) else None,
+        })
+    df_last = pd.DataFrame(rows)
+    peso_medio = float(sum(pesos)/len(pesos)) if pesos else 0.0
+    rir_medio = float(sum(rirs)/len(rirs)) if rirs else 0.0
+    return df_last, peso_medio, rir_medio, ultimo["Data"]
 
-    df_ex = df[df["Exercício"] == exercicio]
-    if df_ex.empty:
-        return None, 0.0, int(str(reps_alvo_str).split('-')[0])
+def sugerir_carga(peso_medio, rir_medio, rir_alvo, passo_up, passo_down):
+    if peso_medio <= 0:
+        return 0.0
+    if rir_medio >= (rir_alvo + 1.0):
+        return round(peso_medio * (1 + passo_up), 1)
+    if rir_medio > (rir_alvo + 0.25):
+        return round(peso_medio * (1 + passo_up/2), 1)
+    if rir_medio <= max(0.0, rir_alvo - 1.0):
+        return round(peso_medio * (1 - passo_down), 1)
+    return round(peso_medio, 1)
 
-    ultimo = df_ex.iloc[-1]
-
-    try:
-        pesos = [float(p) for p in str(ultimo["Peso"]).split(",")]
-        rpes = [float(r) for r in str(ultimo["RPE"]).split(",")]
-        peso_medio = sum(pesos) / len(pesos)
-        rpe_medio = sum(rpes) / len(rpes)
-    except:
-        return None, 0.0, int(str(reps_alvo_str).split('-')[0])
-
-    # Progressão simples
-    if rpe_medio <= 7:
-        peso_sugerido = round(peso_medio * 1.05, 1)   # sobe 5%
-    elif rpe_medio <= 8:
-        peso_sugerido = round(peso_medio * 1.025, 1)  # sobe 2.5%
-    elif rpe_medio >= 9:
-        peso_sugerido = round(peso_medio * 0.97, 1)   # reduz 3%
-    else:
-        peso_sugerido = peso_medio
-        
-    return None, peso_sugerido, int(str(reps_alvo_str).split('-')[0])
-
-
-def salvar_sets_agrupados(exercicio, lista_sets, aquecimento, alongamento, cardio, justificativa=""):
+def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justificativa=""):
     df_existente = get_data()
-
     pesos = ",".join([str(s["peso"]) for s in lista_sets])
     reps = ",".join([str(s["reps"]) for s in lista_sets])
-    rpes = ",".join([str(s["rpe"]) for s in lista_sets])
+    rirs = ",".join([str(s["rir"]) for s in lista_sets])
 
-    xp, ok = checklist_xp(aquecimento, alongamento, cardio, justificativa)
-
-    streak_atual = get_last_streak(df_existente)
-
+    xp, ok = checklist_xp(req, justificativa)
+    streak_atual = get_last_streak(df_existente, perfil)
     hoje = datetime.date.today().strftime("%d/%m/%Y")
+
     ja_ha_ok_hoje = False
-    if not df_existente.empty and "Data" in df_existente.columns and "Checklist_OK" in df_existente.columns:
-        ja_ha_ok_hoje = ((df_existente["Data"].astype(str) == hoje) &
-                         (df_existente["Checklist_OK"].astype(str).str.lower().isin(["true","1","yes"]))).any()
+    if not df_existente.empty:
+        mask = (
+            (df_existente["Perfil"].astype(str) == str(perfil)) &
+            (df_existente["Data"].astype(str) == hoje) &
+            (df_existente["Checklist_OK"].apply(_to_bool))
+        )
+        ja_ha_ok_hoje = bool(mask.any())
 
     if ok and not ja_ha_ok_hoje:
         streak_guardar = streak_atual + 1
     else:
         streak_guardar = streak_atual
 
-
     novo_dado = pd.DataFrame([{
-        "Data": datetime.date.today().strftime("%d/%m/%Y"),
-        "Exercício": exercicio,
+        "Data": hoje,
+        "Perfil": str(perfil),
+        "Dia": str(dia),
+        "Bloco": str(bloco),
+        "Exercício": str(exercicio),
         "Peso": pesos,
         "Reps": reps,
-        "RPE": rpes,
+        "RIR": rirs,
         "Notas": str(justificativa).strip(),
-        "Aquecimento": aquecimento,
-        "Alongamento": alongamento,
-        "Cardio": cardio,
-        "XP": xp,
-        "Streak": streak_guardar,
-        "Checklist_OK": ok
+        "Aquecimento": bool(req.get("aquecimento", False)),
+        "Mobilidade": bool(req.get("mobilidade", False)),
+        "Cardio": bool(req.get("cardio", False)),
+        "Tendões": bool(req.get("tendoes", False)),
+        "Core": bool(req.get("core", False)),
+        "Cooldown": bool(req.get("cooldown", False)),
+        "XP": int(xp),
+        "Streak": int(streak_guardar),
+        "Checklist_OK": bool(ok),
     }])
 
     df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
-    conn.update(data=df_final)
+    conn.update(data=normalize_for_save(df_final))
 
-# --- 5. BASE DE DADOS TREINOS (configurada para coincidir com o plano) ---
-mapa_musculos = {
-    "Supino Reto": "Peito",
-    "Supino Inclinado Halter": "Peito",
-    "Remada Curvada": "Costas",
-    "Puxada Frente": "Costas",
-    "Puxada Lateral": "Costas",
-    "Remada Baixa": "Costas",
-    "Desenvolvimento Militar": "Ombros",
-    "Press Militar": "Ombros",
-    "Elevação Lateral": "Ombros",
-    "Face Pull": "Ombros",
-    "Agachamento Livre": "Quadríceps",
-    "Hack Squat / Leg Press": "Quadríceps",
-    "Leg Press": "Quadríceps",
-    "Hip Thrust": "Glúteos",
-    "Mesa Flexora": "Posterior",
-    "Levantamento Terra Romeno": "Posterior",
-    "Gémeos": "Panturrilha",
-    "Rosca Direta": "Bíceps",
-    "Tríceps Testa": "Tríceps",
-    "Tríceps Corda": "Tríceps",
-    "Pallof Press": "Core",
-}
+# --- PLANO (8 semanas) ---
+def semana_label(w):
+    if w in [1,2,3]:
+        return f"Semana {w} — Construção"
+    if w == 4:
+        return "Semana 4 — DELOAD"
+    if w in [5,6,7]:
+        return f"Semana {w} — Construção 2"
+    return "Semana 8 — DELOAD / Refresh"
+
+def is_deload(week):
+    return week in [4,8]
+
+def is_intensify_hypertrophy(week):
+    return week in [3,7]
+
+def rir_alvo(item_tipo, bloco, week):
+    if bloco == "Força":
+        return "2–3"
+    if bloco == "Hipertrofia":
+        if is_deload(week):
+            return "3–4"
+        if is_intensify_hypertrophy(week):
+            return "1" if item_tipo == "composto" else "0–1"
+        return "2" if item_tipo == "composto" else "1–2"
+    return "—"
+
+def rir_alvo_num(item_tipo, bloco, week):
+    s = rir_alvo(item_tipo, bloco, week)
+    if "–" in s:
+        a,b = s.split("–")
+        try:
+            return (float(a)+float(b))/2
+        except Exception:
+            return 2.0
+    try:
+        return float(s)
+    except Exception:
+        return 2.0
+
+def tempo_exec(item_tipo):
+    return "2–0–1" if item_tipo == "composto" else "3–0–1"
+
+def descanso_recomendado_s(item_tipo, bloco):
+    if bloco == "Força":
+        return 180
+    if item_tipo == "composto":
+        return 120
+    return 60
 
 treinos_base = {
-
-    "Segunda (Upper Força)": [
-        {"ex": "Supino Reto", "series": 4, "reps": "4-6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Remada Curvada", "series": 4, "reps": "5-6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Desenvolvimento Militar", "series": 3, "reps": "6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Rosca Direta", "series": 2, "reps": "8-10", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Tríceps Testa", "series": 2, "reps": "8-10", "rpe": 8, "tipo": "isolado"},
-    ],
-
-    "Terça (Lower Força)": [
-        {"ex": "Agachamento Livre", "series": 4, "reps": "4-6", "rpe": 8, "tipo": "composto"},
-        {"ex": "Levantamento Terra Romeno", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "composto"},
-        {"ex": "Leg Press", "series": 3, "reps": "8", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Gémeos", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
-    ],
-
-    "Quinta (Upper Hipertrofia)": [
-        {"ex": "Supino Inclinado Halter", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Puxada Frente", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Remada Baixa", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Elevação Lateral", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
-        {"ex": "Tríceps Corda", "series": 2, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
-    ],
-
-    "Sexta (Lower Hipertrofia)": [
-        {"ex": "Hack Squat / Leg Press", "series": 4, "reps": "8-12", "rpe": 8, "tipo": "composto"},
-        {"ex": "Hip Thrust", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Mesa Flexora", "series": 3, "reps": "10-15", "rpe": 8, "tipo": "isolado"},
-        {"ex": "Gémeos", "series": 4, "reps": "12-15", "rpe": 8, "tipo": "isolado"},
-    ],
-
-    "Sábado (Upper Volume Extra)": [
-        {"ex": "Press Militar", "series": 3, "reps": "6-8", "rpe": 8, "tipo": "composto"},
-        {"ex": "Puxada Lateral", "series": 3, "reps": "8-12", "rpe": 8, "tipo": "acessorio"},
-        {"ex": "Face Pull", "series": 3, "reps": "12-15", "rpe": 9, "tipo": "isolado"},
-        {"ex": "Rosca Direta", "series": 3, "reps": "10-12", "rpe": 8, "tipo": "isolado"},
-    ]
+    "Segunda — UPPER FORÇA": {
+        "bloco": "Força",
+        "sessao": "75–95 min",
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "exercicios": [
+            {"ex":"Supino com pausa (1s no peito)", "series":4, "reps":"4-5", "tipo":"composto"},
+            {"ex":"Barra fixa com peso (pegada neutra)", "series":4, "reps":"4-6", "tipo":"composto"},
+            {"ex":"Remada apoiada / chest-supported", "series":3, "reps":"5-6", "tipo":"composto"},
+            {"ex":"DB OHP neutro (sentado, encosto)", "series":3, "reps":"6", "tipo":"composto"},
+            {"ex":"Elevação lateral (polia unilateral)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Face pull", "series":2, "reps":"15-20", "tipo":"isolado"},
+        ]
+    },
+    "Terça — LOWER FORÇA": {
+        "bloco": "Força",
+        "sessao": "75–95 min",
+        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Trap Bar Deadlift (ou Deadlift)", "series":4, "reps":"3-5", "tipo":"composto"},
+            {"ex":"Bulgarian Split Squat (passo longo)", "series":3, "reps":"5-6", "tipo":"composto"},
+            {"ex":"Hip Thrust (barra)", "series":4, "reps":"5", "tipo":"composto"},
+            {"ex":"Nordic (amplitude controlada)", "series":3, "reps":"5-6", "tipo":"isolado"},
+            {"ex":"Panturrilha em pé (pesado)", "series":3, "reps":"6-8", "tipo":"isolado"},
+        ]
+    },
+    "Quarta — DESCANSO (Fisio em casa)": {
+        "bloco": "Fisio",
+        "sessao": "12–20 min",
+        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
+        "exercicios": []
+    },
+    "Quinta — UPPER HIPERTROFIA (costas/ombros/braços)": {
+        "bloco": "Hipertrofia",
+        "sessao": "75–95 min",
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "exercicios": [
+            {"ex":"Puxada na polia (pegada neutra)", "series":3, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Remada baixa (pausa 1s com ombro baixo)", "series":4, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Pulldown braço reto (straight-arm)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Elevação lateral (halter/polia)", "series":4, "reps":"12-20", "tipo":"isolado"},
+            {"ex":"Rear delt machine / reverse pec deck", "series":3, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Rosca inclinado (halter)", "series":3, "reps":"10-12", "tipo":"isolado"},
+            {"ex":"Tríceps corda (ou barra V se cotovelo)", "series":3, "reps":"12-15", "tipo":"isolado"},
+        ]
+    },
+    "Sexta — LOWER HIPERTROFIA (glúteo dominante)": {
+        "bloco": "Hipertrofia",
+        "sessao": "90–110 min",
+        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Hip Thrust", "series":4, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Leg Press (pés altos e abertos)", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"RDL (halter/barra até neutro perfeito)", "series":3, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Back extension 45° (glúteo bias)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Abdução máquina", "series":4, "reps":"15-25", "tipo":"isolado"},
+            {"ex":"Panturrilha sentado", "series":3, "reps":"12-15", "tipo":"isolado"},
+        ]
+    },
+    "Sábado — UPPER HIPERTROFIA (peito/ombros + estabilidade)": {
+        "bloco": "Hipertrofia",
+        "sessao": "90–110 min",
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "exercicios": [
+            {"ex":"Supino inclinado (halter)", "series":4, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Máquina convergente de peito", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Crossover na polia (alto → baixo)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Elevação lateral (myo-reps opcional)", "series":3, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Rear delt (cabo/máquina)", "series":3, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Remada leve apoiada (saúde escapular)", "series":2, "reps":"12", "tipo":"isolado"},
+            {"ex":"Bíceps (cabo)", "series":2, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Tríceps overhead cabo (amplitude curta)", "series":2, "reps":"12-15", "tipo":"isolado"},
+        ]
+    },
+    "Domingo — DESCANSO (caminhada leve)": {
+        "bloco": "Fisio",
+        "sessao": "opcional",
+        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": False},
+        "exercicios": []
+    },
 }
 
-def gerar_treino_do_dia(dia, semana):
-    treino_base = treinos_base.get(dia, [])
+def gerar_treino_do_dia(dia, week):
+    cfg = treinos_base.get(dia, None)
+    if not cfg:
+        return {"bloco":"—","sessao":"","protocolos":{}, "exercicios":[]}
+    bloco = cfg["bloco"]
     treino_final = []
-    for item in treino_base:
-        novo_item = item.copy()
-        # Ajustes para semana 3 (intensificação)
-        if semana == 3:
+    for item in cfg["exercicios"]:
+        novo = dict(item)
+        if is_deload(week) and bloco in ["Força","Hipertrofia"]:
+            base_series = int(item["series"])
             if item["tipo"] == "composto":
-                novo_item["series"] += 1
-                novo_item["rpe"] = 9
+                novo["series"] = max(2, int(round(base_series*0.6)))
             else:
-                novo_item["rpe"] = 9
-        # Ajustes para semana 4 (deload)
-        elif semana == 4:
-            novo_item["series"] = max(2, int(item["series"] * 0.6))
-            novo_item["rpe"] = 6
-        treino_final.append(novo_item)
-    return treino_final
+                novo["series"] = max(1, int(round(base_series*0.6)))
+        if week == 7 and bloco == "Hipertrofia" and item["tipo"] == "composto":
+            novo["nota_semana"] = "Semana 7: 1ª série como TOP SET (RIR 1) + restantes back-off controlado."
+        novo["rir_alvo"] = rir_alvo(item["tipo"], bloco, week)
+        novo["tempo"] = tempo_exec(item["tipo"])
+        novo["descanso_s"] = descanso_recomendado_s(item["tipo"], bloco)
+        treino_final.append(novo)
+    return {"bloco": bloco, "sessao": cfg["sessao"], "protocolos": cfg["protocolos"], "exercicios": treino_final}
 
 # --- 6. INTERFACE SIDEBAR ---
 st.sidebar.markdown("""
@@ -566,33 +659,81 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>⚔️ Nível de Poder</h3>", unsafe_allow_html=True)
+df_all = get_data()
 
-semana = st.sidebar.radio(
-    "Nível de Poder:",
-    [1, 2, 3, 4],
-    format_func=lambda x: f"Semana {x}: {'Base' if x<=2 else 'MODO DEMÓNIO (Limite)' if x==3 else 'Deload'}"
-)
+# PERFIL
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>👤 Perfil</h3>", unsafe_allow_html=True)
+perfis = sorted([p for p in df_all["Perfil"].dropna().astype(str).unique().tolist() if p.strip() != ""])
+if not perfis:
+    perfis = ["Principal"]
+perfil_sel = st.sidebar.selectbox("Seleciona o perfil:", perfis, index=0, key="perfil_sel")
+
+with st.sidebar.expander("➕ Criar novo perfil"):
+    novo_perfil = st.text_input("Nome do perfil", "")
+    if st.button("Criar Perfil"):
+        np = str(novo_perfil).strip()
+        if np:
+            dummy = pd.DataFrame([{
+                "Data": datetime.date.today().strftime("%d/%m/%Y"),
+                "Perfil": np,
+                "Dia": "Setup",
+                "Bloco": "Setup",
+                "Exercício": "Setup",
+                "Peso": "",
+                "Reps": "",
+                "RIR": "",
+                "Notas": "perfil criado",
+                "Aquecimento": False,
+                "Mobilidade": False,
+                "Cardio": False,
+                "Tendões": False,
+                "Core": False,
+                "Cooldown": False,
+                "XP": 0,
+                "Streak": 0,
+                "Checklist_OK": False,
+            }])
+            df_new = pd.concat([df_all, dummy], ignore_index=True)
+            conn.update(data=normalize_for_save(df_new))
+            st.success("Perfil criado!")
+            time.sleep(0.6)
+            st.rerun()
+        else:
+            st.warning("Escreve um nome.")
 
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
-dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()) + ["Descanso"])
+# SEMANA (8)
+st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
+semana = st.sidebar.radio("Semana do ciclo:", list(range(1,9)), format_func=semana_label, index=0)
+
+st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+
+# DIA
+dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_base.keys()), index=0)
+st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_base[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
+# FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>⚠️ Estado do Corpo</h3>", unsafe_allow_html=True)
-
-dor_joelho = st.sidebar.checkbox("⚠️ Dor no Joelho")
-dor_costas = st.sidebar.checkbox("⚠️ Dor nas Costas")
+dor_joelho = st.sidebar.checkbox("Dor no Joelho (pontiaguda?)")
+dor_cotovelo = st.sidebar.checkbox("Dor no Cotovelo")
+dor_ombro = st.sidebar.checkbox("Dor no Ombro")
+dor_lombar = st.sidebar.checkbox("Dor na Lombar")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
-def adaptar_nome(nome):
-    if dor_joelho and "Agachamento" in nome:
-        return f"{nome} ➡️ LEG PRESS"
-    if dor_costas and "Remada Curvada" in nome:
-        return f"{nome} ➡️ APOIADO"
-    return nome
+def sugestao_articular(ex):
+    if dor_joelho and ("Bulgarian" in ex or "Leg Press" in ex):
+        return "Joelho: encurta amplitude / mais controlo. Dor pontiaguda = troca variação hoje."
+    if dor_cotovelo and "Tríceps" in ex:
+        return "Cotovelo: pushdown barra V, amplitude menor, excêntrico 3–4s."
+    if dor_ombro and ("OHP" in ex or "Supino" in ex or "inclinado" in ex.lower()):
+        return "Ombro: pega neutra, inclinação menor, sem grind."
+    if dor_lombar and ("Deadlift" in ex or "RDL" in ex or "Remada" in ex):
+        return "Lombar: limita amplitude ao neutro perfeito / usa mais apoio."
+    return ""
 
 # --- 7. CABEÇALHO ---
 st.title("♣️BLACK CLOVER Workout♣️")
@@ -600,297 +741,283 @@ st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico = st.tabs(["🔥 Treino do Dia", "📊 Histórico"])
+
 with tab_treino:
-    with st.expander("ℹ️ Guia de RPE (Como escolher a carga?)"):
+    with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
         st.markdown("""
-        **RPE = Rate of Perceived Exertion (Esforço Percebido)**
-        
-        * 🔴 **RPE 10 (Falha Total):** Não consegues fazer mais nenhuma repetição.
-        * 🟠 **RPE 9 (Muito Pesado):** Conseguias fazer **apenas mais 1** repetição.
-        * 🟡 **RPE 8 (Pesado):** Conseguias fazer **mais 2** repetições. 
-        * 🟢 **RPE 6-7 (Leve/Técnica):** Conseguias fazer **mais 3-4** repetições.
-        """)
+**Força (compostos):** RIR 2–3 sempre.  
+**Hipertrofia:** RIR 2; semanas 3 e 7 → RIR 1 (isoladores podem 0–1).  
+**Deload (sem 4 e 8):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
 
-    st.markdown("## 🛡️ Disciplina do Atleta")
+**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
+**Descanso:** Força 2–4 min | Hiper compostos 90–150s | Isoladores 45–90s  
+Dor articular pontiaguda = troca variação no dia.
+""")
 
-    col1, col2, col3 = st.columns(3)
-    aquecimento = col1.checkbox("🔥 Aquecimento 5–10 min", value=True)
-    alongamento = col2.checkbox("🧘 Mobilidade/Alongamento dinâmico", value=True)
-    cardio = col3.checkbox("🏃 Cardio 10–15 min", value=False)
-    
+    cfg = gerar_treino_do_dia(dia, semana)
+    bloco = cfg["bloco"]
+    prot = cfg["protocolos"]
+
+    st.markdown("## 🛡️ Checklist do Dia")
+
+    req = {
+        "aquecimento_req": True,
+        "mobilidade_req": True,
+        "cardio_req": bool(prot.get("cardio", False)),
+        "tendoes_req": bool(prot.get("tendoes", False)),
+        "core_req": bool(prot.get("core", False)),
+        "cooldown_req": bool(prot.get("cooldown", True)),
+    }
+
+    c1,c2,c3 = st.columns(3)
+    req["aquecimento"] = c1.checkbox("🔥 Aquecimento", value=True)
+    req["mobilidade"] = c2.checkbox("🧘 Mobilidade", value=True)
+    req["cardio"] = c3.checkbox("🏃 Cardio Zona 2", value=req["cardio_req"], disabled=(not req["cardio_req"]))
+
+    c4,c5,c6 = st.columns(3)
+    req["tendoes"] = c4.checkbox("🦾 Tendões", value=req["tendoes_req"], disabled=(not req["tendoes_req"]))
+    req["core"] = c5.checkbox("🧱 Core escoliose", value=req["core_req"], disabled=(not req["core_req"]))
+    req["cooldown"] = c6.checkbox("😮‍💨 Cool-down", value=True)
+
     justificativa = ""
-    if not (aquecimento and alongamento and cardio):
-        st.info("Coach: se não fizeres tudo, escreve uma justificativa (ganhas algum XP extra).")
-        justificativa = st.text_input("Justificativa (opcional):", "")
-    
-    xp_pre, ok_checklist = checklist_xp(aquecimento, alongamento, cardio, justificativa)
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("XP previsto hoje", f"{xp_pre}")
-    c2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
-    c3.metric("Streak atual", f"{get_last_streak(get_data())}")
-    
+    xp_pre, ok_checklist = checklist_xp(req, justificativa="")
     if not ok_checklist:
-        st.warning("Checklist incompleto: sem stress — mas tenta melhorar para reduzir risco e subir performance.")
+        st.info("Faltou algum item obrigatório? Escreve uma justificativa (ganhas XP extra).")
+        justificativa = st.text_input("Justificativa:", "")
+    xp_pre, ok_checklist = checklist_xp(req, justificativa=justificativa)
 
-    df_rank = get_data()
+    df_now = get_data()
+    streak_atual = get_last_streak(df_now, perfil_sel)
 
-    if df_rank.empty or "XP" not in df_rank.columns:
-        st.info("Rank: começa a registar treinos para desbloquear níveis.")
-    else:
-        xp_total = int(pd.to_numeric(df_rank["XP"], errors="coerce").fillna(0).sum())
-    
-        if "Streak" in df_rank.columns:
-            streak_max = int(pd.to_numeric(df_rank["Streak"], errors="coerce").fillna(0).max())
-        else:
-            streak_max = 0
-    
-        if "Checklist_OK" in df_rank.columns:
-            checklist_rate = float(df_rank["Checklist_OK"].astype(str).str.lower().isin(["true","1","yes"]).mean())
-        else:
-            checklist_rate = 0.0
-    
+    m1,m2,m3 = st.columns(3)
+    m1.metric("XP previsto hoje", f"{xp_pre}")
+    m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
+    m3.metric("Streak atual", f"{streak_atual}")
+
+    # rank por perfil
+    dfp_rank = df_now[df_now["Perfil"].astype(str) == str(perfil_sel)].copy()
+    dfp_rank = dfp_rank[dfp_rank["Bloco"].astype(str).str.lower() != "setup"]
+    if not dfp_rank.empty:
+        xp_total = int(pd.to_numeric(dfp_rank["XP"], errors="coerce").fillna(0).sum())
+        streak_max = int(pd.to_numeric(dfp_rank["Streak"], errors="coerce").fillna(0).max()) if "Streak" in dfp_rank.columns else 0
+        checklist_rate = float(dfp_rank["Checklist_OK"].apply(_to_bool).mean())
         rank, subtitulo = calcular_rank(xp_total, streak_max, checklist_rate)
-    
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🏅 Rank", rank)
-        c2.metric("✨ XP Total", xp_total)
-        c3.metric("🔥 Streak Máx", streak_max)
-        c4.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
+        r1,r2,r3,r4 = st.columns(4)
+        r1.metric("🏅 Rank", rank)
+        r2.metric("✨ XP Total", xp_total)
+        r3.metric("🔥 Streak Máx", streak_max)
+        r4.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
         st.caption(f"Estado: **{subtitulo}**")
 
-    if dia == "Descanso":
-        st.info("Hoje é dia de descanso ativo. Caminhada 30min e mobilidade.")
-    else:
-        treino_hoje = gerar_treino_do_dia(dia, semana)
-        for i, item in enumerate(treino_hoje):
-            nome_display = adaptar_nome(item['ex'])
-            df_passado, sug_peso, sug_reps = get_historico_detalhado(nome_display, item['reps'])
-            with st.expander(f"{i+1}. {nome_display}", expanded=(i==0)):
-                c1, c2 = st.columns(2)
-                rpe_txt = (
-                    "🔴 **MODO DEMONÍACO (FALHA)**" if item['rpe'] >= 9 
-                    else "🟡 **ALVO FORMIDÁVEL (Sobram 2 reps)**" if item['rpe'] == 8 
-                    else "🟢 **CONCENTRATE-TE (Sobram 3-4 reps)**"
-                )
-                c1.markdown(f"**Meta:** {item['series']}×{item['reps']}")
-                c2.markdown(f"**{rpe_txt}**")
-                if df_passado is not None:
-                    st.markdown("📜 **Séries Anteriores (Último Treino):**")
-                    st.dataframe(df_passado, hide_index=True, use_container_width=True)
-                else:
-                    st.caption("Sem registos anteriores.")
-                if sug_peso > 0:
-                    with st.popover("🔥 Cálculo de Peso"):
-                        st.markdown(f"**Carga Alvo Sugerida:** {sug_peso} kg")
-                        st.write(f"Set 1: {int(sug_peso*0.5)} kg × 8-10 reps (50%)")
-                        st.write(f"Set 2: {int(sug_peso*0.7)} kg × 4-5 reps (70%)")
-                        st.write(f"Set 3: {int(sug_peso*0.9)} kg × 1-2 reps (90%)")
-                lista_sets = []
+    st.divider()
 
+    if bloco == "Fisio":
+        st.subheader("🏠 Fisio / Recuperação")
+        if "Quarta" in dia:
+            st.markdown("""
+**12–20 min (opcional):**
+- Bird dog 2×6/lado (pausa 2s)
+- Side plank 2×30–45s (+1 lado fraco)
+- McGill curl-up 2×8–10 (pausa 2s)
+- Dead hang 2×20–30s
+- Respiração 90/90 2 min
+- Caminhada 15–30 min
+""")
+        else:
+            st.markdown("Caminhada leve + mobilidade.")
+    else:
+        st.subheader(f"📘 Treino: **{dia}**")
+        st.caption(f"Bloco: **{bloco}** | Semana: **{semana_label(semana)}**")
+
+        if semana in [2,6]:
+            st.info("Progressão: +1 rep por série OU +2,5–5% carga mantendo o RIR alvo.")
+        if semana in [4,8]:
+            st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
+        if semana == 7 and bloco == "Hipertrofia":
+            st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
+
+        for i,item in enumerate(cfg["exercicios"]):
+            ex = item["ex"]
+            rir_target_str = item["rir_alvo"]
+            rir_target_num = rir_alvo_num(item["tipo"], bloco, semana)
+
+            df_last, peso_medio, rir_medio, data_ultima = get_historico_detalhado(df_now, perfil_sel, ex)
+
+            passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
+            peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
+
+            reps_low = int(str(item["reps"]).split("-")[0]) if "-" in str(item["reps"]) else int(float(item["reps"]))
+
+            with st.expander(f"{i+1}. {ex}", expanded=(i==0)):
+                a,b,c = st.columns(3)
+                a.markdown(f"**Meta:** {item['series']}×{item['reps']}")
+                b.markdown(f"**RIR alvo:** {rir_target_str}")
+                c.markdown(f"**Tempo:** {item['tempo']} | **Descanso:** ~{item['descanso_s']}s")
+
+                art = sugestao_articular(ex)
+                if art:
+                    st.warning(art)
+                if item.get("nota_semana"):
+                    st.info(item["nota_semana"])
+
+                if df_last is not None:
+                    st.markdown(f"📜 **Último registo ({data_ultima})**")
+                    st.dataframe(df_last, hide_index=True, use_container_width=True)
+                    st.caption(f"Último: peso médio ~ {peso_medio:.1f} kg | RIR médio ~ {rir_medio:.1f}")
+                else:
+                    st.caption("Sem registos anteriores para este exercício (neste perfil).")
+
+                if peso_sug > 0:
+                    with st.popover("🔥 Sugestão de carga (heurística)"):
+                        st.markdown(f"**Carga sugerida (média):** {peso_sug} kg")
+                        st.caption("Se o RIR sair do alvo, ajusta na hora. Técnica > ego.")
+
+                lista_sets = []
                 with st.form(key=f"form_{i}"):
                     for s in range(item["series"]):
                         st.markdown(f"### Série {s+1}")
-                        c1, c2 = st.columns(2)
-                        peso = c1.number_input(f"Kg S{s+1}", value=sug_peso, step=2.5, key=f"peso_{i}_{s}")
-                        reps = c2.number_input(f"Reps S{s+1}", value=sug_reps, step=1, key=f"reps_{i}_{s}")
-                        lista_sets.append({"peso": peso, "reps": reps, "rpe": item["rpe"]})
-                
+                        cc1,cc2,cc3 = st.columns(3)
+                        peso = cc1.number_input(f"Kg S{s+1}", min_value=0.0,
+                                                value=float(peso_sug) if peso_sug>0 else 0.0,
+                                                step=2.5, key=f"peso_{i}_{s}")
+                        reps = cc2.number_input(f"Reps S{s+1}", min_value=0, value=int(reps_low),
+                                                step=1, key=f"reps_{i}_{s}")
+                        rir = cc3.number_input(f"RIR S{s+1}", min_value=0.0, max_value=6.0,
+                                               value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
+                        lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
+
                     if st.form_submit_button("Gravar Exercício"):
-                        salvar_sets_agrupados(nome_display, lista_sets, aquecimento, alongamento, cardio, justificativa)
-                        st.success("Exercício completo salvo!")
-                        time.sleep(0.5)
+                        salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
+                        st.success("Exercício gravado!")
+                        time.sleep(0.4)
                         st.rerun()
 
-                tempo = 180 if item["tipo"] == "composto" and semana != 4 else 90
-                if st.button(f"⏱️ Descanso ({tempo}s)", key=f"t_{i}"):
-                    with st.empty():
-                        for s in range(tempo, 0, -1):
-                            st.metric("Recupera...", f"{s}s")
-                            time.sleep(1)
-                        st.success("BORA!")
+                rest_s = st.slider("⏱️ Descanso (segundos)", min_value=30, max_value=300,
+                                   value=int(item["descanso_s"]), step=15, key=f"rest_{i}")
+                if st.button(f"▶️ Iniciar descanso ({rest_s}s)", key=f"t_{i}"):
+                    ph = st.empty()
+                    for sec in range(rest_s, 0, -1):
+                        ph.metric("Recupera...", f"{sec}s")
+                        time.sleep(1)
+                    ph.success("BORA! 🔥")
+
         st.divider()
 
+        if prot.get("tendoes", False):
+            with st.expander("🦾 TENDÕES (8–12 min) — protocolo"):
+                st.markdown("""
+**Isométricos**
+- Tríceps isométrico na polia: 2×30–45s  
+- External rotation isométrico: 2×30s/lado  
+- (Joelho) Spanish squat: 2–3×30–45s  
+
+**Excêntricos**
+- Wrist extension excêntrico: 2×12 (3–4s descida)  
+- Tibial raises: 2×15–20
+""")
+        if prot.get("core", False):
+            with st.expander("🧱 CORE ESCOLIOSE (6–10 min) — protocolo"):
+                st.markdown("""
+- McGill curl-up 2×8–10 (pausa 2s)
+- Side plank 2×25–40s (+1 série lado fraco)
+- Bird dog 2×6–8/lado (pausa 2s)
+- Suitcase carry 2×20–30m/lado (se houver espaço)
+""")
+
         if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
-            if not ok_checklist:
-                st.info("Coach note: tenta bater o checklist completo no próximo treino 😉")
             st.balloons()
-            time.sleep(2)
+            time.sleep(1.2)
             st.rerun()
 
 with tab_historico:
     st.header("Grimório de Batalha 📊")
+
     df = get_data()
+    dfp = df[df["Perfil"].astype(str) == str(perfil_sel)].copy()
 
-    st.subheader("🏆 Ranking & Metas")
+    # ignora linhas de setup de perfis
+    dfp = dfp[dfp["Bloco"].astype(str).str.lower() != "setup"]
 
-    if df.empty or "XP" not in df.columns:
-        st.info("Ainda sem dados suficientes para ranking.")
+    if dfp.empty:
+        st.info("Ainda sem registos neste perfil.")
     else:
-        xp_total = int(pd.to_numeric(df["XP"], errors="coerce").fillna(0).sum())
-    
-        streak_max = int(pd.to_numeric(df["Streak"], errors="coerce").fillna(0).max()) if "Streak" in df.columns else 0
-        checklist_rate = float(df["Checklist_OK"].astype(str).str.lower().isin(["true","1","yes"]).mean()) if "Checklist_OK" in df.columns else 0.0
-    
+        xp_total = int(pd.to_numeric(dfp["XP"], errors="coerce").fillna(0).sum())
+        streak_max = int(pd.to_numeric(dfp["Streak"], errors="coerce").fillna(0).max())
+        checklist_rate = float(dfp["Checklist_OK"].apply(_to_bool).mean())
         rank, subtitulo = calcular_rank(xp_total, streak_max, checklist_rate)
-    
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🏅 Rank Atual", rank)
-        c2.metric("✨ XP Total", xp_total)
-        c3.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
-    
+
+        a,b,c = st.columns(3)
+        a.metric("🏅 Rank Atual", rank)
+        b.metric("✨ XP Total", xp_total)
+        c.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
         st.caption(f"Status: **{subtitulo}** | 🔥 Streak Máx: **{streak_max}** dias")
-    
-        # Metas para subir
-        st.markdown("### 🎯 Metas para subir de nível")
-        metas = []
-        if rank.startswith("🥉"):
-            metas = [
-                "Chegar a **700 XP**",
-                "Fazer **streak máximo 7 dias**",
-                "Manter checklist completo em **≥ 60%** dos registos",
-            ]
-        elif rank.startswith("🥈"):
-            metas = [
-                "Chegar a **1500 XP**",
-                "Fazer **streak máximo 14 dias**",
-                "Manter checklist completo em **≥ 70%** dos registos",
-            ]
-        elif rank.startswith("🥇"):
-            metas = [
-                "Chegar a **2500 XP**",
-                "Fazer **streak máximo 21 dias**",
-                "Manter checklist completo em **≥ 80%** dos registos",
-            ]
+
+        st.divider()
+
+        dfw_all = add_calendar_week(dfp)
+        if dfw_all.empty:
+            st.warning("Há registos, mas sem datas válidas (esperado: dd/mm/aaaa).")
         else:
-            metas = ["Manter consistência. Agora é refinar performance e prevenir lesão. 💎"]
-    
-        for m in metas:
-            st.write("• " + m)
+            semanas = sorted(dfw_all["Semana_ID"].unique())
+            semana_sel = st.selectbox("Seleciona a semana (ISO):", semanas, index=len(semanas)-1)
 
-    st.subheader("🧠 Disciplina")
+            dfw = dfw_all[dfw_all["Semana_ID"] == semana_sel].copy()
+            dfw["Séries"] = dfw.apply(series_count_row, axis=1)
+            dfw["Tonnage"] = dfw.apply(tonnage_row, axis=1)
+            dfw["RIR_médio"] = dfw.apply(avg_rir_row, axis=1)
+            dfw["1RM Estimado"] = dfw.apply(best_1rm_row, axis=1)
 
-    if not df.empty:
-        if "Checklist_OK" in df.columns:
-            ok_rate = (df["Checklist_OK"].astype(str).str.lower().isin(["true", "1", "yes"])).mean()
-            st.metric("Checklist completo (taxa)", f"{ok_rate*100:.0f}%")
-    
-        if "XP" in df.columns:
-            xp_total = pd.to_numeric(df["XP"], errors="coerce").fillna(0).sum()
-            st.metric("XP total", f"{int(xp_total)}")
-    
-        if "Notas" in df.columns:
-            st.caption("Justificativas recentes:")
-            st.dataframe(df[["Data", "Exercício", "Notas"]].tail(10), hide_index=True, use_container_width=True)
-    
-        if "Streak" in df.columns:
-            st.metric("Streak (último)", f"{int(pd.to_numeric(df['Streak'], errors='coerce').fillna(0).max())}")
+            k1,k2,k3 = st.columns(3)
+            k1.metric("Séries na Semana", f"{int(dfw['Séries'].sum())}")
+            k2.metric("Tonnage na Semana", f"{float(dfw['Tonnage'].sum()):.0f} kg")
+            k3.metric("RIR Médio (linhas)", f"{float(dfw['RIR_médio'].mean() if len(dfw) else 0.0):.1f}")
 
-    if df.empty:
-        st.info("Ainda sem registos.")
-    else:
-        # ---- Preparação ----
-        dfp = add_calendar_week(df)
+            st.divider()
 
-        # filtro por semana (calendário)
-        semanas = sorted(dfp["Semana_ID"].unique())
-        semana_sel = st.selectbox("Seleciona a semana (ISO):", semanas, index=len(semanas)-1)
+            st.subheader("📌 Volume por Bloco (semana)")
+            vol_bloco = dfw.groupby("Bloco")["Séries"].sum().sort_values(ascending=False)
+            st.bar_chart(vol_bloco)
 
-        dfw = dfp[dfp["Semana_ID"] == semana_sel].copy()
-        dfw["Grupo"] = dfw["Exercício"].map(mapa_musculos).fillna("Outro")
-        dfw["Séries"] = dfw.apply(series_count_row, axis=1)
-        dfw["Tonnage"] = dfw.apply(tonnage_row, axis=1)
-        dfw["RPE_médio"] = dfw.apply(avg_rpe_row, axis=1)
-        dfw["1RM Estimado"] = dfw.apply(best_1rm_row, axis=1)
+            st.subheader("⚠️ Índice de Fadiga (simples)")
+            dfw["Fadiga"] = dfw["Séries"] * (4 - dfw["RIR_médio"].clip(lower=0, upper=4))
+            fadiga = float(dfw["Fadiga"].sum())
+            st.metric("Fadiga (Σ Séries × (4−RIR))", f"{fadiga:.1f}")
+            if fadiga >= 90 or float(dfw["RIR_médio"].mean()) <= 1.2:
+                st.warning("Esforço alto. Se sono/stress estiverem maus: considera deload / mantém RIR mais alto.")
+            else:
+                st.success("Sinais OK. Mantém progressão e técnica.")
 
-        # ---- KPIs topo ----
-        total_series = int(dfw["Séries"].sum())
-        total_tonnage = float(dfw["Tonnage"].sum())
-        rpe_medio_semana = float(dfw["RPE_médio"].mean()) if len(dfw) else 0.0
+            st.divider()
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Séries na Semana", f"{total_series}")
-        c2.metric("Tonnage na Semana", f"{total_tonnage:.0f} kg")
-        c3.metric("RPE Médio (linhas)", f"{rpe_medio_semana:.1f}")
+            st.subheader("🏆 PRs por Exercício (1RM Estimado)")
+            best_hist = dfw_all.groupby("Exercício")["1RM Estimado"].max()
+            best_week = dfw.groupby("Exercício")["1RM Estimado"].max()
+            prs = []
+            for ex, val_week in best_week.items():
+                val_hist = float(best_hist.get(ex, 0))
+                if val_week > 0 and abs(val_week - val_hist) < 1e-9:
+                    prs.append((ex, val_week))
+            if prs:
+                st.success("Novos PRs detetados nesta semana:")
+                st.dataframe(pd.DataFrame(prs, columns=["Exercício","1RM Estimado (PR)"]), hide_index=True, use_container_width=True)
+            else:
+                st.info("Sem PRs nesta semana.")
 
-        st.divider()
+            st.divider()
 
-        # ---- Volume por grupo ----
-        st.subheader("📊 Séries por Grupo Muscular (semana)")
-        vol_grupo = dfw.groupby("Grupo")["Séries"].sum().sort_values(ascending=False)
-        st.bar_chart(vol_grupo)
+            st.subheader("📈 Progressão de Força (1RM Estimado)")
+            lista_exercicios = sorted(dfw_all["Exercício"].dropna().astype(str).unique())
+            filtro_ex = st.selectbox("Escolhe um Exercício:", lista_exercicios)
+            df_chart = dfw_all[dfw_all["Exercício"].astype(str) == str(filtro_ex)].copy()
+            df_chart["1RM Estimado"] = df_chart.apply(best_1rm_row, axis=1)
+            df_chart = df_chart.sort_values("Data_dt")
 
-        # ---- Tonnage por grupo ----
-        st.subheader("🏋️ Tonnage por Grupo Muscular (semana)")
-        ton_grupo = dfw.groupby("Grupo")["Tonnage"].sum().sort_values(ascending=False)
-        st.bar_chart(ton_grupo)
+            st.line_chart(df_chart, x="Data_dt", y="1RM Estimado")
 
-        st.divider()
-
-        # ---- Fadiga + Deload recomendação ----
-        st.subheader("⚠️ Índice de Fadiga + Deload")
-        # índice simples: tonnage normalizada + séries * rpe
-        # (não é “científico perfeito”, mas é MUITO útil para decisão)
-        fadiga = (dfw["Séries"] * dfw["RPE_médio"]).sum()
-        st.metric("Fadiga (Σ Séries × RPE)", f"{fadiga:.1f}")
-
-        over_vol = vol_grupo[vol_grupo > 20]
-        over_int = rpe_medio_semana >= 8.7
-        red_flag = (not over_vol.empty) or over_int or (fadiga >= 140)
-
-        if not over_vol.empty:
-            st.warning("Volume alto (>20 séries) em:")
-            st.write(over_vol)
-
-        if red_flag:
-            st.error("Recomendação: **DELOAD** na próxima semana (reduz ~40% volume e RPE ~6).")
-        else:
-            st.success("Sem sinais fortes de deload. Mantém progressão.")
-
-        st.divider()
-
-        # ---- PR Detector ----
-        st.subheader("🏆 PRs (Recordes) por Exercício")
-        # calcula melhor 1RM histórico por exercício
-        df_all = dfp.copy()
-        df_all["1RM Estimado"] = df_all.apply(best_1rm_row, axis=1)
-
-        best_hist = df_all.groupby("Exercício")["1RM Estimado"].max()
-        best_week = dfw.groupby("Exercício")["1RM Estimado"].max()
-
-        prs = []
-        for ex, val_week in best_week.items():
-            val_hist = float(best_hist.get(ex, 0))
-            # PR se o melhor da semana == melhor histórico e >0
-            if val_week > 0 and abs(val_week - val_hist) < 1e-9:
-                prs.append((ex, val_week))
-
-        if prs:
-            st.success("Novos PRs detetados nesta semana:")
-            st.dataframe(pd.DataFrame(prs, columns=["Exercício", "1RM Estimado (PR)"]), hide_index=True, use_container_width=True)
-        else:
-            st.info("Sem PRs nesta semana.")
-
-        st.divider()
-
-        # ---- Progressão por exercício (gráfico) ----
-        st.subheader("📈 Progressão de Força (1RM Estimado)")
-        lista_exercicios = sorted(dfp["Exercício"].unique())
-        filtro_ex = st.selectbox("Escolhe um Exercício:", lista_exercicios)
-
-        df_chart = dfp[dfp["Exercício"] == filtro_ex].copy()
-        df_chart["1RM Estimado"] = df_chart.apply(best_1rm_row, axis=1)
-        df_chart = df_chart.sort_values("Data_dt")
-
-        st.line_chart(df_chart, x="Data_dt", y="1RM Estimado")
-
-        st.markdown("### Histórico Completo (filtrado)")
-        st.dataframe(df_chart.sort_values("Data_dt", ascending=False), use_container_width=True, hide_index=True)
-
-
-
-
-
-
-
-
+            st.markdown("### Histórico (filtrado)")
+            st.dataframe(
+                df_chart.sort_values("Data_dt", ascending=False)[
+                    ["Data","Dia","Bloco","Exercício","Peso","Reps","RIR","XP","Checklist_OK","Notas"]
+                ],
+                use_container_width=True, hide_index=True
+            )
