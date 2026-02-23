@@ -211,6 +211,12 @@ div[data-testid="stExpander"]{
   backdrop-filter: blur(8px);
 }
 
+
+/* Compactar topo (evita gap grande entre header e tabs) */
+h1, .bc-main-title{ margin-top: 0 !important; margin-bottom: 0.2rem !important; }
+[data-testid="stCaptionContainer"]{ margin-top: 0 !important; margin-bottom: 0.25rem !important; }
+div[data-testid="stTabs"]{ margin-top: 0.1rem !important; }
+
 /* Mobile */
 @media (max-width: 768px){
   .block-container{
@@ -342,6 +348,24 @@ st.markdown("""
   .bc-pill{ font-size: .72rem; }
   .app-bottom-safe{ height: 126px; }
 }
+
+.bc-main-title{
+  margin: 0 0 4px 0;
+  padding: 0;
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: #8C1D2C;
+  text-shadow: 0 1px 10px rgba(0,0,0,.35);
+  font-size: clamp(1.95rem, 5.6vw, 2.7rem);
+  line-height: 1.05;
+  letter-spacing: .02em;
+  background: transparent !important;
+}
+@media (max-width: 768px){
+  .bc-main-title{ font-size: 1.85rem; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1433,7 +1457,7 @@ def sugestao_articular(ex):
     return ""
 
 # --- 7. CABEÇALHO ---
-st.title("♣️ Black Clover Training")
+st.markdown("<div class='bc-main-title'>♣️Black Clover Training♣️</div>", unsafe_allow_html=True)
 st.caption("A minha magia é não desistir 🗡️🖤 · otimizado para telemóvel")
 
 try:
@@ -1446,9 +1470,6 @@ try:
     """, unsafe_allow_html=True)
 except Exception:
     pass
-
-# espaço de segurança para barras flutuantes (mobile)
-st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino", "📊 Histórico", "🏅 Ranking"])
@@ -1479,18 +1500,21 @@ with tab_treino:
 
         label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
         st.info(label)
-        ctm1, ctm2 = st.columns([2,1])
+        ctm1, ctm2, ctm3 = st.columns([2,1,1])
         ctm1.metric("Descanso", f"{rem}s")
-        if ctm2.button("⏭️ Skip -15s", key="rest_skip15", use_container_width=True, disabled=(rem <= 0)):
+        if ctm2.button("⏭️ -15s", key="rest_skip15", use_container_width=True, disabled=(rem <= 0)):
             novo_fim = max(float(time.time()), float(st.session_state.get("rest_auto_end_ts", end_ts)) - 15.0)
             st.session_state["rest_auto_end_ts"] = novo_fim
             st.rerun()
+        if ctm3.button("⏭️ Total", key="rest_skip_all", use_container_width=True, disabled=(rem <= 0)):
+            st.session_state["rest_auto_end_ts"] = float(time.time())
+            st.rerun()
         st.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
-        ctm3, ctm4 = st.columns(2)
-        if ctm3.button("⏹️ Parar", key="rest_stop", use_container_width=True):
+        ctm4, ctm5 = st.columns(2)
+        if ctm4.button("⏹️ Parar", key="rest_stop", use_container_width=True):
             st.session_state["rest_auto_run"] = False
             st.rerun()
-        if ctm4.button("🔁 Reiniciar", key="rest_restart", use_container_width=True):
+        if ctm5.button("🔁 Reiniciar", key="rest_restart", use_container_width=True):
             st.session_state["rest_auto_end_ts"] = float(time.time()) + float(total_rest)
             st.rerun()
 
@@ -1852,7 +1876,7 @@ Dor articular pontiaguda = troca variação no dia.
                                 time.sleep(0.4)
                                 st.rerun()
                 with st.expander("⏱️ Timer de descanso", expanded=(pure_workout_mode or (not ui_compact))):
-                    p1,p2,p3,p4 = st.columns(4)
+                    p1,p2,p3,p4,p5 = st.columns(5)
                     if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 60
                     if p2.button("90s", key=f"rest90_{i}", use_container_width=True):
@@ -1862,6 +1886,8 @@ Dor articular pontiaguda = troca variação no dia.
                     if p4.button("⏭️ -15s", key=f"restm15_{i}", use_container_width=True):
                         _cur = int(st.session_state.get(f"rest_{i}", item["descanso_s"]))
                         st.session_state[f"rest_{i}"] = max(30, _cur - 15)
+                    if p5.button("⏭️ Total", key=f"restm0_{i}", use_container_width=True):
+                        st.session_state[f"rest_{i}"] = 30
                     rest_s = st.slider("Duração (s)", min_value=30, max_value=300,
                                        value=int(st.session_state.get(f"rest_{i}", item["descanso_s"])),
                                        step=15, key=f"rest_{i}")
@@ -2170,3 +2196,7 @@ with tab_ranking:
         )
 
         st.caption("Score = XP + (Streak×50) + (Checklist×500) + (Sessões×10). Isto é só para ranking — não muda o teu treino.")
+
+
+# espaço de segurança para barras flutuantes (mobile)
+st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
