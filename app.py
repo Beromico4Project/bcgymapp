@@ -12,7 +12,7 @@ import os
 # =========================================================
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered")
+st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="collapsed")
 
 # --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
 def get_base64(bin_file):
@@ -127,6 +127,87 @@ st.markdown("""
         box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
     }
     </style>
+""", unsafe_allow_html=True)
+
+# --- CSS mobile-first (telemóvel) ---
+st.markdown("""
+<style>
+/* Toques maiores e leitura melhor */
+div.stButton > button,
+button[kind],
+[data-testid="baseButton-secondary"],
+[data-testid="baseButton-primary"]{
+  min-height: 46px;
+  border-radius: 10px !important;
+}
+[data-testid="stMetric"]{
+  background: rgba(20,20,20,0.35);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+[data-testid="stCheckbox"] label,
+[data-testid="stRadio"] label,
+[data-testid="stSelectbox"] label,
+[data-testid="stMultiSelect"] label,
+[data-testid="stNumberInput"] label{
+  font-size: 0.95rem !important;
+}
+[data-testid="stNumberInput"] input{
+  text-align: center;
+}
+div[data-testid="stExpander"]{
+  border-radius: 12px;
+}
+
+/* Mobile */
+@media (max-width: 768px){
+  .block-container{
+    padding-top: 0.65rem !important;
+    padding-left: 0.7rem !important;
+    padding-right: 0.7rem !important;
+    padding-bottom: 1rem !important;
+  }
+
+  h1{ font-size: 1.35rem !important; line-height: 1.2 !important; }
+  h2{ font-size: 1.1rem !important; line-height: 1.2 !important; }
+  h3{ font-size: 0.95rem !important; line-height: 1.2 !important; }
+
+  .stTabs [data-baseweb="tab-list"]{
+    gap: 6px;
+    padding: 6px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: thin;
+  }
+  .stTabs [data-baseweb="tab"]{
+    min-width: 118px;
+    height: 42px;
+    padding: 0 8px;
+    font-size: 0.78rem;
+  }
+
+  section[data-testid="stSidebar"]{
+    width: min(92vw, 380px) !important;
+  }
+
+  [data-testid="stMetricLabel"]{
+    font-size: 0.75rem !important;
+  }
+  [data-testid="stMetricValue"]{
+    font-size: 1rem !important;
+  }
+
+  .stMarkdown p, .stCaption{
+    font-size: 0.9rem !important;
+  }
+
+  /* Tabela mais legível em mobile */
+  [data-testid="stDataFrame"]{
+    font-size: 0.82rem;
+  }
+}
+</style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
@@ -1154,7 +1235,7 @@ def sugestao_articular(ex):
 
 # --- 7. CABEÇALHO ---
 st.title("♣️BLACK CLOVER Workout♣️")
-st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤")
+st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤 • UI otimizada para telemóvel")
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Histórico", "🏅 Ranking"])
@@ -1195,7 +1276,8 @@ Dor articular pontiaguda = troca variação no dia.
         "cooldown_req": bool(prot.get("cooldown", True)),
     }
 
-    c1,c2,c3 = st.columns(3)
+    # Layout mobile-first: 2 colunas (mais confortável no telemóvel)
+    c1,c2 = st.columns(2)
     req["aquecimento"] = c1.checkbox(
         "🔥 Aquecimento",
         value=False,
@@ -1208,6 +1290,8 @@ Dor articular pontiaguda = troca variação no dia.
         key="chk_mobilidade",
         help="Marca se fizeste mobilidade/ativação (ex.: hang, T-spine, scap, rotações externas). Ajuda ombros/anca e melhora a qualidade das séries."
     )
+
+    c3,c4 = st.columns(2)
     req["cardio"] = c3.checkbox(
         "🏃 Cardio Zona 2",
         value=False,
@@ -1215,8 +1299,6 @@ Dor articular pontiaguda = troca variação no dia.
         disabled=(not req["cardio_req"]),
         help="Marca se fizeste Zona 2 (ritmo em que consegues falar frases curtas). Só aparece ativo nos dias em que está previsto no plano."
     )
-
-    c4,c5,c6 = st.columns(3)
     req["tendoes"] = c4.checkbox(
         "🦾 Tendões",
         value=False,
@@ -1224,6 +1306,8 @@ Dor articular pontiaguda = troca variação no dia.
         disabled=(not req["tendoes_req"]),
         help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos). Ex.: tríceps isométrico, rotação externa isométrica, wrist ext excêntrico, Spanish squat (quando indicado)."
     )
+
+    c5,c6 = st.columns(2)
     req["core"] = c5.checkbox(
         "🧱 Core escoliose",
         value=False,
@@ -1310,10 +1394,8 @@ Dor articular pontiaguda = troca variação no dia.
             reps_low = int(str(item["reps"]).split("-")[0]) if "-" in str(item["reps"]) else int(float(item["reps"]))
 
             with st.expander(f"{i+1}. {ex}", expanded=(i==0)):
-                a,b,c = st.columns(3)
-                a.markdown(f"**Meta:** {item['series']}×{item['reps']}")
-                b.markdown(f"**RIR alvo:** {rir_target_str}")
-                c.markdown(f"**Tempo:** {item['tempo']} | **Descanso:** ~{item['descanso_s']}s")
+                st.markdown(f"**Meta:** {item['series']}×{item['reps']}   •  **RIR alvo:** {rir_target_str}")
+                st.caption(f"⏱️ Tempo: {item['tempo']} | Descanso recomendado: ~{item['descanso_s']}s")
 
                 art = sugestao_articular(ex)
                 if art:
@@ -1337,14 +1419,14 @@ Dor articular pontiaguda = troca variação no dia.
                 with st.form(key=f"form_{i}"):
                     for s in range(item["series"]):
                         st.markdown(f"### Série {s+1}")
-                        cc1,cc2,cc3 = st.columns(3)
-                        peso = cc1.number_input(f"Kg S{s+1}", min_value=0.0,
-                                                value=float(peso_sug) if peso_sug>0 else 0.0,
-                                                step=2.5, key=f"peso_{i}_{s}")
-                        reps = cc2.number_input(f"Reps S{s+1}", min_value=0, value=int(reps_low),
-                                                step=1, key=f"reps_{i}_{s}")
-                        rir = cc3.number_input(f"RIR S{s+1}", min_value=0.0, max_value=6.0,
-                                               value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
+                        peso = st.number_input(f"Kg S{s+1}", min_value=0.0,
+                                               value=float(peso_sug) if peso_sug>0 else 0.0,
+                                               step=2.5, key=f"peso_{i}_{s}")
+                        rcol1, rcol2 = st.columns(2)
+                        reps = rcol1.number_input(f"Reps S{s+1}", min_value=0, value=int(reps_low),
+                                                  step=1, key=f"reps_{i}_{s}")
+                        rir = rcol2.number_input(f"RIR S{s+1}", min_value=0.0, max_value=6.0,
+                                                 value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
                         lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
                     if st.form_submit_button("Gravar Exercício"):
@@ -1403,19 +1485,18 @@ with tab_historico:
     if dfp.empty:
         st.info("Ainda sem registos neste perfil.")
     else:
-        # Filtros (Dia / Bloco / Datas)
-        f1,f2,f3 = st.columns(3)
+        # Filtros (mobile-first: empilhados)
         dias_opts = sorted(dfp["Dia"].dropna().astype(str).unique().tolist())
         blocos_opts = sorted(dfp["Bloco"].dropna().astype(str).unique().tolist())
 
-        dias_filtrados = f1.multiselect("Filtrar por Dia", dias_opts, default=[])
-        blocos_filtrados = f2.multiselect("Filtrar por Bloco", blocos_opts, default=[])
+        dias_filtrados = st.multiselect("Filtrar por Dia", dias_opts, default=[])
+        blocos_filtrados = st.multiselect("Filtrar por Bloco", blocos_opts, default=[])
 
         datas_dt = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dropna()
         if not datas_dt.empty:
             dmin = datas_dt.min().date()
             dmax = datas_dt.max().date()
-            intervalo = f3.date_input("Filtrar por datas", value=(dmin, dmax))
+            intervalo = st.date_input("Filtrar por datas", value=(dmin, dmax))
             try:
                 if isinstance(intervalo, (list, tuple)) and len(intervalo) == 2:
                     di, df_ = intervalo[0], intervalo[1]
@@ -1560,16 +1641,15 @@ with tab_ranking:
         rank_df = rank_df.sort_values(["_tier_ord", "Score", "XP Total"], ascending=[False, False, False]).drop(columns=["_tier_ord"])
         rank_df.insert(0, "Posição", range(1, len(rank_df)+1))
 
-        # pódio
+        # pódio (empilhado para ficar legível em mobile)
         top3 = rank_df.head(3)
         if not top3.empty:
-            p1,p2,p3 = st.columns(3)
             if len(top3) >= 1:
-                p1.metric("🥇 #1", top3.iloc[0]["Perfil"], f"{top3.iloc[0]['Tier']} • {top3.iloc[0]['XP Total']} XP")
+                st.metric("🥇 #1", top3.iloc[0]["Perfil"], f"{top3.iloc[0]['Tier']} • {top3.iloc[0]['XP Total']} XP")
             if len(top3) >= 2:
-                p2.metric("🥈 #2", top3.iloc[1]["Perfil"], f"{top3.iloc[1]['Tier']} • {top3.iloc[1]['XP Total']} XP")
+                st.metric("🥈 #2", top3.iloc[1]["Perfil"], f"{top3.iloc[1]['Tier']} • {top3.iloc[1]['XP Total']} XP")
             if len(top3) >= 3:
-                p3.metric("🥉 #3", top3.iloc[2]["Perfil"], f"{top3.iloc[2]['Tier']} • {top3.iloc[2]['XP Total']} XP")
+                st.metric("🥉 #3", top3.iloc[2]["Perfil"], f"{top3.iloc[2]['Tier']} • {top3.iloc[2]['XP Total']} XP")
 
         st.dataframe(
             rank_df[["Posição","Perfil","Tier","Score","XP Total","Streak Máx","Checklist %","Sessões"]],
