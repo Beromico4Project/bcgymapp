@@ -786,11 +786,16 @@ def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num
         else:
             st.session_state[f"rir_{i}_{s}"] = float(rir_target_num)
 
+
 def safe_append_rows(df_rows: pd.DataFrame):
     """Append (seguro para uso simultâneo) em vez de reescrever a sheet inteira.
     Se falhar, grava em offline_backup.csv.
+    - Faz retry automático (erros transitórios / quota).
+    - Garante/migra header da sheet para o schema atual.
     """
-    try:
+    df_rows = normalize_for_save(df_rows)
+
+    def _get_ws():
         # gspread client dentro do streamlit_gsheets connection
         client = getattr(conn, "_client", None)
         if client is None:
@@ -806,23 +811,61 @@ def safe_append_rows(df_rows: pd.DataFrame):
             raise RuntimeError("Configuração gsheets sem 'spreadsheet' (URL ou key).")
 
         sh = client.open_by_url(spreadsheet) if "http" in str(spreadsheet) else client.open_by_key(str(spreadsheet))
-        ws = sh.worksheet(worksheet) if worksheet else sh.sheet1
+        return sh.worksheet(worksheet) if worksheet else sh.sheet1
 
-        header = ws.row_values(1)
+    def _ensure_header_schema(ws):
+        header = [str(x).strip() for x in ws.row_values(1)]
         if not header:
-            header = SCHEMA_COLUMNS
-            ws.update("A1", [header])
+            ws.update("A1", [SCHEMA_COLUMNS])
+            return list(SCHEMA_COLUMNS)
 
-        df_rows = normalize_for_save(df_rows)
+        # Migração automática do header sem perder colunas antigas
+        header_clean = [h for h in header if str(h).strip() != ""]
+        missing = [c for c in SCHEMA_COLUMNS if c not in header_clean]
+        if missing:
+            merged = header_clean + missing
+            ws.update("A1", [merged])
+            return merged
+        return header_clean
+
+    try:
+        ws = _get_ws()
+        header = _ensure_header_schema(ws)
+
+        rows_to_append = []
         for _, r in df_rows.iterrows():
-            values = [_cell_to_gsheet(r.get(col, "")) for col in header]
-            ws.append_row(values, value_input_option="USER_ENTERED")
+            rows_to_append.append([_cell_to_gsheet(r.get(col, "")) for col in header])
 
-        # backup local incremental
-        _append_offline_backup_rows(df_rows)
-        return True, ""
+        # Retry para erros transitórios (429 / 5xx / timeouts)
+        last_err = None
+        for attempt in range(3):
+            try:
+                if hasattr(ws, "append_rows"):
+                    ws.append_rows(rows_to_append, value_input_option="RAW")
+                else:
+                    for values in rows_to_append:
+                        ws.append_row(values, value_input_option="RAW")
+                _append_offline_backup_rows(df_rows)  # mantém backup local incremental
+                return True, ""
+            except Exception as e:
+                last_err = e
+                # pequeno backoff para quota/transitório
+                time.sleep(0.8 * (attempt + 1))
+
+        raise last_err if last_err else RuntimeError("Falha desconhecida ao fazer append.")
     except Exception as e:
+        # nunca perder treino
         _append_offline_backup_rows(df_rows)
+
+        # Fallback final: tenta reescrever via conn.update (menos ideal para concorrência, mas evita bloqueio)
+        try:
+            df_full = get_data()
+            df_final = pd.concat([df_full, df_rows], ignore_index=True)
+            conn.update(data=normalize_for_save(df_final))
+            return True, ""
+        except Exception:
+            pass
+
         return False, str(e)
 
 
