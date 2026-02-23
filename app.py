@@ -1306,27 +1306,7 @@ with tab_treino:
             time.sleep(1)
         ph_auto.success("BORA! 🔥")
         st.session_state["rest_auto_run"] = False
-    if show_rules:
-        with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
-            if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
-                st.markdown("""
-**Plano Ineix (A/B/C 3x/sem):**  
-**Intensidade:** RIR **2** em todas as séries (sem falhar).  
-**Descanso:** **60–90s** (use o slider se precisares).  
-**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
-Dor articular pontiaguda = troca variação no dia.
-""")
-            else:
-                st.markdown("""
-**Força (compostos):** RIR 2–3 sempre.  
-**Hipertrofia:** RIR 2; semanas 3 e 7 → RIR 1 (isoladores podem 0–1).  
-**Deload (sem 4 e 8):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
-
-**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
-**Descanso:** Força 2–4 min | Hiper compostos 90–150s | Isoladores 45–90s  
-Dor articular pontiaguda = troca variação no dia.
-""")
-    elif pure_workout_mode:
+    if pure_workout_mode:
         st.caption("📱 Modo treino puro ativo: regras escondidas para limpar o ecrã (liga na sidebar se quiseres rever).")
 
     cfg = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict)
@@ -1336,7 +1316,6 @@ Dor articular pontiaguda = troca variação no dia.
     pure_nav_key = None
     pure_idx = 0
     if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
-        st.markdown("### 📱 Modo Treino Puro")
         ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
         pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
         if pure_nav_key not in st.session_state:
@@ -1449,14 +1428,7 @@ Dor articular pontiaguda = troca variação no dia.
     )
 
     st.caption("ℹ️ Estas caixas são um **checklist do que fizeste hoje** (ajuda a consistência e o cálculo de XP). Se alguma estiver cinzenta, é porque **não está prevista** para esse dia/plano.")
-
-    justificativa = ""
-    xp_pre, ok_checklist = checklist_xp(req, justificativa="")
-    if not ok_checklist:
-        st.info("Faltou algum item obrigatório? Escreve uma justificativa (ganhas XP extra).")
-        justificativa = st.text_input("Justificativa:", "")
-    xp_pre, ok_checklist = checklist_xp(req, justificativa=justificativa)
-
+    
     df_now = get_data()
     streak_atual = get_last_streak(df_now, perfil_sel)
 
@@ -1486,6 +1458,27 @@ Dor articular pontiaguda = troca variação no dia.
         st.caption(f"Estado: **{subtitulo}**")
 
     st.divider()
+
+    if show_rules:
+        with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
+            if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
+                st.markdown("""
+**Plano Ineix (A/B/C 3x/sem):**  
+**Intensidade:** RIR **2** em todas as séries (sem falhar).  
+**Descanso:** **60–90s** (use o slider se precisares).  
+**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
+Dor articular pontiaguda = troca variação no dia.
+""")
+            else:
+                st.markdown("""
+**Força (compostos):** RIR 2–3 sempre.  
+**Hipertrofia:** RIR 2; semanas 3 e 7 → RIR 1 (isoladores podem 0–1).  
+**Deload (sem 4 e 8):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
+
+**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
+**Descanso:** Força 2–4 min | Hiper compostos 90–150s | Isoladores 45–90s  
+Dor articular pontiaguda = troca variação no dia.
+""")
 
     if bloco == "Fisio":
         st.subheader("🏠 Fisio / Recuperação")
@@ -1940,3 +1933,4 @@ with tab_ranking:
         )
 
         st.caption("Score = XP + (Streak×50) + (Checklist×500) + (Sessões×10). Isto é só para ranking — não muda o teu treino.")
+
