@@ -105,15 +105,15 @@ def trigger_rest_done_feedback():
 # --- 3. CSS DA INTERFACE ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=MedievalSharp&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] {
-        font-family: 'MedievalSharp', cursive;
+        font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         color: #E0E0E0;
     }
     h1, h2, h3 {
-        color: #FF4B4B !important;
+        color: #8C1D2C !important;
         font-family: 'Cinzel', serif !important;
-        text-shadow: 2px 2px 4px #000;
+        text-shadow: 0 1px 10px rgba(0,0,0,.35);
         text-transform: uppercase;
     }
     /* ABAS (TABS) */
@@ -135,9 +135,9 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] {
         background-color: rgba(139, 0, 0, 0.9) !important;
-        color: #FFD700 !important;
-        border: 1px solid #FF4B4B !important;
-        box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+        color: #E8E2E2 !important;
+        border: 1px solid #8C1D2C !important;
+        box-shadow: 0 6px 18px rgba(140, 29, 44, 0.22);
     }
     /* CARTÕES EXPANSÍVEIS */
     .streamlit-expanderHeader {
@@ -161,15 +161,15 @@ st.markdown("""
     }
     /* Botões */
     div.stButton > button:first-child {
-        background: linear-gradient(180deg, #8B0000 0%, #3a0000 100%);
-        color: #FFD700;
-        border: 1px solid #FF4B4B;
+        background: linear-gradient(180deg, #5B1020 0%, #1A090D 100%);
+        color: #E8E2E2;
+        border: 1px solid #8C1D2C;
         font-family: 'Cinzel', serif;
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     div.stButton > button:hover {
         transform: scale(1.02);
-        box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
+        box-shadow: 0 6px 16px rgba(140, 29, 44, 0.28);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -203,6 +203,12 @@ button[kind],
 }
 div[data-testid="stExpander"]{
   border-radius: 12px;
+}
+
+div[data-testid="stExpander"]{
+  background: rgba(14,14,14,0.34);
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(8px);
 }
 
 /* Mobile */
@@ -259,10 +265,12 @@ div[data-testid="stExpander"]{
 st.markdown("""
 <style>
 :root{
-  --bc-glass: rgba(18,18,18,.58);
-  --bc-line: rgba(255,255,255,.08);
-  --bc-accent: rgba(255,75,75,.35);
-  --bc-gold: #FFD700;
+  --bc-glass: rgba(18,18,18,.62);
+  --bc-line: rgba(255,255,255,.07);
+  --bc-accent: rgba(140,29,44,.38);
+  --bc-gold: #E8E2E2;
+  --bc-accent-strong: #8C1D2C;
+  --bc-accent-soft: rgba(140,29,44,.22);
 }
 .app-bottom-safe{ height: 118px; }
 .bc-hero{
@@ -271,21 +279,21 @@ st.markdown("""
   border-radius: 14px;
   padding: 10px 12px;
   margin: 4px 0 10px 0;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  box-shadow: 0 10px 28px rgba(0,0,0,.24);
 }
 .bc-hero-title{ color:#fff; font-weight:700; margin-bottom:8px; font-size:.95rem; }
 .bc-chip-wrap{ display:flex; flex-wrap:wrap; gap:6px; }
 .bc-chip{
   display:inline-flex; align-items:center; gap:5px;
   border:1px solid var(--bc-line);
-  background: rgba(255,255,255,.03);
+  background: rgba(255,255,255,.025);
   border-radius: 999px;
   padding: 3px 8px;
   font-size: .78rem;
   color:#EDEDED;
 }
-.bc-chip.gold{ border-color: rgba(255,215,0,.28); color: var(--bc-gold); }
-.bc-chip.red{ border-color: rgba(255,75,75,.32); }
+.bc-chip.gold{ border-color: rgba(140,29,44,.32); color: var(--bc-gold); }
+.bc-chip.red{ border-color: rgba(140,29,44,.32); }
 .bc-chip.green{ border-color: rgba(80,220,140,.28); }
 .bc-ex-meta{
   background: rgba(255,255,255,.025);
@@ -297,7 +305,7 @@ st.markdown("""
 .bc-ex-name{ font-weight:700; color:#fff; margin-bottom:6px; line-height:1.2; }
 .bc-ex-pills{ display:flex; flex-wrap:wrap; gap:6px; }
 .bc-pill{
-  background: rgba(0,0,0,.22);
+  background: rgba(0,0,0,.18);
   border:1px solid var(--bc-line);
   border-radius: 999px;
   padding: 2px 8px;
@@ -316,7 +324,7 @@ st.markdown("""
 .bc-float-footer{
   bottom: calc(8px + env(safe-area-inset-bottom));
   background: rgba(12,12,12,.84);
-  border-color: rgba(255,75,75,.25);
+  border-color: rgba(140,29,44,.25);
   padding: 8px 12px;
   font-size: 12px;
 }
@@ -344,7 +352,7 @@ st.markdown("""
    ========================= */
 section[data-testid="stSidebar"]{
   background: rgba(10,10,10,0.62) !important;
-  border-right: 1px solid rgba(255,75,75,0.35) !important;
+  border-right: 1px solid rgba(140,29,44,0.35) !important;
   backdrop-filter: blur(12px);
 }
 section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
@@ -365,15 +373,15 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
   right: 14px;
   top: 10px;
   font-size: 22px;
-  color: rgba(255, 215, 0, 0.85);
-  text-shadow: 0 0 12px rgba(255, 215, 0, 0.18);
+  color: rgba(176, 126, 136, 0.85);
+  text-shadow: 0 0 12px rgba(140, 29, 44, 0.22);
 }
 .sidebar-seal-title{
   font-family: 'Cinzel', serif;
   font-weight: 900;
   letter-spacing: .12em;
-  color: #FFD700;
-  text-shadow: 0 0 14px rgba(255, 215, 0, 0.18);
+  color: #E8E2E2;
+  text-shadow: 0 0 14px rgba(140, 29, 44, 0.22);
   margin: 0;
 }
 .sidebar-seal-sub{
@@ -386,7 +394,7 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
 .sidebar-card{
   background: rgba(20,20,20,0.55);
   border: 1px solid rgba(255,255,255,0.08);
-  border-left: 3px solid rgba(255, 75, 75, 0.75);
+  border-left: 3px solid rgba(140, 29, 44, 0.78);
   padding: 12px 12px;
   border-radius: 16px;
   box-shadow: 0 10px 22px rgba(0,0,0,0.35);
@@ -394,10 +402,10 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
 }
 .sidebar-card h3{
   font-family: 'Cinzel', serif;
-  color: #FFD700 !important;
+  color: #E8E2E2 !important;
   letter-spacing: .08em;
   margin: 0 0 6px 0;
-  text-shadow: 0 0 10px rgba(255,215,0,0.16);
+  text-shadow: 0 0 10px rgba(140,29,44,0.18);
 }
 
 /* Divisor “runa” */
@@ -405,7 +413,7 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
   margin: 10px 0 8px 0;
   height: 1px;
   border: none;
-  background: linear-gradient(90deg, transparent, rgba(255,75,75,0.7), transparent);
+  background: linear-gradient(90deg, transparent, rgba(140,29,44,0.65), transparent);
   position: relative;
 }
 .rune-divider::after{
@@ -415,8 +423,8 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
   transform: translateX(-50%);
   top: -10px;
   font-size: 12px;
-  color: rgba(255,215,0,0.80);
-  text-shadow: 0 0 10px rgba(255,215,0,0.20);
+  color: rgba(232,226,226,0.82);
+  text-shadow: 0 0 10px rgba(140,29,44,0.22);
   background: rgba(10,10,10,0.60);
   padding: 0 8px;
   border-radius: 999px;
@@ -446,7 +454,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"]{
 /* Scrollbar */
 section[data-testid="stSidebar"] ::-webkit-scrollbar { width: 10px; }
 section[data-testid="stSidebar"] ::-webkit-scrollbar-thumb {
-  background: rgba(255,75,75,0.35);
+  background: rgba(140,29,44,0.35);
   border-radius: 999px;
 }
 section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
@@ -1415,7 +1423,7 @@ try:
     _footer = f"{perfil_sel} • {dia} • {_pl}"
     st.markdown(f"""
     <div class='bc-float-bar bc-float-footer'>
-      <span style='color:#FFD700;'>♣</span> {_footer}
+      <span style='color:#E8E2E2;'>♣</span> {_footer}
     </div>
     """, unsafe_allow_html=True)
 except Exception:
@@ -1567,7 +1575,7 @@ Dor articular pontiaguda = troca variação no dia.
         serie_txt = "Concluído ✅" if done_now >= total_series_cur else f"Série {done_now+1}/{total_series_cur}"
         st.markdown(f"""
         <div class='bc-float-bar bc-float-status'>
-          <b style='color:#FFD700;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])} · {serie_txt}
+          <b style='color:#E8E2E2;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])} · {serie_txt}
         </div>
         """, unsafe_allow_html=True)
 
