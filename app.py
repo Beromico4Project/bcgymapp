@@ -1441,31 +1441,51 @@ with tab_treino:
 
     def _queue_auto_rest(seconds:int, ex_name:str=""):
         try:
-            st.session_state["rest_auto_seconds"] = max(1, int(seconds))
+            secs = max(1, int(seconds))
         except Exception:
-            st.session_state["rest_auto_seconds"] = 60
+            secs = 60
+        st.session_state["rest_auto_seconds"] = secs
         st.session_state["rest_auto_from"] = str(ex_name or "")
+        st.session_state["rest_auto_end_ts"] = float(time.time()) + float(secs)
         st.session_state["rest_auto_run"] = True
+        st.session_state["rest_auto_notified"] = False
 
     if st.session_state.get("rest_auto_run", False):
         total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
         ex_rest = str(st.session_state.get("rest_auto_from", ""))
-        timer_box = st.container()
-        with timer_box:
-            label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
-            st.info(label)
-            ph_metric = st.empty()
-            ph_prog = st.empty()
-        for sec in range(total_rest, 0, -1):
-            elapsed = total_rest - sec
-            ph_metric.metric("Descanso", f"{sec}s")
-            ph_prog.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
+        end_ts = float(st.session_state.get("rest_auto_end_ts", float(time.time()) + total_rest))
+        rem_float = end_ts - float(time.time())
+        rem = int(rem_float) if rem_float.is_integer() else int(rem_float) + (1 if rem_float > 0 else 0)
+        rem = max(0, rem)
+        elapsed = max(0, total_rest - rem)
+
+        label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
+        st.info(label)
+        ctm1, ctm2 = st.columns([2,1])
+        ctm1.metric("Descanso", f"{rem}s")
+        if ctm2.button("⏭️ Skip -15s", key="rest_skip15", use_container_width=True, disabled=(rem <= 0)):
+            novo_fim = max(float(time.time()), float(st.session_state.get("rest_auto_end_ts", end_ts)) - 15.0)
+            st.session_state["rest_auto_end_ts"] = novo_fim
+            st.rerun()
+        st.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
+        ctm3, ctm4 = st.columns(2)
+        if ctm3.button("⏹️ Parar", key="rest_stop", use_container_width=True):
+            st.session_state["rest_auto_run"] = False
+            st.rerun()
+        if ctm4.button("🔁 Reiniciar", key="rest_restart", use_container_width=True):
+            st.session_state["rest_auto_end_ts"] = float(time.time()) + float(total_rest)
+            st.rerun()
+
+        if rem <= 0:
+            st.success("Descanso concluído ✅")
+            if not bool(st.session_state.get("rest_auto_notified", False)):
+                st.toast("Descanso concluído ✅")
+                trigger_rest_done_feedback()
+                st.session_state["rest_auto_notified"] = True
+            st.session_state["rest_auto_run"] = False
+        else:
             time.sleep(1)
-        ph_metric.success("Pronto ✅")
-        ph_prog.progress(1.0, text="Descanso concluído")
-        st.toast("Descanso concluído ✅")
-        trigger_rest_done_feedback()
-        st.session_state["rest_auto_run"] = False
+            st.rerun()
     if show_rules:
         with st.expander("📜 Regras rápidas do plano"):
             if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
@@ -1578,99 +1598,24 @@ Dor articular pontiaguda = troca variação no dia.
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("## ✅ Checklist da sessão")
+    def _get_req_state_from_session():
+        return {
+            "aquecimento_req": True,
+            "mobilidade_req": True,
+            "cardio_req": bool(prot.get("cardio", False)),
+            "tendoes_req": bool(prot.get("tendoes", False)),
+            "core_req": bool(prot.get("core", False)),
+            "cooldown_req": bool(prot.get("cooldown", True)),
+            "aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
+            "mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
+            "cardio": bool(st.session_state.get("chk_cardio", False)),
+            "tendoes": bool(st.session_state.get("chk_tendoes", False)),
+            "core": bool(st.session_state.get("chk_core", False)),
+            "cooldown": bool(st.session_state.get("chk_cooldown", False)),
+        }
 
-    req = {
-        "aquecimento_req": True,
-        "mobilidade_req": True,
-        "cardio_req": bool(prot.get("cardio", False)),
-        "tendoes_req": bool(prot.get("tendoes", False)),
-        "core_req": bool(prot.get("core", False)),
-        "cooldown_req": bool(prot.get("cooldown", True)),
-    }
-
-    # Layout mobile-first: 2 colunas (mais confortável no telemóvel)
-    c1,c2 = st.columns(2)
-    req["aquecimento"] = c1.checkbox(
-        "🔥 Aquecimento",
-        value=False,
-        key="chk_aquecimento",
-        help="Marca se fizeste o aquecimento (ex.: 4–5 min leves + ramp-up do primeiro exercício)."
-    )
-    req["mobilidade"] = c2.checkbox(
-        "🧘 Mobilidade",
-        value=False,
-        key="chk_mobilidade",
-        help="Marca se fizeste mobilidade/ativação (ombros, anca, escápulas)."
-    )
-
-    c3,c4 = st.columns(2)
-    req["cardio"] = c3.checkbox(
-        "🏃 Cardio Zona 2",
-        value=False,
-        key="chk_cardio",
-        disabled=(not req["cardio_req"]),
-        help="Marca se fizeste cardio Zona 2 (ritmo em que ainda consegues falar)."
-    )
-    req["tendoes"] = c4.checkbox(
-        "🦾 Tendões",
-        value=False,
-        key="chk_tendoes",
-        disabled=(not req["tendoes_req"]),
-        help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos). Ex.: tríceps isométrico, rotação externa isométrica, wrist ext excêntrico, Spanish squat (quando indicado)."
-    )
-
-    c5,c6 = st.columns(2)
-    req["core"] = c5.checkbox(
-        "🧱 Core escoliose",
-        value=False,
-        key="chk_core",
-        disabled=(not req["core_req"]),
-        help="Marca se fizeste o core 'anti-rotação' (McGill curl-up, side plank, bird dog, suitcase carry). Protege lombar e melhora estabilidade."
-    )
-    req["cooldown"] = c6.checkbox(
-        "😮‍💨 Cool-down",
-        value=False,
-        key="chk_cooldown",
-        help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves: peitoral/lat/hip flexor). Evita alongamentos agressivos de lombar."
-    )
-
-    st.caption("ℹ️ Estas caixas são um **checklist do que fizeste hoje** (ajuda a consistência e o cálculo de XP). Se alguma estiver cinzenta, é porque **não está prevista** para esse dia/plano.")
-
-    justificativa = ""
-    xp_pre, ok_checklist = checklist_xp(req, justificativa="")
-    if not ok_checklist:
-        st.info("Faltou algum item obrigatório? Escreve uma justificativa (ganhas XP extra).")
-        justificativa = st.text_input("Justificativa:", "")
-    xp_pre, ok_checklist = checklist_xp(req, justificativa=justificativa)
-
-    df_now = get_data()
-    streak_atual = get_last_streak(df_now, perfil_sel)
-
-    m1,m2,m3 = st.columns(3)
-    m1.metric("XP previsto hoje", f"{xp_pre}")
-    m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
-    m3.metric("Streak atual", f"{streak_atual}")
-
-    req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
-    done_req = sum(1 for k in req_keys if req.get(k, False))
-    total_req = max(1, len(req_keys))
-    st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
-
-    # rank por perfil
-    dfp_rank = df_now[df_now["Perfil"].astype(str) == str(perfil_sel)].copy()
-    dfp_rank = dfp_rank[dfp_rank["Bloco"].astype(str).str.lower() != "setup"]
-    if not dfp_rank.empty:
-        xp_total = int(pd.to_numeric(dfp_rank["XP"], errors="coerce").fillna(0).sum())
-        streak_max = int(pd.to_numeric(dfp_rank["Streak"], errors="coerce").fillna(0).max()) if "Streak" in dfp_rank.columns else 0
-        checklist_rate = float(dfp_rank["Checklist_OK"].apply(_to_bool).mean())
-        rank, subtitulo = calcular_rank(xp_total, streak_max, checklist_rate)
-        r1,r2,r3,r4 = st.columns(4)
-        r1.metric("🏅 Rank", rank)
-        r2.metric("✨ XP Total", xp_total)
-        r3.metric("🔥 Streak Máx", streak_max)
-        r4.metric("✅ Checklist", f"{checklist_rate*100:.0f}%")
-        st.caption(f"Estado: **{subtitulo}**")
+    req = _get_req_state_from_session()
+    justificativa = str(st.session_state.get("chk_justif", "") or "")
 
     st.divider()
 
@@ -1888,13 +1833,16 @@ Dor articular pontiaguda = troca variação no dia.
                                 time.sleep(0.4)
                                 st.rerun()
                 with st.expander("⏱️ Timer de descanso", expanded=(pure_workout_mode or (not ui_compact))):
-                    p1,p2,p3 = st.columns(3)
+                    p1,p2,p3,p4 = st.columns(4)
                     if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 60
                     if p2.button("90s", key=f"rest90_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 90
                     if p3.button("120s", key=f"rest120_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 120
+                    if p4.button("⏭️ -15s", key=f"restm15_{i}", use_container_width=True):
+                        _cur = int(st.session_state.get(f"rest_{i}", item["descanso_s"]))
+                        st.session_state[f"rest_{i}"] = max(30, _cur - 15)
                     rest_s = st.slider("Duração (s)", min_value=30, max_value=300,
                                        value=int(st.session_state.get(f"rest_{i}", item["descanso_s"])),
                                        step=15, key=f"rest_{i}")
@@ -1924,6 +1872,82 @@ Dor articular pontiaguda = troca variação no dia.
 - Bird dog 2×6–8/lado (pausa 2s)
 - Suitcase carry 2×20–30m/lado (se houver espaço)
 """)
+
+        st.markdown("## ✅ Checklist da sessão")
+
+        req = _get_req_state_from_session()
+
+        c1, c2 = st.columns(2)
+        c1.checkbox(
+            "🔥 Aquecimento",
+            value=False,
+            key="chk_aquecimento",
+            help="Marca se fizeste o aquecimento (ex.: 4–5 min leves + ramp-up do primeiro exercício)."
+        )
+        c2.checkbox(
+            "🧘 Mobilidade",
+            value=False,
+            key="chk_mobilidade",
+            help="Marca se fizeste mobilidade/ativação (ombros, anca, escápulas)."
+        )
+
+        c3, c4 = st.columns(2)
+        c3.checkbox(
+            "🏃 Cardio Zona 2",
+            value=False,
+            key="chk_cardio",
+            disabled=(not req.get("cardio_req", False)),
+            help="Marca se fizeste cardio Zona 2 (ritmo em que ainda consegues falar)."
+        )
+        c4.checkbox(
+            "🦾 Tendões",
+            value=False,
+            key="chk_tendoes",
+            disabled=(not req.get("tendoes_req", False)),
+            help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos)."
+        )
+
+        c5, c6 = st.columns(2)
+        c5.checkbox(
+            "🧱 Core escoliose",
+            value=False,
+            key="chk_core",
+            disabled=(not req.get("core_req", False)),
+            help="Marca se fizeste o core anti-rotação (McGill curl-up, side plank, bird dog, suitcase carry)."
+        )
+        c6.checkbox(
+            "😮‍💨 Cool-down",
+            value=False,
+            key="chk_cooldown",
+            help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves)."
+        )
+
+        st.caption("ℹ️ Checklist do que fizeste hoje. As caixas cinzentas não estão previstas para este dia/plano.")
+
+        req = _get_req_state_from_session()
+        justificativa = ""
+        xp_pre, ok_checklist = checklist_xp(req, justificativa="")
+        if not ok_checklist:
+            st.info("Falta algum item obrigatório? Podes justificar para não perder XP.")
+            justificativa = st.text_input("Justificativa", value=str(st.session_state.get("chk_justif", "")), key="chk_justif")
+        else:
+            # mantém o campo disponível no estado, sem mostrar ruído extra
+            st.session_state.setdefault("chk_justif", str(st.session_state.get("chk_justif", "") or ""))
+            justificativa = str(st.session_state.get("chk_justif", "") or "")
+        xp_pre, ok_checklist = checklist_xp(req, justificativa=justificativa)
+
+        df_now = get_data()
+        streak_atual = get_last_streak(df_now, perfil_sel)
+
+        m1,m2,m3 = st.columns(3)
+        m1.metric("XP previsto", f"{xp_pre}")
+        m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
+        m3.metric("Streak", f"{streak_atual}")
+
+        req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
+        done_req = sum(1 for k in req_keys if req.get(k, False))
+        total_req = max(1, len(req_keys))
+        st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
 
         if st.button("✅ Terminar treino", type="primary"):
             st.balloons()
