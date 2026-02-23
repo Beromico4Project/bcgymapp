@@ -851,8 +851,8 @@ treinos_ineix_gym = {
         "exercicios": [
             {"ex":"Leg press (pés altos)", "series":3, "reps":"10-12", "tipo":"composto"},
             {"ex":"Flexora (leg curl)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Abdutora", "series":3, "reps":"15-25", "tipo":"isolado"},
-            {"ex":"Hip thrust máquina / Glute bridge", "series":3, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Abdução de lado / cabo (por perna)", "series":3, "reps":"15-25", "tipo":"isolado"},
+            {"ex":"Hip thrust com barra", "series":3, "reps":"8-12", "tipo":"composto"},
             {"ex":"Prancha (segundos)", "series":3, "reps":"20-40", "tipo":"isolado"},
         ]
     },
@@ -876,7 +876,7 @@ treinos_ineix_gym = {
         "exercicios": [
             {"ex":"Leg press (leve)", "series":3, "reps":"12-15", "tipo":"composto"},
             {"ex":"Flexora (leg curl)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Abdutora", "series":2, "reps":"20-30", "tipo":"isolado"},
+            {"ex":"Abdução de lado / cabo (por perna)", "series":2, "reps":"20-30", "tipo":"isolado"},
             {"ex":"Puxada na polia", "series":2, "reps":"10-12", "tipo":"composto"},
         ]
     },
@@ -1135,10 +1135,10 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 # FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>⚠️ Estado do Corpo</h3>", unsafe_allow_html=True)
-dor_joelho = st.sidebar.checkbox("Dor no Joelho (pontiaguda?)")
-dor_cotovelo = st.sidebar.checkbox("Dor no Cotovelo")
-dor_ombro = st.sidebar.checkbox("Dor no Ombro")
-dor_lombar = st.sidebar.checkbox("Dor na Lombar")
+dor_joelho = st.sidebar.checkbox("Dor no Joelho (pontiaguda?)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
+dor_cotovelo = st.sidebar.checkbox("Dor no Cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
+dor_ombro = st.sidebar.checkbox("Dor no Ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
+dor_lombar = st.sidebar.checkbox("Dor na Lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 def sugestao_articular(ex):
@@ -1196,14 +1196,49 @@ Dor articular pontiaguda = troca variação no dia.
     }
 
     c1,c2,c3 = st.columns(3)
-    req["aquecimento"] = c1.checkbox("🔥 Aquecimento", value=False, key="chk_aquecimento")
-    req["mobilidade"] = c2.checkbox("🧘 Mobilidade", value=False, key="chk_mobilidade")
-    req["cardio"] = c3.checkbox("🏃 Cardio Zona 2", value=False, key="chk_cardio", disabled=(not req["cardio_req"]))
+    req["aquecimento"] = c1.checkbox(
+        "🔥 Aquecimento",
+        value=False,
+        key="chk_aquecimento",
+        help="Marca se fizeste o aquecimento (ex.: 4–5 min cardio leve + ramp-up do 1º exercício). Serve para técnica, articulações e para o cálculo de XP/checklist."
+    )
+    req["mobilidade"] = c2.checkbox(
+        "🧘 Mobilidade",
+        value=False,
+        key="chk_mobilidade",
+        help="Marca se fizeste mobilidade/ativação (ex.: hang, T-spine, scap, rotações externas). Ajuda ombros/anca e melhora a qualidade das séries."
+    )
+    req["cardio"] = c3.checkbox(
+        "🏃 Cardio Zona 2",
+        value=False,
+        key="chk_cardio",
+        disabled=(not req["cardio_req"]),
+        help="Marca se fizeste Zona 2 (ritmo em que consegues falar frases curtas). Só aparece ativo nos dias em que está previsto no plano."
+    )
 
     c4,c5,c6 = st.columns(3)
-    req["tendoes"] = c4.checkbox("🦾 Tendões", value=False, key="chk_tendoes", disabled=(not req["tendoes_req"]))
-    req["core"] = c5.checkbox("🧱 Core escoliose", value=False, key="chk_core", disabled=(not req["core_req"]))
-    req["cooldown"] = c6.checkbox("😮‍💨 Cool-down", value=False, key="chk_cooldown")
+    req["tendoes"] = c4.checkbox(
+        "🦾 Tendões",
+        value=False,
+        key="chk_tendoes",
+        disabled=(not req["tendoes_req"]),
+        help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos). Ex.: tríceps isométrico, rotação externa isométrica, wrist ext excêntrico, Spanish squat (quando indicado)."
+    )
+    req["core"] = c5.checkbox(
+        "🧱 Core escoliose",
+        value=False,
+        key="chk_core",
+        disabled=(not req["core_req"]),
+        help="Marca se fizeste o core 'anti-rotação' (McGill curl-up, side plank, bird dog, suitcase carry). Protege lombar e melhora estabilidade."
+    )
+    req["cooldown"] = c6.checkbox(
+        "😮‍💨 Cool-down",
+        value=False,
+        key="chk_cooldown",
+        help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves: peitoral/lat/hip flexor). Evita alongamentos agressivos de lombar."
+    )
+
+    st.caption("ℹ️ Estas caixas são um **checklist do que fizeste hoje** (ajuda a consistência e o cálculo de XP). Se alguma estiver cinzenta, é porque **não está prevista** para esse dia/plano.")
 
     justificativa = ""
     xp_pre, ok_checklist = checklist_xp(req, justificativa="")
