@@ -392,6 +392,71 @@ def safe_update_sheet(df: pd.DataFrame):
         return False, str(e)
 
 
+
+def _cell_to_gsheet(v):
+    try:
+        if pd.isna(v):
+            return ""
+    except Exception:
+        pass
+    if isinstance(v, bool):
+        return "TRUE" if v else "FALSE"
+    return str(v)
+
+def _gsheets_cfg():
+    try:
+        return st.secrets.get("connections", {}).get("gsheets", {})
+    except Exception:
+        return {}
+
+def _append_offline_backup_rows(df: pd.DataFrame, file_name: str = "offline_backup.csv"):
+    try:
+        df = normalize_for_save(df)
+        header = not os.path.exists(file_name)
+        df.to_csv(file_name, mode="a", index=False, header=header)
+    except Exception:
+        pass
+
+def safe_append_rows(df_rows: pd.DataFrame):
+    """Append (seguro para uso simultâneo) em vez de reescrever a sheet inteira.
+    Se falhar, grava em offline_backup.csv.
+    """
+    try:
+        # gspread client dentro do streamlit_gsheets connection
+        client = getattr(conn, "_client", None)
+        if client is None:
+            client = getattr(getattr(conn, "client", None), "_client", None)
+        if client is None:
+            raise RuntimeError("Não foi possível obter cliente gspread (append).")
+
+        cfg = _gsheets_cfg()
+        spreadsheet = cfg.get("spreadsheet") or cfg.get("spreadsheet_url") or cfg.get("url")
+        worksheet = cfg.get("worksheet")
+
+        if not spreadsheet:
+            raise RuntimeError("Configuração gsheets sem 'spreadsheet' (URL ou key).")
+
+        sh = client.open_by_url(spreadsheet) if "http" in str(spreadsheet) else client.open_by_key(str(spreadsheet))
+        ws = sh.worksheet(worksheet) if worksheet else sh.sheet1
+
+        header = ws.row_values(1)
+        if not header:
+            header = SCHEMA_COLUMNS
+            ws.update("A1", [header])
+
+        df_rows = normalize_for_save(df_rows)
+        for _, r in df_rows.iterrows():
+            values = [_cell_to_gsheet(r.get(col, "")) for col in header]
+            ws.append_row(values, value_input_option="USER_ENTERED")
+
+        # backup local incremental
+        _append_offline_backup_rows(df_rows)
+        return True, ""
+    except Exception as e:
+        _append_offline_backup_rows(df_rows)
+        return False, str(e)
+
+
 def _to_bool(x):
     s = str(x).strip().lower()
     return s in ["true","1","yes","y","sim"]
@@ -630,8 +695,7 @@ def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justif
         "Checklist_OK": bool(ok),
     }])
 
-    df_final = pd.concat([df_existente, novo_dado], ignore_index=True)
-    ok_save, err = safe_update_sheet(df_final)
+    ok_save, err = safe_append_rows(novo_dado)
     if not ok_save:
         sa = _service_account_email()
         msg = "❌ Não consegui gravar na Google Sheet. Vou guardar localmente (offline_backup.csv) para não perder o treino."
@@ -1033,23 +1097,24 @@ if bk_df is not None and not bk_df.empty:
     )
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
-# SEMANA (8)
-st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
+# SEMANA (8) — só para o plano Base (8 semanas)
 is_ineix = (st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1")
-semana_sel = st.sidebar.radio(
-    "Semana do ciclo:",
-    list(range(1,9)),
-    format_func=semana_label,
-    index=0,
-    key="semana_sel",
-    on_change=_reset_daily_state,
-    disabled=is_ineix
-)
-semana = 1 if is_ineix else semana_sel
-if is_ineix:
-    st.sidebar.caption("ℹ️ Para o plano Ineix (A/B/C), a periodização 8 semanas não se aplica (RIR 2 fixo).")
-
-st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+if not is_ineix:
+    st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
+    semana_sel = st.sidebar.radio(
+        "Semana do ciclo:",
+        list(range(1,9)),
+        format_func=semana_label,
+        index=0,
+        key="semana_sel",
+        on_change=_reset_daily_state,
+    )
+    semana = semana_sel
+    st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+else:
+    # Plano Ineix (A/B/C) não usa periodização 8 semanas
+    semana = 1
+    st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # DIA
 # Plano ativo (preparado para suportar planos diferentes por perfil)
