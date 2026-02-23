@@ -1516,7 +1516,6 @@ Dor articular pontiaguda = troca variação no dia.
     pure_nav_key = None
     pure_idx = 0
     if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
-        st.markdown("### 📱 Fluxo de treino")
         ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
         pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
         if pure_nav_key not in st.session_state:
@@ -2128,3 +2127,4 @@ with tab_ranking:
         )
 
         st.caption("Score = XP + (Streak×50) + (Checklist×500) + (Sessões×10). Isto é só para ranking — não muda o teu treino.")
+
