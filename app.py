@@ -345,6 +345,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- Ajustes finos das tabs (remove espaço vazio) ---
+st.markdown("""
+<style>
+div[data-testid="stTabs"] [data-baseweb="tab-list"]{
+  min-height: 0 !important;
+  height: auto !important;
+  align-items: center !important;
+  padding-bottom: 6px !important;
+  margin-bottom: 0 !important;
+}
+div[data-testid="stTabs"] [data-baseweb="tab-panel"],
+div[data-testid="stTabs"] div[role="tabpanel"]{
+  padding-top: .35rem !important;
+  margin-top: 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 /* =========================
@@ -1647,6 +1665,7 @@ Dor articular pontiaguda = troca variação no dia.
                 st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
             if semana == 7 and bloco == "Hipertrofia":
                 st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
+        df_now = df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data()
         for i,item in enumerate(cfg["exercicios"]):
             if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
                 continue
