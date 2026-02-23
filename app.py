@@ -796,7 +796,14 @@ def safe_append_rows(df_rows: pd.DataFrame):
     df_rows = normalize_for_save(df_rows)
 
     def _get_ws():
-        # gspread client dentro do streamlit_gsheets connection
+        # Reutiliza worksheet em sessão para reduzir reads (quota do Google Sheets é baixa)
+        try:
+            ws_cached = st.session_state.get("_gs_ws_cache")
+            if ws_cached is not None:
+                return ws_cached
+        except Exception:
+            pass
+
         client = getattr(conn, "_client", None)
         if client is None:
             client = getattr(getattr(conn, "client", None), "_client", None)
@@ -811,12 +818,28 @@ def safe_append_rows(df_rows: pd.DataFrame):
             raise RuntimeError("Configuração gsheets sem 'spreadsheet' (URL ou key).")
 
         sh = client.open_by_url(spreadsheet) if "http" in str(spreadsheet) else client.open_by_key(str(spreadsheet))
-        return sh.worksheet(worksheet) if worksheet else sh.sheet1
+        ws = sh.worksheet(worksheet) if worksheet else sh.sheet1
+        try:
+            st.session_state["_gs_ws_cache"] = ws
+        except Exception:
+            pass
+        return ws
 
     def _ensure_header_schema(ws):
+        try:
+            cached_header = st.session_state.get("_gs_header_cache")
+            if isinstance(cached_header, list) and cached_header:
+                return cached_header
+        except Exception:
+            pass
+
         header = [str(x).strip() for x in ws.row_values(1)]
         if not header:
             ws.update("A1", [SCHEMA_COLUMNS])
+            try:
+                st.session_state["_gs_header_cache"] = list(SCHEMA_COLUMNS)
+            except Exception:
+                pass
             return list(SCHEMA_COLUMNS)
 
         # Migração automática do header sem perder colunas antigas
@@ -825,7 +848,15 @@ def safe_append_rows(df_rows: pd.DataFrame):
         if missing:
             merged = header_clean + missing
             ws.update("A1", [merged])
+            try:
+                st.session_state["_gs_header_cache"] = merged
+            except Exception:
+                pass
             return merged
+        try:
+            st.session_state["_gs_header_cache"] = header_clean
+        except Exception:
+            pass
         return header_clean
 
     try:
@@ -856,6 +887,11 @@ def safe_append_rows(df_rows: pd.DataFrame):
     except Exception as e:
         # nunca perder treino
         _append_offline_backup_rows(df_rows)
+        try:
+            st.session_state.pop("_gs_ws_cache", None)
+            st.session_state.pop("_gs_header_cache", None)
+        except Exception:
+            pass
 
         # Fallback final: tenta reescrever via conn.update (menos ideal para concorrência, mas evita bloqueio)
         try:
@@ -873,263 +909,54 @@ def _to_bool(x):
     s = str(x).strip().lower()
     return s in ["true","1","yes","y","sim"]
 
-def get_data():
+def get_data(force_refresh: bool = False):
     """Lê a sheet e garante schema (migração RPE->RIR e Alongamento->Mobilidade).
     Se a Google Sheet falhar, usa um backup local (offline_backup.csv).
+    Usa cache curta em sessão para reduzir quota de reads no Google Sheets.
     """
+    try:
+        if not force_refresh:
+            _dfc = st.session_state.get("_df_cache_data")
+            _ts = float(st.session_state.get("_df_cache_ts", 0.0) or 0.0)
+            if isinstance(_dfc, pd.DataFrame) and (time.time() - _ts) < 12:
+                return _dfc.copy()
+    except Exception:
+        pass
+
     df = safe_read_sheet()
+    try:
+        if df is None:
+            df = pd.DataFrame()
+        df = df.copy()
 
-    if df is None or df.empty:
-        df = pd.DataFrame(columns=SCHEMA_COLUMNS)
+        # migrações de colunas antigas
+        if "RPE" in df.columns and "RIR" not in df.columns:
+            df["RIR"] = df["RPE"]
+        if "Alongamento" in df.columns and "Mobilidade" not in df.columns:
+            df["Mobilidade"] = df["Alongamento"]
 
-    if "RPE" in df.columns and "RIR" not in df.columns:
-        df = df.rename(columns={"RPE":"RIR"})
-    if "Alongamento" in df.columns and "Mobilidade" not in df.columns:
-        df = df.rename(columns={"Alongamento":"Mobilidade"})
+        # garantir schema
+        for c in SCHEMA_COLUMNS:
+            if c not in df.columns:
+                df[c] = None
+        df = df[SCHEMA_COLUMNS]
 
-    for c in SCHEMA_COLUMNS:
-        if c not in df.columns:
-            df[c] = None
-
-    return df[SCHEMA_COLUMNS]
-
-def normalize_for_save(df):
-    for c in SCHEMA_COLUMNS:
-        if c not in df.columns:
-            df[c] = None
-    return df[SCHEMA_COLUMNS]
-
-def _parse_list_floats(v):
-    s = str(v).strip()
-    if s == "" or s.lower() in ["nan","none"]:
-        return []
-    out = []
-    for x in s.split(","):
-        x = str(x).strip()
-        if x == "":
-            continue
         try:
-            out.append(float(x))
-        except Exception:
-            try:
-                out.append(float(x.replace("kg","").strip()))
-            except Exception:
-                pass
-    return out
-
-def _parse_list_ints(v):
-    s = str(v).strip()
-    if s == "" or s.lower() in ["nan","none"]:
-        return []
-    out = []
-    for x in s.split(","):
-        x = str(x).strip()
-        if x == "":
-            continue
-        try:
-            out.append(int(float(x)))
+            st.session_state["_df_cache_data"] = df.copy()
+            st.session_state["_df_cache_ts"] = time.time()
         except Exception:
             pass
-    return out
+        return df
+    except Exception:
+        try:
+            _df = pd.DataFrame(columns=SCHEMA_COLUMNS)
+            st.session_state["_df_cache_data"] = _df.copy()
+            st.session_state["_df_cache_ts"] = time.time()
+            return _df
+        except Exception:
+            return pd.DataFrame(columns=SCHEMA_COLUMNS)
 
-def series_count_row(row):
-    return len(_parse_list_floats(row.get("Peso","")))
 
-def tonnage_row(row):
-    pesos = _parse_list_floats(row.get("Peso",""))
-    reps = _parse_list_ints(row.get("Reps",""))
-    return float(sum(p*r for p,r in zip(pesos,reps)))
-
-def avg_rir_row(row):
-    rirs = _parse_list_floats(row.get("RIR",""))
-    return float(sum(rirs)/len(rirs)) if rirs else 0.0
-
-def calcular_1rm(peso, reps):
-    pesos = _parse_list_floats(peso)
-    repeticoes = _parse_list_ints(reps)
-    vals = []
-    for p,r in zip(pesos,repeticoes):
-        if r <= 0:
-            continue
-        if r == 1:
-            vals.append(p)
-        else:
-            vals.append(p * (1 + (r/30)))
-    return round(max(vals), 1) if vals else 0.0
-
-def best_1rm_row(row):
-    return float(calcular_1rm(row.get("Peso",""), row.get("Reps","")))
-
-def add_calendar_week(df_in):
-    df = df_in.copy()
-    df["Data_dt"] = pd.to_datetime(df["Data"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["Data_dt"])
-    iso = df["Data_dt"].dt.isocalendar()
-    df["ISO_Ano"] = iso["year"].astype(int)
-    df["ISO_Semana"] = iso["week"].astype(int)
-    df["Semana_ID"] = df.apply(lambda x: f"{int(x['ISO_Ano'])}-W{int(x['ISO_Semana']):02d}", axis=1)
-    return df
-
-def checklist_xp(req, justificativa=""):
-    """req tem chaves: aquecimento,mobilidade,cardio,tendoes,core,cooldown e *_req"""
-    base_points = {"aquecimento":20,"mobilidade":20,"cardio":20,"tendoes":15,"core":15,"cooldown":10}
-    xp = 0
-    ok_all_required = True
-    any_missing_required = False
-    for k,pts in base_points.items():
-        done = bool(req.get(k, False))
-        required = bool(req.get(f"{k}_req", False))
-        if done:
-            xp += pts
-        if required and not done:
-            ok_all_required = False
-            any_missing_required = True
-    justificativa_ok = len(str(justificativa).strip()) >= 8
-    if ok_all_required:
-        xp += 20
-    elif any_missing_required and justificativa_ok:
-        xp += 10
-    return xp, ok_all_required
-
-def get_last_streak(df, perfil):
-    if df.empty:
-        return 0
-    dfp = df[df["Perfil"].astype(str) == str(perfil)].copy()
-    if dfp.empty:
-        return 0
-    dfp = dfp[dfp["Checklist_OK"].apply(_to_bool)]
-    if dfp.empty:
-        return 0
-    datas = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dt.date.dropna().unique().tolist()
-    if not datas:
-        return 0
-    datas = sorted(set(datas))
-    streak = 1
-    for i in range(len(datas)-1, 0, -1):
-        if (datas[i] - datas[i-1]).days == 1:
-            streak += 1
-        else:
-            break
-    return streak
-
-def calcular_rank(xp_total, streak_max, checklist_rate):
-    if xp_total >= 2500 and streak_max >= 21 and checklist_rate >= 0.80:
-        return "💎 PLATINA", "Elite"
-    if xp_total >= 1500 and streak_max >= 14 and checklist_rate >= 0.70:
-        return "🥇 OURO", "Consistente"
-    if xp_total >= 700 and streak_max >= 7 and checklist_rate >= 0.60:
-        return "🥈 PRATA", "Em evolução"
-    return "🥉 BRONZE", "A construir base"
-
-def get_historico_detalhado(df, perfil, exercicio):
-    """FIX histórico: devolve o último registo em dataframe, + médias."""
-    if df.empty:
-        return None, 0.0, 0.0, None
-    dfp = df[(df["Perfil"].astype(str)==str(perfil)) & (df["Exercício"].astype(str)==str(exercicio))].copy()
-    if dfp.empty:
-        return None, 0.0, 0.0, None
-    dfp["Data_dt"] = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce")
-    dfp = dfp.dropna(subset=["Data_dt"]).sort_values("Data_dt")
-    if dfp.empty:
-        return None, 0.0, 0.0, None
-    ultimo = dfp.iloc[-1]
-    pesos = _parse_list_floats(ultimo["Peso"])
-    reps = _parse_list_ints(ultimo["Reps"])
-    rirs = _parse_list_floats(ultimo["RIR"])
-    rows = []
-    n = max(len(pesos), len(reps), len(rirs))
-    for i in range(n):
-        rows.append({
-            "Set": i+1,
-            "Peso (kg)": pesos[i] if i < len(pesos) else None,
-            "Reps": reps[i] if i < len(reps) else None,
-            "RIR": rirs[i] if i < len(rirs) else None,
-        })
-    df_last = pd.DataFrame(rows)
-    peso_medio = float(sum(pesos)/len(pesos)) if pesos else 0.0
-    rir_medio = float(sum(rirs)/len(rirs)) if rirs else 0.0
-    return df_last, peso_medio, rir_medio, ultimo["Data"]
-
-def sugerir_carga(peso_medio, rir_medio, rir_alvo, passo_up, passo_down):
-    if peso_medio <= 0:
-        return 0.0
-    if rir_medio >= (rir_alvo + 1.0):
-        return round(peso_medio * (1 + passo_up), 1)
-    if rir_medio > (rir_alvo + 0.25):
-        return round(peso_medio * (1 + passo_up/2), 1)
-    if rir_medio <= max(0.0, rir_alvo - 1.0):
-        return round(peso_medio * (1 - passo_down), 1)
-    return round(peso_medio, 1)
-
-def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justificativa=""):
-    df_existente = get_data()
-    pesos = ",".join([str(s["peso"]) for s in lista_sets])
-    reps = ",".join([str(s["reps"]) for s in lista_sets])
-    rirs = ",".join([str(s["rir"]) for s in lista_sets])
-
-    # Proteção contra duplo toque no telemóvel (evita gravar o mesmo exercício 2x em segundos)
-    sig_raw = f"{datetime.date.today().isoformat()}|{perfil}|{dia}|{bloco}|{exercicio}|{pesos}|{reps}|{rirs}"
-    sig = hashlib.sha1(sig_raw.encode("utf-8")).hexdigest()
-    last_sig = st.session_state.get("last_submit_sig")
-    last_ts = float(st.session_state.get("last_submit_ts", 0.0) or 0.0)
-    now_ts = time.time()
-    if last_sig == sig and (now_ts - last_ts) < 8:
-        st.warning("Este exercício parece já ter sido gravado agora mesmo (proteção anti-duplo toque).")
-        return False
-
-    xp, ok = checklist_xp(req, justificativa)
-    streak_atual = get_last_streak(df_existente, perfil)
-    hoje = datetime.date.today().strftime("%d/%m/%Y")
-
-    ja_ha_ok_hoje = False
-    if not df_existente.empty:
-        mask = (
-            (df_existente["Perfil"].astype(str) == str(perfil)) &
-            (df_existente["Data"].astype(str) == hoje) &
-            (df_existente["Checklist_OK"].apply(_to_bool))
-        )
-        ja_ha_ok_hoje = bool(mask.any())
-
-    if ok and not ja_ha_ok_hoje:
-        streak_guardar = streak_atual + 1
-    else:
-        streak_guardar = streak_atual
-
-    novo_dado = pd.DataFrame([{
-        "Data": hoje,
-        "Perfil": str(perfil),
-        "Dia": str(dia),
-        "Bloco": str(bloco),
-        "Plano_ID": str(st.session_state.get("plano_id_sel","Base")),
-        "Exercício": str(exercicio),
-        "Peso": pesos,
-        "Reps": reps,
-        "RIR": rirs,
-        "Notas": str(justificativa).strip(),
-        "Aquecimento": bool(req.get("aquecimento", False)),
-        "Mobilidade": bool(req.get("mobilidade", False)),
-        "Cardio": bool(req.get("cardio", False)),
-        "Tendões": bool(req.get("tendoes", False)),
-        "Core": bool(req.get("core", False)),
-        "Cooldown": bool(req.get("cooldown", False)),
-        "XP": int(xp),
-        "Streak": int(streak_guardar),
-        "Checklist_OK": bool(ok),
-    }])
-
-    ok_save, err = safe_append_rows(novo_dado)
-    if ok_save:
-        st.session_state["last_submit_sig"] = sig
-        st.session_state["last_submit_ts"] = time.time()
-    if not ok_save:
-        sa = _service_account_email()
-        msg = "❌ Não consegui gravar na Google Sheet. Vou guardar localmente (offline_backup.csv) para não perder o treino."
-        if sa:
-            msg += f"\n\n✅ Confere se a Sheet está partilhada com o service account: {sa}"
-        st.error(msg)
-        st.code(err)
-        return False
-    return True
 
 # --- PLANO (8 semanas) ---
 def semana_label(w):
@@ -1657,7 +1484,7 @@ Dor articular pontiaguda = troca variação no dia.
             st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
             st.rerun()
 
-        st.caption("1 exercício + 1 série de cada vez. Na última série, avança automaticamente para o próximo exercício.")
+        st.caption("1 exercício + 1 série de cada vez. Só grava na Sheet na última série do exercício; depois avança automaticamente.")
         _done_ex = 0
         for _ix, _it in enumerate(cfg["exercicios"]):
             _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
@@ -1701,6 +1528,13 @@ Dor articular pontiaguda = troca variação no dia.
 
     req = _get_req_state_from_session()
     justificativa = str(st.session_state.get("chk_justif", "") or "")
+    _save_status = st.session_state.get("last_save_status")
+    if _save_status == "error":
+        st.warning("Último exercício não foi para a Google Sheet (ficou em backup local).")
+    elif _save_status == "ok":
+        st.caption("✅ Último exercício guardado na Google Sheet.")
+    elif _save_status == "warn_duplicate":
+        st.caption("⚠️ Toque duplicado bloqueado (não gravou de novo).")
 
     st.divider()
 
@@ -1852,7 +1686,6 @@ Dor articular pontiaguda = troca variação no dia.
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
                                 st.session_state[series_key] = novos_sets
-                                st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = len(novos_sets)
                                 st.session_state[f"rest_{i}"] = int(item["descanso_s"])
 
                                 if is_last:
