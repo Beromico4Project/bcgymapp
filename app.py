@@ -6,6 +6,7 @@ import datetime
 import time
 import base64
 import os
+import hashlib
 
 # =========================================================
 # ♣ BLACK CLOVER WORKOUT — RIR Edition (8 semanas + perfis)
@@ -498,6 +499,99 @@ def _append_offline_backup_rows(df: pd.DataFrame, file_name: str = "offline_back
     except Exception:
         pass
 
+def try_sync_offline_backup_to_sheet():
+    """Tenta sincronizar linhas do backup local para a Google Sheet (append)."""
+    if not os.path.exists(BACKUP_PATH):
+        return False, "Sem backup local.", 0
+    try:
+        dfb = pd.read_csv(BACKUP_PATH, dtype=str, keep_default_na=False)
+    except Exception as e:
+        return False, str(e), 0
+    if dfb is None or dfb.empty:
+        return False, "Backup vazio.", 0
+    for c in SCHEMA_COLUMNS:
+        if c not in dfb.columns:
+            dfb[c] = None
+    dfb = dfb[SCHEMA_COLUMNS]
+    ok, err = safe_append_rows(dfb)
+    if ok:
+        try:
+            os.remove(BACKUP_PATH)
+        except Exception:
+            pass
+        return True, "", len(dfb)
+    return False, err, len(dfb)
+
+
+def _is_lower_exercise(ex_name: str) -> bool:
+    ex = str(ex_name).lower()
+    lower_keys = [
+        "leg press", "deadlift", "rdl", "hip thrust", "glúteo", "glute", "split squat",
+        "bulgarian", "panturrilha", "calf", "flexora", "curl", "abd", "back extension",
+        "nordic", "agach", "squat", "step-back"
+    ]
+    return any(k in ex for k in lower_keys)
+
+
+def _rep_top_from_range(rep_str: str) -> int:
+    s = str(rep_str).strip().replace(" ", "")
+    if "-" in s:
+        try:
+            return int(float(s.split("-")[-1]))
+        except Exception:
+            return 0
+    try:
+        return int(float(s))
+    except Exception:
+        return 0
+
+
+def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_target_num: float):
+    """Critério simples: todas as séries no topo da faixa e RIR >= alvo-0.5."""
+    if last_df is None or last_df.empty:
+        return False
+    topo = _rep_top_from_range(rep_range)
+    if topo <= 0 or "Reps" not in last_df.columns:
+        return False
+    reps = pd.to_numeric(last_df["Reps"], errors="coerce")
+    if reps.isna().any() or len(reps) == 0:
+        return False
+    if not bool((reps >= topo).all()):
+        return False
+    if "RIR" in last_df.columns:
+        rirs = pd.to_numeric(last_df["RIR"], errors="coerce")
+        if not rirs.isna().all():
+            try:
+                if float(rirs.mean()) < float(rir_target_num) - 0.5:
+                    return False
+            except Exception:
+                pass
+    return True
+
+
+def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num):
+    series_n = int(item.get("series", 0))
+    pesos = []
+    reps_list = []
+    rirs = []
+    if df_last is not None and not df_last.empty:
+        pesos = pd.to_numeric(df_last.get("Peso (kg)"), errors="coerce").tolist() if "Peso (kg)" in df_last.columns else []
+        reps_list = pd.to_numeric(df_last.get("Reps"), errors="coerce").tolist() if "Reps" in df_last.columns else []
+        rirs = pd.to_numeric(df_last.get("RIR"), errors="coerce").tolist() if "RIR" in df_last.columns else []
+    for s in range(series_n):
+        if s < len(pesos) and pd.notna(pesos[s]):
+            st.session_state[f"peso_{i}_{s}"] = float(pesos[s])
+        elif peso_sug > 0:
+            st.session_state[f"peso_{i}_{s}"] = float(peso_sug)
+        if s < len(reps_list) and pd.notna(reps_list[s]):
+            st.session_state[f"reps_{i}_{s}"] = int(reps_list[s])
+        else:
+            st.session_state[f"reps_{i}_{s}"] = int(reps_low)
+        if s < len(rirs) and pd.notna(rirs[s]):
+            st.session_state[f"rir_{i}_{s}"] = float(rirs[s])
+        else:
+            st.session_state[f"rir_{i}_{s}"] = float(rir_target_num)
+
 def safe_append_rows(df_rows: pd.DataFrame):
     """Append (seguro para uso simultâneo) em vez de reescrever a sheet inteira.
     Se falhar, grava em offline_backup.csv.
@@ -736,6 +830,16 @@ def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justif
     reps = ",".join([str(s["reps"]) for s in lista_sets])
     rirs = ",".join([str(s["rir"]) for s in lista_sets])
 
+    # Proteção contra duplo toque no telemóvel (evita gravar o mesmo exercício 2x em segundos)
+    sig_raw = f"{datetime.date.today().isoformat()}|{perfil}|{dia}|{bloco}|{exercicio}|{pesos}|{reps}|{rirs}"
+    sig = hashlib.sha1(sig_raw.encode("utf-8")).hexdigest()
+    last_sig = st.session_state.get("last_submit_sig")
+    last_ts = float(st.session_state.get("last_submit_ts", 0.0) or 0.0)
+    now_ts = time.time()
+    if last_sig == sig and (now_ts - last_ts) < 8:
+        st.warning("Este exercício parece já ter sido gravado agora mesmo (proteção anti-duplo toque).")
+        return False
+
     xp, ok = checklist_xp(req, justificativa)
     streak_atual = get_last_streak(df_existente, perfil)
     hoje = datetime.date.today().strftime("%d/%m/%Y")
@@ -777,6 +881,9 @@ def salvar_sets_agrupados(perfil, dia, bloco, exercicio, lista_sets, req, justif
     }])
 
     ok_save, err = safe_append_rows(novo_dado)
+    if ok_save:
+        st.session_state["last_submit_sig"] = sig
+        st.session_state["last_submit_ts"] = time.time()
     if not ok_save:
         sa = _service_account_email()
         msg = "❌ Não consegui gravar na Google Sheet. Vou guardar localmente (offline_backup.csv) para não perder o treino."
@@ -1176,6 +1283,16 @@ if bk_df is not None and not bk_df.empty:
         mime="text/csv",
         use_container_width=True
     )
+    if _ok_conn and st.sidebar.button("🔄 Tentar sincronizar backup", use_container_width=True):
+        ok_sync, err_sync, n_sync = try_sync_offline_backup_to_sheet()
+        if ok_sync:
+            st.sidebar.success(f"Backup sincronizado: {n_sync} linhas")
+            time.sleep(0.4)
+            st.rerun()
+        else:
+            st.sidebar.error("Não consegui sincronizar backup")
+            if err_sync:
+                st.sidebar.code(err_sync)
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # SEMANA (8) — só para o plano Base (8 semanas)
@@ -1222,6 +1339,14 @@ dor_ombro = st.sidebar.checkbox("Dor no Ombro", help="Se o ombro estiver sensív
 dor_lombar = st.sidebar.checkbox("Dor na Lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>📱 Modo Mobile</h3>", unsafe_allow_html=True)
+compact_mode = st.sidebar.checkbox("Modo treino compacto", value=True, help="Mostra menos tabelas/ruído e foca no que precisas durante o treino.")
+show_last_table = st.sidebar.checkbox("Mostrar tabela do último registo", value=False, help="Se desligado, mostra só resumo do último treino por exercício (mais rápido no telemóvel).")
+st.session_state["ui_compact_mode"] = bool(compact_mode)
+st.session_state["ui_show_last_table"] = bool(show_last_table)
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
 def sugestao_articular(ex):
     if dor_joelho and ("Bulgarian" in ex or "Leg Press" in ex):
         return "Joelho: encurta amplitude / mais controlo. Dor pontiaguda = troca variação hoje."
@@ -1236,6 +1361,20 @@ def sugestao_articular(ex):
 # --- 7. CABEÇALHO ---
 st.title("♣️BLACK CLOVER Workout♣️")
 st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤 • UI otimizada para telemóvel")
+
+try:
+    _pl = st.session_state.get("plano_id_sel", "Base")
+    _footer = f"{perfil_sel} • {dia} • {_pl}"
+    st.markdown(f"""
+    <div style='position:fixed;bottom:8px;left:8px;right:8px;z-index:9999;
+                background:rgba(12,12,12,.82);backdrop-filter:blur(6px);
+                border:1px solid rgba(255,75,75,.25);border-radius:14px;
+                padding:8px 12px;font-size:12px;text-align:center;'>
+      <span style='color:#FFD700;'>♣</span> {_footer}
+    </div>
+    """, unsafe_allow_html=True)
+except Exception:
+    pass
 
 # --- 8. CORPO PRINCIPAL ---
 tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Histórico", "🏅 Ranking"])
@@ -1339,6 +1478,11 @@ Dor articular pontiaguda = troca variação no dia.
     m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
     m3.metric("Streak atual", f"{streak_atual}")
 
+    req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
+    done_req = sum(1 for k in req_keys if req.get(k, False))
+    total_req = max(1, len(req_keys))
+    st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
+
     # rank por perfil
     dfp_rank = df_now[df_now["Perfil"].astype(str) == str(perfil_sel)].copy()
     dfp_rank = dfp_rank[dfp_rank["Bloco"].astype(str).str.lower() != "setup"]
@@ -1372,7 +1516,10 @@ Dor articular pontiaguda = troca variação no dia.
             st.markdown("Caminhada leve + mobilidade.")
     else:
         st.subheader(f"📘 Treino: **{dia}**")
-        st.caption(f"Bloco: **{bloco}** | Semana: **{semana_label(semana)}**")
+        if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
+            st.caption(f"Bloco: **{bloco}** | RIR alvo: **2** | Descanso: **60–90s**")
+        else:
+            st.caption(f"Bloco: **{bloco}** | Semana: **{semana_label(semana)}**")
 
         if bloco in ["Força","Hipertrofia"]:
             if semana in [2,6]:
@@ -1403,47 +1550,73 @@ Dor articular pontiaguda = troca variação no dia.
                 if item.get("nota_semana"):
                     st.info(item["nota_semana"])
 
+                ui_compact = bool(st.session_state.get("ui_compact_mode", True))
+                ui_show_last_table = bool(st.session_state.get("ui_show_last_table", False))
+
                 if df_last is not None:
                     st.markdown(f"📜 **Último registo ({data_ultima})**")
-                    st.dataframe(df_last, hide_index=True, use_container_width=True)
                     st.caption(f"Último: peso médio ~ {peso_medio:.1f} kg | RIR médio ~ {rir_medio:.1f}")
+                    if (not ui_compact) or ui_show_last_table:
+                        st.dataframe(df_last, hide_index=True, use_container_width=True)
                 else:
                     st.caption("Sem registos anteriores para este exercício (neste perfil).")
+
+                if _double_progression_ready(df_last, item['reps'], rir_target_num):
+                    inc = 5 if _is_lower_exercise(ex) else 2
+                    st.success(f"✅ Progressão dupla: bateste o topo da faixa. Próxima sessão: tenta **+{inc} kg** (ou mínimo disponível).")
 
                 if peso_sug > 0:
                     with st.popover("🔥 Sugestão de carga (heurística)"):
                         st.markdown(f"**Carga sugerida (média):** {peso_sug} kg")
                         st.caption("Se o RIR sair do alvo, ajusta na hora. Técnica > ego.")
 
+                pre1, pre2 = st.columns(2)
+                if pre1.button("↺ Pré-preencher (último)", key=f"pref_last_{i}", use_container_width=True):
+                    _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
+                    st.rerun()
+                if pre2.button("🎯 Pré-preencher (sugerido)", key=f"pref_sug_{i}", use_container_width=True):
+                    _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
+                    st.rerun()
+
                 lista_sets = []
                 with st.form(key=f"form_{i}"):
+                    kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
                     for s in range(item["series"]):
                         st.markdown(f"### Série {s+1}")
-                        peso = st.number_input(f"Kg S{s+1}", min_value=0.0,
+                        peso = st.number_input(f"Kg • S{s+1}", min_value=0.0,
                                                value=float(peso_sug) if peso_sug>0 else 0.0,
-                                               step=2.5, key=f"peso_{i}_{s}")
+                                               step=float(kg_step), key=f"peso_{i}_{s}")
                         rcol1, rcol2 = st.columns(2)
-                        reps = rcol1.number_input(f"Reps S{s+1}", min_value=0, value=int(reps_low),
+                        reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_low),
                                                   step=1, key=f"reps_{i}_{s}")
-                        rir = rcol2.number_input(f"RIR S{s+1}", min_value=0.0, max_value=6.0,
+                        rir = rcol2.number_input(f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
                                                  value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
                         lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
-                    if st.form_submit_button("Gravar Exercício"):
+                    if st.form_submit_button("💾 Gravar exercício", use_container_width=True):
                         ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
                         if ok_gravou:
                             st.success("Exercício gravado!")
                             time.sleep(0.4)
                             st.rerun()
 
-                rest_s = st.slider("⏱️ Descanso (segundos)", min_value=30, max_value=300,
-                                   value=int(item["descanso_s"]), step=15, key=f"rest_{i}")
-                if st.button(f"▶️ Iniciar descanso ({rest_s}s)", key=f"t_{i}"):
-                    ph = st.empty()
-                    for sec in range(rest_s, 0, -1):
-                        ph.metric("Recupera...", f"{sec}s")
-                        time.sleep(1)
-                    ph.success("BORA! 🔥")
+                with st.expander("⏱️ Descanso", expanded=(not ui_compact)):
+                    p1,p2,p3 = st.columns(3)
+                    if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
+                        st.session_state[f"rest_{i}"] = 60
+                    if p2.button("90s", key=f"rest90_{i}", use_container_width=True):
+                        st.session_state[f"rest_{i}"] = 90
+                    if p3.button("120s", key=f"rest120_{i}", use_container_width=True):
+                        st.session_state[f"rest_{i}"] = 120
+                    rest_s = st.slider("Segundos", min_value=30, max_value=300,
+                                       value=int(st.session_state.get(f"rest_{i}", item["descanso_s"])),
+                                       step=15, key=f"rest_{i}")
+                    if st.button(f"▶️ Iniciar descanso ({rest_s}s)", key=f"t_{i}", use_container_width=True):
+                        ph = st.empty()
+                        for sec in range(rest_s, 0, -1):
+                            ph.metric("Recupera...", f"{sec}s")
+                            time.sleep(1)
+                        ph.success("BORA! 🔥")
 
         st.divider()
 
@@ -1491,6 +1664,8 @@ with tab_historico:
 
         dias_filtrados = st.multiselect("Filtrar por Dia", dias_opts, default=[])
         blocos_filtrados = st.multiselect("Filtrar por Bloco", blocos_opts, default=[])
+        ex_opts = sorted(dfp["Exercício"].dropna().astype(str).unique().tolist()) if "Exercício" in dfp.columns else []
+        ex_filtro = st.multiselect("Filtrar por Exercício", ex_opts, default=[])
 
         datas_dt = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dropna()
         if not datas_dt.empty:
@@ -1511,6 +1686,8 @@ with tab_historico:
             dfp = dfp[dfp["Dia"].astype(str).isin([str(x) for x in dias_filtrados])]
         if blocos_filtrados:
             dfp = dfp[dfp["Bloco"].astype(str).isin([str(x) for x in blocos_filtrados])]
+        if ex_filtro:
+            dfp = dfp[dfp["Exercício"].astype(str).isin([str(x) for x in ex_filtro])]
 
         if dfp.empty:
             st.info("Sem registos com esses filtros.")
@@ -1604,11 +1781,19 @@ with tab_historico:
 with tab_ranking:
     st.header("Top Ranking dos Perfis 🏅")
 
+    rank_window = st.selectbox("Período do ranking", ["Total", "30 dias", "90 dias"], index=0)
+
     df_rank_all = get_data().copy()
     # ignora linhas de setup/ruído
     df_rank_all = df_rank_all[df_rank_all["Bloco"].astype(str).str.lower() != "setup"]
     df_rank_all = df_rank_all[df_rank_all["Dia"].astype(str).str.lower() != "setup"]
     df_rank_all = df_rank_all[df_rank_all["Exercício"].astype(str).str.lower() != "setup"]
+
+    if rank_window != "Total" and not df_rank_all.empty:
+        dias = 30 if rank_window == "30 dias" else 90
+        df_rank_all["_dt"] = pd.to_datetime(df_rank_all["Data"], dayfirst=True, errors="coerce")
+        cutoff = pd.Timestamp.today().normalize() - pd.Timedelta(days=dias)
+        df_rank_all = df_rank_all[df_rank_all["_dt"] >= cutoff].drop(columns=["_dt"], errors="ignore")
 
     if df_rank_all.empty:
         st.info("Ainda não há registos suficientes para criar ranking.")
