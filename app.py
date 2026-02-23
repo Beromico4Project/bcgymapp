@@ -1,5 +1,6 @@
 
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
@@ -58,6 +59,48 @@ def set_background(png_file):
 
 # Aplica o fundo (verifique se 'banner.png' existe na pasta)
 set_background('banner.png')
+
+
+# --- 2.1 Feedback tátil/sonoro (descanso concluído) ---
+def trigger_rest_done_feedback():
+    """Tenta vibrar e emitir um beep curto quando o descanso termina (mobile/browser permitting)."""
+    try:
+        components.html(
+            """
+            <script>
+            (function () {
+              try {
+                if (window.navigator && navigator.vibrate) {
+                  navigator.vibrate([120, 50, 120]);
+                }
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return;
+                const ctx = new AC();
+                const now = ctx.currentTime;
+                function beep(freq, start, dur){
+                  const o = ctx.createOscillator();
+                  const g = ctx.createGain();
+                  o.type = "sine";
+                  o.frequency.value = freq;
+                  g.gain.setValueAtTime(0.0001, now + start);
+                  g.gain.exponentialRampToValueAtTime(0.05, now + start + 0.01);
+                  g.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+                  o.connect(g); g.connect(ctx.destination);
+                  o.start(now + start);
+                  o.stop(now + start + dur + 0.02);
+                }
+                beep(880, 0.00, 0.12);
+                beep(1174, 0.16, 0.14);
+              } catch (e) {}
+            })();
+            </script>
+            """,
+            height=0,
+            width=0,
+        )
+    except Exception:
+        pass
+
 
 # --- 3. CSS DA INTERFACE ---
 st.markdown("""
@@ -408,6 +451,24 @@ section[data-testid="stSidebar"] ::-webkit-scrollbar-thumb {
 }
 section[data-testid="stSidebar"] ::-webkit-scrollbar-track {
   background: rgba(0,0,0,0.15);
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+st.markdown("""
+<style>
+/* Polimento extra (toque mobile + animações) */
+* { -webkit-tap-highlight-color: transparent; }
+@media (hover: none){
+  div.stButton > button:hover {
+    transform: none !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.30) !important;
+  }
+}
+@media (prefers-reduced-motion: reduce){
+  * { scroll-behavior: auto !important; }
+  div.stButton > button { transition: none !important; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1394,6 +1455,8 @@ with tab_treino:
             time.sleep(1)
         ph_metric.success("BORA! 🔥")
         ph_prog.progress(1.0, text="Descanso concluído")
+        st.toast("Descanso concluído ✅")
+        trigger_rest_done_feedback()
         st.session_state["rest_auto_run"] = False
     if show_rules:
         with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
