@@ -1328,7 +1328,7 @@ if not perfis:
     perfis = ["Principal"]
 
 perfil_sel = st.sidebar.selectbox(
-    "Seleciona o perfil:",
+    "Perfil",
     perfis,
     index=0,
     key="perfil_sel",
@@ -1342,7 +1342,7 @@ if str(perfil_sel).strip().lower() == "ineix":
 if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
-st.sidebar.caption(f"📘 Plano: **{plano_id_sel}**")
+st.sidebar.caption(f"Plano ativo: **{plano_id_sel}**")
 # UI móvel limpa: esconder utilitários de plano/perfis/Google Sheets (funcionam em background)
 _ok_conn, _err_conn = True, ""
 try:
@@ -1379,22 +1379,22 @@ plan_obj = PLANOS.get(plan_id_active, treinos_base)
 
 # Se for o plano Ineix, escolhe "Ginásio" vs "Casa" e usa o sub-plano certo
 if plan_id_active == "INEIX_ABC_v1" and isinstance(plan_obj, dict):
-    ineix_local = st.sidebar.radio("Local:", ["Ginásio","Casa"], key="ineix_local", horizontal=True, on_change=_reset_daily_state)
+    ineix_local = st.sidebar.radio("Local de treino", ["Ginásio","Casa"], key="ineix_local", horizontal=True, on_change=_reset_daily_state)
     treinos_dict = plan_obj.get(ineix_local, plan_obj.get("Ginásio", treinos_ineix_gym))
 else:
     treinos_dict = plan_obj
 
-dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_dict.keys()), index=0, key="dia_sel", on_change=_reset_daily_state)
+dia = st.sidebar.selectbox("Treino", list(treinos_dict.keys()), index=0, key="dia_sel", on_change=_reset_daily_state)
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>⚠️ Estado do Corpo</h3>", unsafe_allow_html=True)
-dor_joelho = st.sidebar.checkbox("Dor no Joelho (pontiaguda?)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
-dor_cotovelo = st.sidebar.checkbox("Dor no Cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
-dor_ombro = st.sidebar.checkbox("Dor no Ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
-dor_lombar = st.sidebar.checkbox("Dor na Lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
+st.sidebar.markdown("<h3>🩺 Sinais do corpo</h3>", unsafe_allow_html=True)
+dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
+dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
+dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
+dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # Modo mobile permanente (sem toggles na sidebar)
@@ -1415,8 +1415,8 @@ def sugestao_articular(ex):
     return ""
 
 # --- 7. CABEÇALHO ---
-st.title("♣️ Black Clover Workout")
-st.caption("A MINHA MAGIA É NÃO DESISTIR! 🗡️🖤 • UI otimizada para telemóvel")
+st.title("♣️ Black Clover Training")
+st.caption("A minha magia é não desistir 🗡️🖤 · otimizado para telemóvel")
 
 try:
     _pl = st.session_state.get("plano_id_sel", "Base")
@@ -1433,7 +1433,7 @@ except Exception:
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
 
 # --- 8. CORPO PRINCIPAL ---
-tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Histórico", "🏅 Ranking"])
+tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino", "📊 Histórico", "🏅 Ranking"])
 
 with tab_treino:
     pure_workout_mode = bool(st.session_state.get("ui_pure_mode", True))
@@ -1452,22 +1452,22 @@ with tab_treino:
         ex_rest = str(st.session_state.get("rest_auto_from", ""))
         timer_box = st.container()
         with timer_box:
-            label = f"⏱️ Descanso automático • {ex_rest}" if ex_rest else "⏱️ Descanso automático"
+            label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
             st.info(label)
             ph_metric = st.empty()
             ph_prog = st.empty()
         for sec in range(total_rest, 0, -1):
             elapsed = total_rest - sec
-            ph_metric.metric("Recupera", f"{sec}s")
+            ph_metric.metric("Descanso", f"{sec}s")
             ph_prog.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
             time.sleep(1)
-        ph_metric.success("BORA! 🔥")
+        ph_metric.success("Pronto ✅")
         ph_prog.progress(1.0, text="Descanso concluído")
         st.toast("Descanso concluído ✅")
         trigger_rest_done_feedback()
         st.session_state["rest_auto_run"] = False
     if show_rules:
-        with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
+        with st.expander("📜 Regras rápidas do plano"):
             if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
                 st.markdown("""
 **Plano Ineix (A/B/C 3x/sem):**  
@@ -1487,7 +1487,7 @@ Dor articular pontiaguda = troca variação no dia.
 Dor articular pontiaguda = troca variação no dia.
 """)
     elif pure_workout_mode:
-        st.caption("📱 Modo treino puro ativo: foco no treino. As regras continuam disponíveis no ecrã quando precisares.")
+        st.caption("Modo treino puro ativo: foco total no treino.")
 
     cfg = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict)
     bloco = cfg["bloco"]
@@ -1503,7 +1503,7 @@ Dor articular pontiaguda = troca variação no dia.
           <div class='bc-chip-wrap'>
             <span class='bc-chip gold'>📘 {html.escape(_plano)}</span>
             <span class='bc-chip'>🧱 {html.escape(str(bloco))}</span>
-            <span class='bc-chip'>🕒 {html.escape(_sessao_alvo)}</span>
+            <span class='bc-chip'>🕒 Sessão {html.escape(_sessao_alvo)}</span>
             <span class='bc-chip red'>🎯 {html.escape(_week_txt)}</span>
             {f"<span class='bc-chip green'>📍 {html.escape(_local)}</span>" if _local else ""}
           </div>
@@ -1516,7 +1516,7 @@ Dor articular pontiaguda = troca variação no dia.
     pure_nav_key = None
     pure_idx = 0
     if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
-        st.markdown("### 📱 Modo Treino Puro")
+        st.markdown("### 📱 Fluxo de treino")
         ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
         pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
         if pure_nav_key not in st.session_state:
@@ -1553,7 +1553,7 @@ Dor articular pontiaguda = troca variação no dia.
             st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
             st.rerun()
 
-        st.caption("Mostro só 1 exercício de cada vez e **1 série de cada vez** (ao terminar a última série, avança automaticamente).")
+        st.caption("1 exercício + 1 série de cada vez. Na última série, avança automaticamente para o próximo exercício.")
         _done_ex = 0
         for _ix, _it in enumerate(cfg["exercicios"]):
             _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
@@ -1579,7 +1579,7 @@ Dor articular pontiaguda = troca variação no dia.
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("## 🛡️ Checklist do Dia")
+    st.markdown("## ✅ Checklist da sessão")
 
     req = {
         "aquecimento_req": True,
@@ -1596,13 +1596,13 @@ Dor articular pontiaguda = troca variação no dia.
         "🔥 Aquecimento",
         value=False,
         key="chk_aquecimento",
-        help="Marca se fizeste o aquecimento (ex.: 4–5 min cardio leve + ramp-up do 1º exercício). Serve para técnica, articulações e para o cálculo de XP/checklist."
+        help="Marca se fizeste o aquecimento (ex.: 4–5 min leves + ramp-up do primeiro exercício)."
     )
     req["mobilidade"] = c2.checkbox(
         "🧘 Mobilidade",
         value=False,
         key="chk_mobilidade",
-        help="Marca se fizeste mobilidade/ativação (ex.: hang, T-spine, scap, rotações externas). Ajuda ombros/anca e melhora a qualidade das séries."
+        help="Marca se fizeste mobilidade/ativação (ombros, anca, escápulas)."
     )
 
     c3,c4 = st.columns(2)
@@ -1611,7 +1611,7 @@ Dor articular pontiaguda = troca variação no dia.
         value=False,
         key="chk_cardio",
         disabled=(not req["cardio_req"]),
-        help="Marca se fizeste Zona 2 (ritmo em que consegues falar frases curtas). Só aparece ativo nos dias em que está previsto no plano."
+        help="Marca se fizeste cardio Zona 2 (ritmo em que ainda consegues falar)."
     )
     req["tendoes"] = c4.checkbox(
         "🦾 Tendões",
@@ -1690,9 +1690,9 @@ Dor articular pontiaguda = troca variação no dia.
         else:
             st.markdown("Caminhada leve + mobilidade.")
     else:
-        st.subheader(f"📘 Treino: **{dia}**")
+        st.subheader(f"📘 Sessão: **{dia}**")
         if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
-            st.caption(f"Bloco: **{bloco}** | RIR alvo: **2** | Descanso: **60–90s**")
+            st.caption(f"Bloco **{bloco}** · RIR alvo **2** · Descanso **60–90s**")
         else:
             st.caption(f"Bloco: **{bloco}** | Semana: **{semana_label(semana)}**")
 
@@ -1719,7 +1719,7 @@ Dor articular pontiaguda = troca variação no dia.
 
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 st.markdown(f"**Meta:** {item['series']}×{item['reps']}   •  **RIR alvo:** {rir_target_str}")
-                st.caption(f"⏱️ Tempo: {item['tempo']} | Descanso recomendado: ~{item['descanso_s']}s")
+                st.caption(f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s")
 
                 if pure_workout_mode and pure_nav_key is not None:
                     done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
@@ -1763,15 +1763,15 @@ Dor articular pontiaguda = troca variação no dia.
                     st.success(f"✅ Progressão dupla: bateste o topo da faixa. Próxima sessão: tenta **+{inc} kg** (ou mínimo disponível).")
 
                 if peso_sug > 0:
-                    with st.popover("🔥 Sugestão de carga (heurística)"):
+                    with st.popover("🎯 Sugestão de carga"):
                         st.markdown(f"**Carga sugerida (média):** {peso_sug} kg")
-                        st.caption("Se o RIR sair do alvo, ajusta na hora. Técnica > ego.")
+                        st.caption("Se o RIR fugir do alvo, ajusta na hora. Técnica primeiro.")
 
                 pre1, pre2 = st.columns(2)
-                if pre1.button("↺ Pré-preencher (último)", key=f"pref_last_{i}", use_container_width=True):
+                if pre1.button("↺ Usar último", key=f"pref_last_{i}", use_container_width=True):
                     _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
                     st.rerun()
-                if pre2.button("🎯 Pré-preencher (sugerido)", key=f"pref_sug_{i}", use_container_width=True):
+                if pre2.button("🎯 Usar sugestão", key=f"pref_sug_{i}", use_container_width=True):
                     _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
                     st.rerun()
 
@@ -1817,7 +1817,7 @@ Dor articular pontiaguda = troca variação no dia.
                             )
 
                             is_last = (s == total_series - 1)
-                            btn_label = "💾 Guardar exercício + iniciar descanso" if is_last else "✅ Guardar série + iniciar descanso"
+                            btn_label = "✅ Guardar última série + avançar" if is_last else "✅ Guardar série + descanso"
                             submitted = st.form_submit_button(btn_label, use_container_width=True)
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
@@ -1835,16 +1835,16 @@ Dor articular pontiaguda = troca variação no dia.
                                             pass
                                         st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                                         _queue_auto_rest(int(item["descanso_s"]), ex)
-                                        st.success("Exercício gravado! A avançar para o próximo…")
+                                        st.success("Exercício guardado. A avançar…")
                                         time.sleep(0.35)
                                         st.rerun()
                                 else:
                                     _queue_auto_rest(int(item["descanso_s"]), ex)
                                     st.rerun()
                     else:
-                        st.success("Séries deste exercício completas.")
+                        st.success("Exercício concluído.")
                         c_done1, c_done2 = st.columns(2)
-                        if c_done1.button("💾 Tentar gravar", key=f"pt_retry_save_{i}", use_container_width=True):
+                        if c_done1.button("💾 Guardar agora", key=f"pt_retry_save_{i}", use_container_width=True):
                             ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
                             if ok_gravou:
                                 st.session_state[series_key] = []
@@ -1854,10 +1854,10 @@ Dor articular pontiaguda = troca variação no dia.
                                     pass
                                 st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                                 _queue_auto_rest(int(item["descanso_s"]), ex)
-                                st.success("Exercício gravado! A avançar para o próximo…")
+                                st.success("Exercício guardado. A avançar…")
                                 time.sleep(0.35)
                                 st.rerun()
-                        if c_done2.button("➡️ Avançar", key=f"pt_force_next_{i}", use_container_width=True):
+                        if c_done2.button("➡️ Próximo exercício", key=f"pt_force_next_{i}", use_container_width=True):
                             st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                             st.rerun()
                 else:
@@ -1888,7 +1888,7 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.success("Exercício gravado!")
                                 time.sleep(0.4)
                                 st.rerun()
-                with st.expander("⏱️ Descanso", expanded=(pure_workout_mode or (not ui_compact))):
+                with st.expander("⏱️ Timer de descanso", expanded=(pure_workout_mode or (not ui_compact))):
                     p1,p2,p3 = st.columns(3)
                     if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 60
@@ -1896,17 +1896,17 @@ Dor articular pontiaguda = troca variação no dia.
                         st.session_state[f"rest_{i}"] = 90
                     if p3.button("120s", key=f"rest120_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 120
-                    rest_s = st.slider("Segundos", min_value=30, max_value=300,
+                    rest_s = st.slider("Duração (s)", min_value=30, max_value=300,
                                        value=int(st.session_state.get(f"rest_{i}", item["descanso_s"])),
                                        step=15, key=f"rest_{i}")
-                    if st.button(f"▶️ Iniciar descanso ({rest_s}s)", key=f"t_{i}", use_container_width=True):
+                    if st.button(f"▶️ Iniciar timer ({rest_s}s)", key=f"t_{i}", use_container_width=True):
                         _queue_auto_rest(int(rest_s), ex)
                         st.rerun()
 
         st.divider()
 
         if prot.get("tendoes", False):
-            with st.expander("🦾 TENDÕES (8–12 min) — protocolo"):
+            with st.expander("🦾 Protocolo de tendões (8–12 min)"):
                 st.markdown("""
 **Isométricos**
 - Tríceps isométrico na polia: 2×30–45s  
@@ -1918,7 +1918,7 @@ Dor articular pontiaguda = troca variação no dia.
 - Tibial raises: 2×15–20
 """)
         if prot.get("core", False):
-            with st.expander("🧱 CORE ESCOLIOSE (6–10 min) — protocolo"):
+            with st.expander("🧱 Core escoliose (6–10 min)"):
                 st.markdown("""
 - McGill curl-up 2×8–10 (pausa 2s)
 - Side plank 2×25–40s (+1 série lado fraco)
@@ -1926,13 +1926,13 @@ Dor articular pontiaguda = troca variação no dia.
 - Suitcase carry 2×20–30m/lado (se houver espaço)
 """)
 
-        if st.button("TERMINAR TREINO (Superar Limites!)", type="primary"):
+        if st.button("✅ Terminar treino", type="primary"):
             st.balloons()
             time.sleep(1.2)
             st.rerun()
 
 with tab_historico:
-    st.header("Grimório de Batalha 📊")
+    st.header("Histórico do perfil 📊")
 
     df = get_data()
     dfp = df[df["Perfil"].astype(str) == str(perfil_sel)].copy()
@@ -1947,16 +1947,16 @@ with tab_historico:
         dias_opts = sorted(dfp["Dia"].dropna().astype(str).unique().tolist())
         blocos_opts = sorted(dfp["Bloco"].dropna().astype(str).unique().tolist())
 
-        dias_filtrados = st.multiselect("Filtrar por Dia", dias_opts, default=[])
-        blocos_filtrados = st.multiselect("Filtrar por Bloco", blocos_opts, default=[])
+        dias_filtrados = st.multiselect("Dia", dias_opts, default=[])
+        blocos_filtrados = st.multiselect("Bloco", blocos_opts, default=[])
         ex_opts = sorted(dfp["Exercício"].dropna().astype(str).unique().tolist()) if "Exercício" in dfp.columns else []
-        ex_filtro = st.multiselect("Filtrar por Exercício", ex_opts, default=[])
+        ex_filtro = st.multiselect("Exercício", ex_opts, default=[])
 
         datas_dt = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dropna()
         if not datas_dt.empty:
             dmin = datas_dt.min().date()
             dmax = datas_dt.max().date()
-            intervalo = st.date_input("Filtrar por datas", value=(dmin, dmax))
+            intervalo = st.date_input("Datas", value=(dmin, dmax))
             try:
                 if isinstance(intervalo, (list, tuple)) and len(intervalo) == 2:
                     di, df_ = intervalo[0], intervalo[1]
@@ -2054,7 +2054,7 @@ with tab_historico:
 
             st.line_chart(df_chart, x="Data_dt", y="1RM Estimado")
 
-            st.markdown("### Histórico (filtrado)")
+            st.markdown("### Registos filtrados")
             st.dataframe(
                 df_chart.sort_values("Data_dt", ascending=False)[
                     ["Data","Dia","Bloco","Exercício","Peso","Reps","RIR","XP","Checklist_OK","Notas"]
@@ -2064,7 +2064,7 @@ with tab_historico:
 
 
 with tab_ranking:
-    st.header("Top Ranking dos Perfis 🏅")
+    st.header("Ranking de perfis 🏅")
 
     rank_window = st.selectbox("Período do ranking", ["Total", "30 dias", "90 dias"], index=0)
 
