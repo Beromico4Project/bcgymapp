@@ -659,6 +659,8 @@ def is_intensify_hypertrophy(week):
     return week in [3,7]
 
 def rir_alvo(item_tipo, bloco, week):
+    if bloco == "ABC":
+        return "2"
     if bloco == "Força":
         return "2–3"
     if bloco == "Hipertrofia":
@@ -688,6 +690,8 @@ def tempo_exec(item_tipo):
 def descanso_recomendado_s(item_tipo, bloco):
     if bloco == "Força":
         return 180
+    if bloco == "ABC":
+        return 75
     if item_tipo == "composto":
         return 120
     return 60
@@ -774,7 +778,88 @@ treinos_base = {
     },
 }
 
-PLANOS = {"Base": treinos_base}
+# --- PLANO INEIX (A/B/C 3x por semana — RIR 2 fixo, descanso 60–90s) ---
+treinos_ineix_gym = {
+    "Treino A — Glúteo/Posterior (Ginásio)": {
+        "bloco": "ABC",
+        "sessao": "45–70 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Leg press (pés altos)", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Flexora (leg curl)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Abdutora", "series":3, "reps":"15-25", "tipo":"isolado"},
+            {"ex":"Hip thrust máquina / Glute bridge", "series":3, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Prancha (segundos)", "series":3, "reps":"20-40", "tipo":"isolado"},
+        ]
+    },
+    "Treino B — Costas/Postura + Core (Ginásio)": {
+        "bloco": "ABC",
+        "sessao": "45–70 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Puxada na polia", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Remada sentada", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Face pull", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Chest press (leve)", "series":2, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Dead bug (reps por lado)", "series":3, "reps":"8-12", "tipo":"isolado"},
+            {"ex":"Wall slides", "series":2, "reps":"8-12", "tipo":"isolado"},
+        ]
+    },
+    "Treino C — Glúteo + Cardio Z2 (Ginásio)": {
+        "bloco": "ABC",
+        "sessao": "50–80 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": True},
+        "exercicios": [
+            {"ex":"Leg press (leve)", "series":3, "reps":"12-15", "tipo":"composto"},
+            {"ex":"Flexora (leg curl)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Abdutora", "series":2, "reps":"20-30", "tipo":"isolado"},
+            {"ex":"Puxada na polia", "series":2, "reps":"10-12", "tipo":"composto"},
+        ]
+    },
+}
+
+treinos_ineix_casa = {
+    "Treino A — Glúteo/Posterior (Casa)": {
+        "bloco": "ABC",
+        "sessao": "35–60 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Ponte glúteo", "series":4, "reps":"12-20", "tipo":"composto"},
+            {"ex":"Ponte unilateral (por perna)", "series":3, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Abdução de lado (por perna)", "series":3, "reps":"15-25", "tipo":"isolado"},
+            {"ex":"Box squat (sofá) — sem dor", "series":3, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Prancha (segundos)", "series":3, "reps":"20-40", "tipo":"isolado"},
+        ]
+    },
+    "Treino B — Costas/Postura + Core (Casa)": {
+        "bloco": "ABC",
+        "sessao": "35–60 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Flexão inclinada", "series":4, "reps":"6-15", "tipo":"composto"},
+            {"ex":"Superman com puxada", "series":3, "reps":"10-15", "tipo":"isolado"},
+            {"ex":"Anjos invertidos", "series":3, "reps":"10-15", "tipo":"isolado"},
+            {"ex":"Wall slides", "series":3, "reps":"8-12", "tipo":"isolado"},
+            {"ex":"Dead bug (reps por lado)", "series":3, "reps":"8-12", "tipo":"isolado"},
+        ]
+    },
+    "Treino C — Circuito (Casa)": {
+        "bloco": "ABC",
+        "sessao": "35–60 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": True},
+        "exercicios": [
+            {"ex":"Ponte glúteo", "series":3, "reps":"12-20", "tipo":"composto"},
+            {"ex":"Step-back curtinho (por perna) OU Box squat", "series":3, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Flexão inclinada", "series":3, "reps":"8-15", "tipo":"composto"},
+            {"ex":"Marcha rápida (segundos)", "series":3, "reps":"30-45", "tipo":"isolado"},
+            {"ex":"Prancha (segundos)", "series":3, "reps":"20-40", "tipo":"isolado"},
+        ]
+    },
+}
+
+treinos_ineix = {"Ginásio": treinos_ineix_gym, "Casa": treinos_ineix_casa}
+
+PLANOS = {"Base": treinos_base, "INEIX_ABC_v1": treinos_ineix}
 
 def gerar_treino_do_dia(dia, week, treinos_dict=None):
     treinos_dict = treinos_dict or treinos_base
@@ -812,7 +897,7 @@ df_all = get_data()
 # PERFIL
 def _reset_daily_state():
     """Reseta checklists e inputs do dia quando muda Perfil/Semana/Dia (evita checks marcados por defeito)."""
-    prefixes = ("chk_", "peso_", "reps_", "rir_", "rest_")
+    prefixes = ("chk_", "peso_", "reps_", "rir_", "rest_", "ineix_")
     for k in list(st.session_state.keys()):
         if any(str(k).startswith(p) for p in prefixes):
             try:
@@ -848,10 +933,35 @@ perfil_sel = st.sidebar.selectbox(
 
 # plano do perfil (preparado para ter planos diferentes no futuro)
 plano_id_sel = get_plan_id_for_profile(perfil_sel, df_profiles) if df_profiles is not None else "Base"
+if str(perfil_sel).strip().lower() == "ineix":
+    plano_id_sel = "INEIX_ABC_v1"
 if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
 st.sidebar.caption(f"📘 Plano: **{plano_id_sel}**")
+if plano_id_sel == "INEIX_ABC_v1" and df_profiles is not None and not df_profiles.empty:
+    with st.sidebar.expander("⚙️ Plano (Ineix)"):
+        st.caption("Este perfil usa o plano A/B/C (RIR 2 fixo).")
+        if st.button("💾 Guardar Plano_ID no perfil (Sheet)"):
+            try:
+                dfp_u = df_profiles.copy()
+                dfp_u["Perfil"] = dfp_u["Perfil"].astype(str).str.strip()
+                mask = dfp_u["Perfil"].astype(str) == str(perfil_sel).strip()
+                if mask.any():
+                    dfp_u.loc[mask, "Plano_ID"] = "INEIX_ABC_v1"
+                    okp, errp = save_profiles_df(dfp_u)
+                    if okp:
+                        st.success("Plano guardado no perfil!")
+                        time.sleep(0.4)
+                        st.rerun()
+                    else:
+                        st.error("Não consegui gravar na aba Perfis.")
+                        st.code(errp)
+                else:
+                    st.warning("Perfil não encontrado na aba Perfis.")
+            except Exception as _e:
+                st.error("Falha ao tentar gravar Plano_ID.")
+                st.code(str(_e))
 
 with st.sidebar.expander("➕ Criar novo perfil"):
     novo_perfil = st.text_input("Nome do perfil", "")
@@ -925,13 +1035,33 @@ st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # SEMANA (8)
 st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
-semana = st.sidebar.radio("Semana do ciclo:", list(range(1,9)), format_func=semana_label, index=0, key="semana_sel", on_change=_reset_daily_state)
+is_ineix = (st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1")
+semana_sel = st.sidebar.radio(
+    "Semana do ciclo:",
+    list(range(1,9)),
+    format_func=semana_label,
+    index=0,
+    key="semana_sel",
+    on_change=_reset_daily_state,
+    disabled=is_ineix
+)
+semana = 1 if is_ineix else semana_sel
+if is_ineix:
+    st.sidebar.caption("ℹ️ Para o plano Ineix (A/B/C), a periodização 8 semanas não se aplica (RIR 2 fixo).")
 
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # DIA
-# Plano ativo (preparado para suportar planos diferentes por perfil no futuro)
-treinos_dict = PLANOS.get(st.session_state.get("plano_id_sel", "Base"), treinos_base)
+# Plano ativo (preparado para suportar planos diferentes por perfil)
+plan_id_active = st.session_state.get("plano_id_sel", "Base")
+plan_obj = PLANOS.get(plan_id_active, treinos_base)
+
+# Se for o plano Ineix, escolhe "Ginásio" vs "Casa" e usa o sub-plano certo
+if plan_id_active == "INEIX_ABC_v1" and isinstance(plan_obj, dict):
+    ineix_local = st.sidebar.radio("Local:", ["Ginásio","Casa"], key="ineix_local", horizontal=True, on_change=_reset_daily_state)
+    treinos_dict = plan_obj.get(ineix_local, plan_obj.get("Ginásio", treinos_ineix_gym))
+else:
+    treinos_dict = plan_obj
 
 dia = st.sidebar.selectbox("Treino de Hoje", list(treinos_dict.keys()), index=0, key="dia_sel", on_change=_reset_daily_state)
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
@@ -966,7 +1096,16 @@ tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Hi
 
 with tab_treino:
     with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
-        st.markdown("""
+        if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
+            st.markdown("""
+**Plano Ineix (A/B/C 3x/sem):**  
+**Intensidade:** RIR **2** em todas as séries (sem falhar).  
+**Descanso:** **60–90s** (use o slider se precisares).  
+**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
+Dor articular pontiaguda = troca variação no dia.
+""")
+        else:
+            st.markdown("""
 **Força (compostos):** RIR 2–3 sempre.  
 **Hipertrofia:** RIR 2; semanas 3 e 7 → RIR 1 (isoladores podem 0–1).  
 **Deload (sem 4 e 8):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
@@ -1051,13 +1190,13 @@ Dor articular pontiaguda = troca variação no dia.
         st.subheader(f"📘 Treino: **{dia}**")
         st.caption(f"Bloco: **{bloco}** | Semana: **{semana_label(semana)}**")
 
-        if semana in [2,6]:
-            st.info("Progressão: +1 rep por série OU +2,5–5% carga mantendo o RIR alvo.")
-        if semana in [4,8]:
-            st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
-        if semana == 7 and bloco == "Hipertrofia":
-            st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
-
+        if bloco in ["Força","Hipertrofia"]:
+            if semana in [2,6]:
+                st.info("Progressão: +1 rep por série OU +2,5–5% carga mantendo o RIR alvo.")
+            if semana in [4,8]:
+                st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
+            if semana == 7 and bloco == "Hipertrofia":
+                st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
         for i,item in enumerate(cfg["exercicios"]):
             ex = item["ex"]
             rir_target_str = item["rir_alvo"]
