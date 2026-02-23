@@ -1149,7 +1149,7 @@ df_all = get_data()
 # PERFIL
 def _reset_daily_state():
     """Reseta checklists e inputs do dia quando muda Perfil/Semana/Dia (evita checks marcados por defeito)."""
-    prefixes = ("chk_", "peso_", "reps_", "rir_", "rest_", "ineix_")
+    prefixes = ("chk_", "peso_", "reps_", "rir_", "rest_", "ineix_", "pt_")
     for k in list(st.session_state.keys()):
         if any(str(k).startswith(p) for p in prefixes):
             try:
@@ -1342,9 +1342,13 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>📱 Modo Mobile</h3>", unsafe_allow_html=True)
 compact_mode = st.sidebar.checkbox("Modo treino compacto", value=True, help="Mostra menos tabelas/ruído e foca no que precisas durante o treino.")
+pure_mode = st.sidebar.checkbox("Modo treino puro (1 exercício)", value=True, help="Mostra 1 exercício de cada vez, com navegação grande e menos distrações.")
 show_last_table = st.sidebar.checkbox("Mostrar tabela do último registo", value=False, help="Se desligado, mostra só resumo do último treino por exercício (mais rápido no telemóvel).")
+show_rules_in_workout = st.sidebar.checkbox("Mostrar regras no ecrã do treino", value=False, help="No modo treino puro, podes esconder as regras para ficar mais limpo.")
 st.session_state["ui_compact_mode"] = bool(compact_mode)
+st.session_state["ui_pure_mode"] = bool(pure_mode)
 st.session_state["ui_show_last_table"] = bool(show_last_table)
+st.session_state["ui_show_rules"] = bool(show_rules_in_workout)
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 def sugestao_articular(ex):
@@ -1380,17 +1384,20 @@ except Exception:
 tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Histórico", "🏅 Ranking"])
 
 with tab_treino:
-    with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
-        if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
-            st.markdown("""
+    pure_workout_mode = bool(st.session_state.get("ui_pure_mode", True))
+    show_rules = (not pure_workout_mode) or bool(st.session_state.get("ui_show_rules", False))
+    if show_rules:
+        with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
+            if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
+                st.markdown("""
 **Plano Ineix (A/B/C 3x/sem):**  
 **Intensidade:** RIR **2** em todas as séries (sem falhar).  
 **Descanso:** **60–90s** (use o slider se precisares).  
 **Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
 Dor articular pontiaguda = troca variação no dia.
 """)
-        else:
-            st.markdown("""
+            else:
+                st.markdown("""
 **Força (compostos):** RIR 2–3 sempre.  
 **Hipertrofia:** RIR 2; semanas 3 e 7 → RIR 1 (isoladores podem 0–1).  
 **Deload (sem 4 e 8):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
@@ -1399,10 +1406,65 @@ Dor articular pontiaguda = troca variação no dia.
 **Descanso:** Força 2–4 min | Hiper compostos 90–150s | Isoladores 45–90s  
 Dor articular pontiaguda = troca variação no dia.
 """)
+    elif pure_workout_mode:
+        st.caption("📱 Modo treino puro ativo: regras escondidas para limpar o ecrã (liga na sidebar se quiseres rever).")
 
     cfg = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict)
     bloco = cfg["bloco"]
     prot = cfg["protocolos"]
+
+    pure_nav_key = None
+    pure_idx = 0
+    if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
+        st.markdown("### 📱 Modo Treino Puro")
+        ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
+        pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
+        if pure_nav_key not in st.session_state:
+            st.session_state[pure_nav_key] = 0
+        max_idx = max(0, len(ex_names)-1)
+        try:
+            st.session_state[pure_nav_key] = int(st.session_state.get(pure_nav_key, 0))
+        except Exception:
+            st.session_state[pure_nav_key] = 0
+        st.session_state[pure_nav_key] = max(0, min(max_idx, st.session_state[pure_nav_key]))
+        pure_idx = int(st.session_state[pure_nav_key])
+
+        nav1, nav2, nav3 = st.columns([1,2,1])
+        if nav1.button("⬅️ Anterior", key=f"pt_prev_{dia}", use_container_width=True, disabled=(pure_idx <= 0)):
+            st.session_state[pure_nav_key] = max(0, pure_idx - 1)
+            st.rerun()
+        nav2.selectbox(
+            "Exercício atual",
+            list(range(len(ex_names))),
+            index=pure_idx,
+            format_func=lambda ix: f"{ix+1}/{len(ex_names)} • {ex_names[ix]}",
+            key=f"pt_pick_{pure_nav_key}",
+            on_change=lambda key=pure_nav_key: st.session_state.__setitem__(key, int(st.session_state.get(f"pt_pick_{key}", 0))),
+            label_visibility="collapsed"
+        )
+        # Sincroniza a seleção (caso o utilizador mude no select)
+        try:
+            pure_idx = int(st.session_state.get(f"pt_pick_{pure_nav_key}", st.session_state.get(pure_nav_key, 0)))
+        except Exception:
+            pure_idx = int(st.session_state.get(pure_nav_key, 0))
+        pure_idx = max(0, min(max_idx, pure_idx))
+        st.session_state[pure_nav_key] = pure_idx
+        if nav3.button("Próximo ➡️", key=f"pt_next_{dia}", use_container_width=True, disabled=(pure_idx >= max_idx)):
+            st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
+            st.rerun()
+
+        st.caption("Mostro só 1 exercício de cada vez para ficar mais limpo no telemóvel.")
+        try:
+            done_now = int(st.session_state.get(f"pt_done::{perfil_sel}::{dia}::{pure_idx}", 0))
+        except Exception:
+            done_now = 0
+        st.markdown(f"""
+        <div style='position:fixed;bottom:52px;left:8px;right:8px;z-index:9998;
+                    background:rgba(20,20,20,.88);border:1px solid rgba(255,255,255,.10);
+                    border-radius:14px;padding:8px 10px;font-size:12px;text-align:center;'>
+          <b style='color:#FFD700;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {ex_names[pure_idx]} · Série {done_now}/{cfg["exercicios"][pure_idx]["series"]}
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("## 🛡️ Checklist do Dia")
 
@@ -1529,6 +1591,8 @@ Dor articular pontiaguda = troca variação no dia.
             if semana == 7 and bloco == "Hipertrofia":
                 st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
         for i,item in enumerate(cfg["exercicios"]):
+            if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
+                continue
             ex = item["ex"]
             rir_target_str = item["rir_alvo"]
             rir_target_num = rir_alvo_num(item["tipo"], bloco, semana)
@@ -1540,9 +1604,27 @@ Dor articular pontiaguda = troca variação no dia.
 
             reps_low = int(str(item["reps"]).split("-")[0]) if "-" in str(item["reps"]) else int(float(item["reps"]))
 
-            with st.expander(f"{i+1}. {ex}", expanded=(i==0)):
+            with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 st.markdown(f"**Meta:** {item['series']}×{item['reps']}   •  **RIR alvo:** {rir_target_str}")
                 st.caption(f"⏱️ Tempo: {item['tempo']} | Descanso recomendado: ~{item['descanso_s']}s")
+
+                if pure_workout_mode and pure_nav_key is not None:
+                    done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
+                    done_series = int(st.session_state.get(done_key, 0) or 0)
+                    done_series = max(0, min(int(item["series"]), done_series))
+                    st.progress(done_series / max(1, int(item["series"])), text=f"Séries feitas: {done_series}/{item['series']}")
+                    q1, q2, q3 = st.columns([1.15, 1.15, 0.9])
+                    if q1.button("✅ Próxima série", key=f"pt_mark_{i}", use_container_width=True):
+                        st.session_state[done_key] = min(int(item["series"]), done_series + 1)
+                        st.session_state[f"rest_{i}"] = int(item["descanso_s"])
+                        st.rerun()
+                    if q2.button("➡️ Próx exercício", key=f"pt_jump_{i}", use_container_width=True):
+                        if pure_nav_key in st.session_state:
+                            st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                        st.rerun()
+                    if q3.button("↺ Reset", key=f"pt_reset_{i}", use_container_width=True):
+                        st.session_state[done_key] = 0
+                        st.rerun()
 
                 art = sugestao_articular(ex)
                 if art:
@@ -1596,11 +1678,17 @@ Dor articular pontiaguda = troca variação no dia.
                     if st.form_submit_button("💾 Gravar exercício", use_container_width=True):
                         ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
                         if ok_gravou:
+                            if pure_workout_mode and pure_nav_key is not None:
+                                try:
+                                    st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
+                                except Exception:
+                                    pass
+                                st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                             st.success("Exercício gravado!")
                             time.sleep(0.4)
                             st.rerun()
 
-                with st.expander("⏱️ Descanso", expanded=(not ui_compact)):
+                with st.expander("⏱️ Descanso", expanded=(pure_workout_mode or (not ui_compact))):
                     p1,p2,p3 = st.columns(3)
                     if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
                         st.session_state[f"rest_{i}"] = 60
