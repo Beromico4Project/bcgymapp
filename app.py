@@ -1191,108 +1191,14 @@ if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
 st.sidebar.caption(f"📘 Plano: **{plano_id_sel}**")
-if plano_id_sel == "INEIX_ABC_v1" and df_profiles is not None and not df_profiles.empty:
-    with st.sidebar.expander("⚙️ Plano (Ineix)"):
-        st.caption("Este perfil usa o plano A/B/C (RIR 2 fixo).")
-        if st.button("💾 Guardar Plano_ID no perfil (Sheet)"):
-            try:
-                dfp_u = df_profiles.copy()
-                dfp_u["Perfil"] = dfp_u["Perfil"].astype(str).str.strip()
-                mask = dfp_u["Perfil"].astype(str) == str(perfil_sel).strip()
-                if mask.any():
-                    dfp_u.loc[mask, "Plano_ID"] = "INEIX_ABC_v1"
-                    okp, errp = save_profiles_df(dfp_u)
-                    if okp:
-                        st.success("Plano guardado no perfil!")
-                        time.sleep(0.4)
-                        st.rerun()
-                    else:
-                        st.error("Não consegui gravar na aba Perfis.")
-                        st.code(errp)
-                else:
-                    st.warning("Perfil não encontrado na aba Perfis.")
-            except Exception as _e:
-                st.error("Falha ao tentar gravar Plano_ID.")
-                st.code(str(_e))
-
-with st.sidebar.expander("➕ Criar novo perfil"):
-    novo_perfil = st.text_input("Nome do perfil", "")
-    if st.button("Criar Perfil"):
-        np = str(novo_perfil).strip()
-        if not np:
-            st.warning("Escreve um nome.")
-        elif np in perfis:
-            st.warning("Esse perfil já existe.")
-        else:
-            # só grava em 'Perfis' (sem linha Setup no histórico)
-            dfp_new = df_profiles.copy() if df_profiles is not None else pd.DataFrame(columns=PROFILES_COLUMNS)
-            if dfp_new is None or dfp_new.empty:
-                dfp_new = pd.DataFrame(columns=PROFILES_COLUMNS)
-
-            hoje_iso = datetime.date.today().strftime("%Y-%m-%d")
-            novo = pd.DataFrame([{
-                "Perfil": np,
-                "Criado_em": hoje_iso,
-                "Plano_ID": "Base",
-                "Ativo": "true",
-            }])
-
-            dfp_new = pd.concat([dfp_new, novo], ignore_index=True)
-            for c in PROFILES_COLUMNS:
-                if c not in dfp_new.columns:
-                    dfp_new[c] = None
-            dfp_new = dfp_new[PROFILES_COLUMNS].copy()
-
-            ok_p, err_p = save_profiles_df(dfp_new)
-            if ok_p:
-                st.success("Perfil criado (na aba Perfis)!")
-                time.sleep(0.6)
-                st.rerun()
-            else:
-                sa = _service_account_email()
-                st.error("Não consegui gravar o perfil na Google Sheet (aba 'Perfis').")
-                if sa:
-                    st.caption(f"Partilha a Sheet com: {sa} (Editor) e cria uma aba chamada **Perfis**.")
-                st.code(err_p)
-
-
-# --- Google Sheets: estado + backup ---
-st.sidebar.subheader("📄 Google Sheets")
+# UI móvel limpa: esconder utilitários de plano/perfis/Google Sheets (funcionam em background)
 _ok_conn, _err_conn = True, ""
 try:
     _ = conn.read(ttl="0")
 except Exception as _e:
     _ok_conn, _err_conn = False, str(_e)
 
-if _ok_conn:
-    st.sidebar.success("Conectado ✅")
-else:
-    st.sidebar.error("Sem acesso ❌")
-    sa = _service_account_email()
-    if sa:
-        st.sidebar.caption(f"Partilha a Sheet com: {sa}")
-    if _err_conn:
-        st.sidebar.code(_err_conn)
-
 bk_df = _load_offline_backup()
-if bk_df is not None and not bk_df.empty:
-    st.sidebar.download_button(
-        "⬇️ Download backup (CSV)",
-        data=bk_df.to_csv(index=False).encode("utf-8"),
-        file_name="offline_backup.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-    if _ok_conn and st.sidebar.button("🔄 Tentar sincronizar backup", use_container_width=True):
-        ok_sync, err_sync, n_sync = try_sync_offline_backup_to_sheet()
-        if ok_sync:
-            st.sidebar.success(f"Backup sincronizado: {n_sync} linhas")
-            time.sleep(0.4)
-            st.rerun()
-        else:
-            st.sidebar.error("Não consegui sincronizar backup")
-            if err_sync:
-                st.sidebar.code(err_sync)
 st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
 
 # SEMANA (8) — só para o plano Base (8 semanas)
@@ -1339,17 +1245,11 @@ dor_ombro = st.sidebar.checkbox("Dor no Ombro", help="Se o ombro estiver sensív
 dor_lombar = st.sidebar.checkbox("Dor na Lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
-st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>📱 Modo Mobile</h3>", unsafe_allow_html=True)
-compact_mode = st.sidebar.checkbox("Modo treino compacto", value=True, help="Mostra menos tabelas/ruído e foca no que precisas durante o treino.")
-pure_mode = st.sidebar.checkbox("Modo treino puro (1 exercício)", value=True, help="Mostra 1 exercício de cada vez, com navegação grande e menos distrações.")
-show_last_table = st.sidebar.checkbox("Mostrar tabela do último registo", value=False, help="Se desligado, mostra só resumo do último treino por exercício (mais rápido no telemóvel).")
-show_rules_in_workout = st.sidebar.checkbox("Mostrar regras no ecrã do treino", value=False, help="No modo treino puro, podes esconder as regras para ficar mais limpo.")
-st.session_state["ui_compact_mode"] = bool(compact_mode)
-st.session_state["ui_pure_mode"] = bool(pure_mode)
-st.session_state["ui_show_last_table"] = bool(show_last_table)
-st.session_state["ui_show_rules"] = bool(show_rules_in_workout)
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
+# Modo mobile permanente (sem toggles na sidebar)
+st.session_state["ui_compact_mode"] = False
+st.session_state["ui_pure_mode"] = True
+st.session_state["ui_show_last_table"] = True
+st.session_state["ui_show_rules"] = True
 
 def sugestao_articular(ex):
     if dor_joelho and ("Bulgarian" in ex or "Leg Press" in ex):
@@ -1386,6 +1286,26 @@ tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino do Dia", "📊 Hi
 with tab_treino:
     pure_workout_mode = bool(st.session_state.get("ui_pure_mode", True))
     show_rules = (not pure_workout_mode) or bool(st.session_state.get("ui_show_rules", False))
+
+    def _queue_auto_rest(seconds:int, ex_name:str=""):
+        try:
+            st.session_state["rest_auto_seconds"] = max(1, int(seconds))
+        except Exception:
+            st.session_state["rest_auto_seconds"] = 60
+        st.session_state["rest_auto_from"] = str(ex_name or "")
+        st.session_state["rest_auto_run"] = True
+
+    if st.session_state.get("rest_auto_run", False):
+        total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
+        ex_rest = str(st.session_state.get("rest_auto_from", ""))
+        if ex_rest:
+            st.info(f"⏱️ Descanso automático: {total_rest}s • {ex_rest}")
+        ph_auto = st.empty()
+        for sec in range(total_rest, 0, -1):
+            ph_auto.metric("Recupera...", f"{sec}s")
+            time.sleep(1)
+        ph_auto.success("BORA! 🔥")
+        st.session_state["rest_auto_run"] = False
     if show_rules:
         with st.expander("📜 Regras do Plano (RIR, tempo, deload)"):
             if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
@@ -1709,7 +1629,7 @@ Dor articular pontiaguda = troca variação no dia.
                             )
 
                             is_last = (s == total_series - 1)
-                            btn_label = "💾 Gravar exercício (última série)" if is_last else "✅ Guardar série e continuar"
+                            btn_label = "💾 Guardar exercício + iniciar descanso" if is_last else "✅ Guardar série + iniciar descanso"
                             submitted = st.form_submit_button(btn_label, use_container_width=True)
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
@@ -1726,10 +1646,12 @@ Dor articular pontiaguda = troca variação no dia.
                                         except Exception:
                                             pass
                                         st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                        _queue_auto_rest(int(item["descanso_s"]), ex)
                                         st.success("Exercício gravado! A avançar para o próximo…")
                                         time.sleep(0.35)
                                         st.rerun()
                                 else:
+                                    _queue_auto_rest(int(item["descanso_s"]), ex)
                                     st.rerun()
                     else:
                         st.success("Séries deste exercício completas.")
@@ -1743,6 +1665,7 @@ Dor articular pontiaguda = troca variação no dia.
                                 except Exception:
                                     pass
                                 st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                _queue_auto_rest(int(item["descanso_s"]), ex)
                                 st.success("Exercício gravado! A avançar para o próximo…")
                                 time.sleep(0.35)
                                 st.rerun()
@@ -1789,11 +1712,8 @@ Dor articular pontiaguda = troca variação no dia.
                                        value=int(st.session_state.get(f"rest_{i}", item["descanso_s"])),
                                        step=15, key=f"rest_{i}")
                     if st.button(f"▶️ Iniciar descanso ({rest_s}s)", key=f"t_{i}", use_container_width=True):
-                        ph = st.empty()
-                        for sec in range(rest_s, 0, -1):
-                            ph.metric("Recupera...", f"{sec}s")
-                            time.sleep(1)
-                        ph.success("BORA! 🔥")
+                        _queue_auto_rest(int(rest_s), ex)
+                        st.rerun()
 
         st.divider()
 
