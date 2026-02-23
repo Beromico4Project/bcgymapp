@@ -1453,16 +1453,21 @@ Dor articular pontiaguda = troca variação no dia.
             st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
             st.rerun()
 
-        st.caption("Mostro só 1 exercício de cada vez para ficar mais limpo no telemóvel.")
+        st.caption("Mostro só 1 exercício de cada vez e **1 série de cada vez** (ao terminar a última série, avança automaticamente).")
         try:
-            done_now = int(st.session_state.get(f"pt_done::{perfil_sel}::{dia}::{pure_idx}", 0))
+            _pt_pending = st.session_state.get(f"pt_sets::{perfil_sel}::{dia}::{pure_idx}", [])
+            if not isinstance(_pt_pending, list):
+                _pt_pending = []
+            done_now = len(_pt_pending)
         except Exception:
             done_now = 0
+        total_series_cur = int(cfg["exercicios"][pure_idx]["series"])
+        serie_txt = "Concluído ✅" if done_now >= total_series_cur else f"Série {done_now+1}/{total_series_cur}"
         st.markdown(f"""
         <div style='position:fixed;bottom:52px;left:8px;right:8px;z-index:9998;
                     background:rgba(20,20,20,.88);border:1px solid rgba(255,255,255,.10);
                     border-radius:14px;padding:8px 10px;font-size:12px;text-align:center;'>
-          <b style='color:#FFD700;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {ex_names[pure_idx]} · Série {done_now}/{cfg["exercicios"][pure_idx]["series"]}
+          <b style='color:#FFD700;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {ex_names[pure_idx]} · {serie_txt}
         </div>
         """, unsafe_allow_html=True)
 
@@ -1610,19 +1615,21 @@ Dor articular pontiaguda = troca variação no dia.
 
                 if pure_workout_mode and pure_nav_key is not None:
                     done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
-                    done_series = int(st.session_state.get(done_key, 0) or 0)
-                    done_series = max(0, min(int(item["series"]), done_series))
-                    st.progress(done_series / max(1, int(item["series"])), text=f"Séries feitas: {done_series}/{item['series']}")
-                    q1, q2, q3 = st.columns([1.15, 1.15, 0.9])
-                    if q1.button("✅ Próxima série", key=f"pt_mark_{i}", use_container_width=True):
-                        st.session_state[done_key] = min(int(item["series"]), done_series + 1)
-                        st.session_state[f"rest_{i}"] = int(item["descanso_s"])
-                        st.rerun()
-                    if q2.button("➡️ Próx exercício", key=f"pt_jump_{i}", use_container_width=True):
+                    series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                    pending_sets = st.session_state.get(series_key, [])
+                    if not isinstance(pending_sets, list):
+                        pending_sets = []
+                    done_series = len(pending_sets)
+                    total_series = int(item["series"])
+                    done_series = max(0, min(total_series, done_series))
+                    st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
+                    q1, q2 = st.columns([1.2, 1])
+                    if q1.button("➡️ Próx exercício", key=f"pt_jump_{i}", use_container_width=True):
                         if pure_nav_key in st.session_state:
                             st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                         st.rerun()
-                    if q3.button("↺ Reset", key=f"pt_reset_{i}", use_container_width=True):
+                    if q2.button("↺ Reset séries", key=f"pt_reset_{i}", use_container_width=True):
+                        st.session_state[series_key] = []
                         st.session_state[done_key] = 0
                         st.rerun()
 
@@ -1660,34 +1667,116 @@ Dor articular pontiaguda = troca variação no dia.
                     _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
                     st.rerun()
 
-                lista_sets = []
-                with st.form(key=f"form_{i}"):
-                    kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
-                    for s in range(item["series"]):
-                        st.markdown(f"### Série {s+1}")
-                        peso = st.number_input(f"Kg • S{s+1}", min_value=0.0,
-                                               value=float(peso_sug) if peso_sug>0 else 0.0,
-                                               step=float(kg_step), key=f"peso_{i}_{s}")
-                        rcol1, rcol2 = st.columns(2)
-                        reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_low),
-                                                  step=1, key=f"reps_{i}_{s}")
-                        rir = rcol2.number_input(f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
-                                                 value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
-                        lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
+                if pure_workout_mode and pure_nav_key is not None:
+                    series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                    pending_sets = st.session_state.get(series_key, [])
+                    if not isinstance(pending_sets, list):
+                        pending_sets = []
+                    total_series = int(item["series"])
+                    current_s = len(pending_sets)
 
-                    if st.form_submit_button("💾 Gravar exercício", use_container_width=True):
-                        ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
-                        if ok_gravou:
-                            if pure_workout_mode and pure_nav_key is not None:
+                    if pending_sets:
+                        st.caption("Séries já lançadas neste exercício:")
+                        try:
+                            _df_pending = pd.DataFrame(pending_sets)
+                            _df_pending.index = [f"S{ix+1}" for ix in range(len(_df_pending))]
+                            st.dataframe(_df_pending, use_container_width=True)
+                        except Exception:
+                            pass
+
+                    if current_s < total_series:
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
+                        s = current_s
+                        with st.form(key=f"form_pure_{i}_{s}"):
+                            st.markdown(f"### Série {s+1}/{total_series}")
+                            default_peso = float(peso_sug) if peso_sug > 0 else 0.0
+                            if pending_sets:
+                                try:
+                                    default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
+                                except Exception:
+                                    pass
+                            peso = st.number_input(
+                                f"Kg • S{s+1}", min_value=0.0,
+                                value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
+                            )
+                            rcol1, rcol2 = st.columns(2)
+                            reps = rcol1.number_input(
+                                f"Reps • S{s+1}", min_value=0, value=int(reps_low), step=1, key=f"reps_{i}_{s}"
+                            )
+                            rir = rcol2.number_input(
+                                f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
+                                value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}"
+                            )
+
+                            is_last = (s == total_series - 1)
+                            btn_label = "💾 Gravar exercício (última série)" if is_last else "✅ Guardar série e continuar"
+                            submitted = st.form_submit_button(btn_label, use_container_width=True)
+                            if submitted:
+                                novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
+                                st.session_state[series_key] = novos_sets
+                                st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = len(novos_sets)
+                                st.session_state[f"rest_{i}"] = int(item["descanso_s"])
+
+                                if is_last:
+                                    ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa)
+                                    if ok_gravou:
+                                        st.session_state[series_key] = []
+                                        try:
+                                            st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
+                                        except Exception:
+                                            pass
+                                        st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                        st.success("Exercício gravado! A avançar para o próximo…")
+                                        time.sleep(0.35)
+                                        st.rerun()
+                                else:
+                                    st.rerun()
+                    else:
+                        st.success("Séries deste exercício completas.")
+                        c_done1, c_done2 = st.columns(2)
+                        if c_done1.button("💾 Tentar gravar", key=f"pt_retry_save_{i}", use_container_width=True):
+                            ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
+                            if ok_gravou:
+                                st.session_state[series_key] = []
                                 try:
                                     st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                 except Exception:
                                     pass
                                 st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
-                            st.success("Exercício gravado!")
-                            time.sleep(0.4)
+                                st.success("Exercício gravado! A avançar para o próximo…")
+                                time.sleep(0.35)
+                                st.rerun()
+                        if c_done2.button("➡️ Avançar", key=f"pt_force_next_{i}", use_container_width=True):
+                            st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                             st.rerun()
+                else:
+                    lista_sets = []
+                    with st.form(key=f"form_{i}"):
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
+                        for s in range(item["series"]):
+                            st.markdown(f"### Série {s+1}")
+                            peso = st.number_input(f"Kg • S{s+1}", min_value=0.0,
+                                                   value=float(peso_sug) if peso_sug>0 else 0.0,
+                                                   step=float(kg_step), key=f"peso_{i}_{s}")
+                            rcol1, rcol2 = st.columns(2)
+                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_low),
+                                                      step=1, key=f"reps_{i}_{s}")
+                            rir = rcol2.number_input(f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
+                                                     value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
+                            lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
+                        if st.form_submit_button("💾 Gravar exercício", use_container_width=True):
+                            ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
+                            if ok_gravou:
+                                if pure_workout_mode and pure_nav_key is not None:
+                                    try:
+                                        st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
+                                    except Exception:
+                                        pass
+                                    st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                st.success("Exercício gravado!")
+                                time.sleep(0.4)
+                                st.rerun()
                 with st.expander("⏱️ Descanso", expanded=(pure_workout_mode or (not ui_compact))):
                     p1,p2,p3 = st.columns(3)
                     if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
