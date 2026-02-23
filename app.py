@@ -1875,25 +1875,6 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.success("Exercício gravado!")
                                 time.sleep(0.4)
                                 st.rerun()
-                with st.expander("⏱️ Timer de descanso", expanded=(pure_workout_mode or (not ui_compact))):
-                    p1,p2,p3,p4,p5 = st.columns(5)
-                    if p1.button("60s", key=f"rest60_{i}", use_container_width=True):
-                        st.session_state[f"rest_{i}"] = 60
-                    if p2.button("90s", key=f"rest90_{i}", use_container_width=True):
-                        st.session_state[f"rest_{i}"] = 90
-                    if p3.button("120s", key=f"rest120_{i}", use_container_width=True):
-                        st.session_state[f"rest_{i}"] = 120
-                    if p4.button("⏭️ -15s", key=f"restm15_{i}", use_container_width=True):
-                        _cur = int(st.session_state.get(f"rest_{i}", item["descanso_s"]))
-                        st.session_state[f"rest_{i}"] = max(30, _cur - 15)
-                    if p5.button("⏭️ Total", key=f"restm0_{i}", use_container_width=True):
-                        st.session_state[f"rest_{i}"] = 30
-                    rest_s = st.slider("Duração (s)", min_value=30, max_value=300,
-                                       value=int(st.session_state.get(f"rest_{i}", item["descanso_s"])),
-                                       step=15, key=f"rest_{i}")
-                    if st.button(f"▶️ Iniciar timer ({rest_s}s)", key=f"t_{i}", use_container_width=True):
-                        _queue_auto_rest(int(rest_s), ex)
-                        st.rerun()
 
         st.divider()
 
