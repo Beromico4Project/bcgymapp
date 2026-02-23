@@ -1529,7 +1529,7 @@ Dor articular pontiaguda = troca variação no dia.
         pure_idx = int(st.session_state[pure_nav_key])
 
         nav1, nav2, nav3 = st.columns([1,2,1])
-        if nav1.button("⬅️ Anterior", key=f"pt_prev_{dia}", use_container_width=True, disabled=(pure_idx <= 0)):
+        if nav1.button("← Anterior", key=f"pt_prev_{dia}", use_container_width=True, disabled=(pure_idx <= 0)):
             st.session_state[pure_nav_key] = max(0, pure_idx - 1)
             st.rerun()
         nav2.selectbox(
@@ -1548,7 +1548,7 @@ Dor articular pontiaguda = troca variação no dia.
             pure_idx = int(st.session_state.get(pure_nav_key, 0))
         pure_idx = max(0, min(max_idx, pure_idx))
         st.session_state[pure_nav_key] = pure_idx
-        if nav3.button("Próximo ➡️", key=f"pt_next_{dia}", use_container_width=True, disabled=(pure_idx >= max_idx)):
+        if nav3.button("Seguinte →", key=f"pt_next_{dia}", use_container_width=True, disabled=(pure_idx >= max_idx)):
             st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
             st.rerun()
 
@@ -1816,7 +1816,7 @@ Dor articular pontiaguda = troca variação no dia.
                             )
 
                             is_last = (s == total_series - 1)
-                            btn_label = "✅ Guardar última série + avançar" if is_last else "✅ Guardar série + descanso"
+                            btn_label = "Guardar última série + avançar" if is_last else "Guardar série + descanso"
                             submitted = st.form_submit_button(btn_label, use_container_width=True)
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
@@ -1834,7 +1834,7 @@ Dor articular pontiaguda = troca variação no dia.
                                             pass
                                         st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                                         _queue_auto_rest(int(item["descanso_s"]), ex)
-                                        st.success("Exercício guardado. A avançar…")
+                                        st.success("Exercício guardado. A seguir…")
                                         time.sleep(0.35)
                                         st.rerun()
                                 else:
@@ -1843,7 +1843,7 @@ Dor articular pontiaguda = troca variação no dia.
                     else:
                         st.success("Exercício concluído.")
                         c_done1, c_done2 = st.columns(2)
-                        if c_done1.button("💾 Guardar agora", key=f"pt_retry_save_{i}", use_container_width=True):
+                        if c_done1.button("Guardar agora", key=f"pt_retry_save_{i}", use_container_width=True):
                             ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
                             if ok_gravou:
                                 st.session_state[series_key] = []
@@ -1853,10 +1853,10 @@ Dor articular pontiaguda = troca variação no dia.
                                     pass
                                 st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                                 _queue_auto_rest(int(item["descanso_s"]), ex)
-                                st.success("Exercício guardado. A avançar…")
+                                st.success("Exercício guardado. A seguir…")
                                 time.sleep(0.35)
                                 st.rerun()
-                        if c_done2.button("➡️ Próximo exercício", key=f"pt_force_next_{i}", use_container_width=True):
+                        if c_done2.button("Seguinte exercício →", key=f"pt_force_next_{i}", use_container_width=True):
                             st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                             st.rerun()
                 else:
@@ -2127,4 +2127,3 @@ with tab_ranking:
         )
 
         st.caption("Score = XP + (Streak×50) + (Checklist×500) + (Sessões×10). Isto é só para ranking — não muda o teu treino.")
-
