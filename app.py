@@ -1502,19 +1502,19 @@ with tab_treino:
         st.info(label)
         ctm1, ctm2, ctm3 = st.columns([2,1,1])
         ctm1.metric("Descanso", f"{rem}s")
-        if ctm2.button("⏭️ -15s", key="rest_skip15", use_container_width=True, disabled=(rem <= 0)):
+        if ctm2.button("⏭️ -15s", key="rest_skip15", width='stretch', disabled=(rem <= 0)):
             novo_fim = max(float(time.time()), float(st.session_state.get("rest_auto_end_ts", end_ts)) - 15.0)
             st.session_state["rest_auto_end_ts"] = novo_fim
             st.rerun()
-        if ctm3.button("⏭️ Total", key="rest_skip_all", use_container_width=True, disabled=(rem <= 0)):
+        if ctm3.button("⏭️ Total", key="rest_skip_all", width='stretch', disabled=(rem <= 0)):
             st.session_state["rest_auto_end_ts"] = float(time.time())
             st.rerun()
         st.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
         ctm4, ctm5 = st.columns(2)
-        if ctm4.button("⏹️ Parar", key="rest_stop", use_container_width=True):
+        if ctm4.button("⏹️ Parar", key="rest_stop", width='stretch'):
             st.session_state["rest_auto_run"] = False
             st.rerun()
-        if ctm5.button("🔁 Reiniciar", key="rest_restart", use_container_width=True):
+        if ctm5.button("🔁 Reiniciar", key="rest_restart", width='stretch'):
             st.session_state["rest_auto_end_ts"] = float(time.time()) + float(total_rest)
             st.rerun()
 
@@ -1591,7 +1591,7 @@ Dor articular pontiaguda = troca variação no dia.
         pure_idx = int(st.session_state[pure_nav_key])
 
         nav1, nav2, nav3 = st.columns([1,2,1])
-        if nav1.button("← Anterior", key=f"pt_prev_{dia}", use_container_width=True, disabled=(pure_idx <= 0)):
+        if nav1.button("← Anterior", key=f"pt_prev_{dia}", width='stretch', disabled=(pure_idx <= 0)):
             st.session_state[pure_nav_key] = max(0, pure_idx - 1)
             st.rerun()
         nav2.selectbox(
@@ -1610,7 +1610,7 @@ Dor articular pontiaguda = troca variação no dia.
             pure_idx = int(st.session_state.get(pure_nav_key, 0))
         pure_idx = max(0, min(max_idx, pure_idx))
         st.session_state[pure_nav_key] = pure_idx
-        if nav3.button("Seguinte →", key=f"pt_next_{dia}", use_container_width=True, disabled=(pure_idx >= max_idx)):
+        if nav3.button("Seguinte →", key=f"pt_next_{dia}", width='stretch', disabled=(pure_idx >= max_idx)):
             st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
             st.rerun()
 
@@ -1719,11 +1719,11 @@ Dor articular pontiaguda = troca variação no dia.
                     done_series = max(0, min(total_series, done_series))
                     st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
                     q1, q2 = st.columns([1.2, 1])
-                    if q1.button("➡️ Próx exercício", key=f"pt_jump_{i}", use_container_width=True):
+                    if q1.button("➡️ Próx exercício", key=f"pt_jump_{i}", width='stretch'):
                         if pure_nav_key in st.session_state:
                             st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                         st.rerun()
-                    if q2.button("↺ Reset séries", key=f"pt_reset_{i}", use_container_width=True):
+                    if q2.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
                         st.session_state[series_key] = []
                         st.session_state[done_key] = 0
                         st.rerun()
@@ -1741,7 +1741,7 @@ Dor articular pontiaguda = troca variação no dia.
                     st.markdown(f"📜 **Último registo ({data_ultima})**")
                     st.caption(f"Último: peso médio ~ {peso_medio:.1f} kg | RIR médio ~ {rir_medio:.1f}")
                     if (not ui_compact) or ui_show_last_table:
-                        st.dataframe(df_last, hide_index=True, use_container_width=True)
+                        st.dataframe(df_last, hide_index=True, width='stretch')
                 else:
                     st.caption("Sem registos anteriores para este exercício (neste perfil).")
 
@@ -1755,10 +1755,10 @@ Dor articular pontiaguda = troca variação no dia.
                         st.caption("Se o RIR fugir do alvo, ajusta na hora. Técnica primeiro.")
 
                 pre1, pre2 = st.columns(2)
-                if pre1.button("↺ Usar último", key=f"pref_last_{i}", use_container_width=True):
+                if pre1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
                     _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
                     st.rerun()
-                if pre2.button("🎯 Usar sugestão", key=f"pref_sug_{i}", use_container_width=True):
+                if pre2.button("🎯 Usar sugestão", key=f"pref_sug_{i}", width='stretch'):
                     _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
                     st.rerun()
 
@@ -1775,7 +1775,7 @@ Dor articular pontiaguda = troca variação no dia.
                         try:
                             _df_pending = pd.DataFrame(pending_sets)
                             _df_pending.index = [f"S{ix+1}" for ix in range(len(_df_pending))]
-                            st.dataframe(_df_pending, use_container_width=True)
+                            st.dataframe(_df_pending, width='stretch')
                         except Exception:
                             pass
 
@@ -1805,7 +1805,7 @@ Dor articular pontiaguda = troca variação no dia.
 
                             is_last = (s == total_series - 1)
                             btn_label = "Guardar última série + avançar" if is_last else "Guardar série + descanso"
-                            submitted = st.form_submit_button(btn_label, use_container_width=True)
+                            submitted = st.form_submit_button(btn_label, width='stretch')
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
                                 st.session_state[series_key] = novos_sets
@@ -1831,7 +1831,7 @@ Dor articular pontiaguda = troca variação no dia.
                     else:
                         st.success("Exercício concluído.")
                         c_done1, c_done2 = st.columns(2)
-                        if c_done1.button("Guardar agora", key=f"pt_retry_save_{i}", use_container_width=True):
+                        if c_done1.button("Guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
                             ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
                             if ok_gravou:
                                 st.session_state[series_key] = []
@@ -1844,7 +1844,7 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.success("Exercício guardado. A seguir…")
                                 time.sleep(0.35)
                                 st.rerun()
-                        if c_done2.button("Seguinte exercício →", key=f"pt_force_next_{i}", use_container_width=True):
+                        if c_done2.button("Seguinte exercício →", key=f"pt_force_next_{i}", width='stretch'):
                             st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
                             st.rerun()
                 else:
@@ -1863,7 +1863,7 @@ Dor articular pontiaguda = troca variação no dia.
                                                      value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
                             lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
-                        if st.form_submit_button("💾 Gravar exercício", use_container_width=True):
+                        if st.form_submit_button("💾 Gravar exercício", width='stretch'):
                             ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
                             if ok_gravou:
                                 if pure_workout_mode and pure_nav_key is not None:
@@ -2088,7 +2088,7 @@ with tab_historico:
                     prs.append((ex, val_week))
             if prs:
                 st.success("Novos PRs detetados nesta semana:")
-                st.dataframe(pd.DataFrame(prs, columns=["Exercício","1RM Estimado (PR)"]), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame(prs, columns=["Exercício","1RM Estimado (PR)"]), hide_index=True, width='stretch')
             else:
                 st.info("Sem PRs nesta semana.")
 
@@ -2108,7 +2108,7 @@ with tab_historico:
                 df_chart.sort_values("Data_dt", ascending=False)[
                     ["Data","Dia","Bloco","Exercício","Peso","Reps","RIR","XP","Checklist_OK","Notas"]
                 ],
-                use_container_width=True, hide_index=True
+                width='stretch', hide_index=True
             )
 
 
@@ -2172,7 +2172,7 @@ with tab_ranking:
 
         st.dataframe(
             rank_df[["Posição","Perfil","Tier","Score","XP Total","Streak Máx","Checklist %","Sessões"]],
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
 
