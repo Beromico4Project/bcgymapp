@@ -16,9 +16,9 @@ import urllib.parse
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 # --- UI theme knobs (ajusta facilmente) ---
-BANNER_BLUR_PX = 3.5
-BANNER_BRIGHTNESS = 0.7
-CLOVER_OPACITY = 0.15
+BANNER_BLUR_PX = 5.5
+BANNER_BRIGHTNESS = 0.46
+CLOVER_OPACITY = 0.06
 
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="collapsed")
 
@@ -72,10 +72,10 @@ def set_background(png_file):
         content: "";
         position: fixed;
         top: 0; left: 0; width: 100vw; height: 100vh;
-        background-color: rgba(18, 18, 20, 0.86);
+        background-color: rgba(18, 18, 20, 0.90);
         background-image: url("{clover_uri}");
         background-repeat: repeat;
-        background-size: 180px 180px;
+        background-size: 220px 220px;
         background-position: 0 0;
         z-index: -1;
         pointer-events: none;
@@ -424,6 +424,21 @@ st.markdown("""
   padding: 2px 8px;
   font-size: .75rem;
 }
+.bc-chip, .bc-pill{ position:relative; }
+.bc-chip{ padding-left: 16px; }
+.bc-pill{ padding-left: 14px; }
+.bc-chip::before,
+.bc-pill::before{
+  content:"♣";
+  position:absolute;
+  left:6px;
+  top:50%;
+  transform:translateY(-52%);
+  font-size:.62rem;
+  color: rgba(176,126,136,0.55);
+  pointer-events:none;
+}
+.bc-pill::before{ left:5px; font-size:.58rem; color: rgba(176,126,136,0.42); }
 .bc-float-bar{
   position: fixed;
   left: 8px; right: 8px;
@@ -477,8 +492,8 @@ st.markdown("""
   position:absolute;
   right:-18px;
   top:-6px;
-  font-size:.7em;
-  color: rgba(232,226,226,0.55);
+  font-size:.72em;
+  color: rgba(176,126,136,0.62);
   text-shadow: 0 0 14px rgba(140,29,44,.24);
 }
 .bc-hero, .bc-ex-meta, .bc-progress-wrap{ position: relative; overflow: hidden; }
@@ -488,7 +503,7 @@ st.markdown("""
   right:8px;
   top:6px;
   font-size:.95rem;
-  color: rgba(232,226,226,0.14);
+  color: rgba(176,126,136,0.28);
   pointer-events:none;
 }
 .bc-ex-meta::before{ top:7px; right:10px; font-size:.9rem; }
@@ -573,6 +588,16 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
   border-radius: 16px;
   box-shadow: 0 10px 22px rgba(0,0,0,0.35);
   margin: 0 10px 12px 10px;
+}
+.sidebar-card{ position: relative; overflow: hidden; }
+.sidebar-card::after{
+  content:"♣";
+  position:absolute;
+  right:10px;
+  top:8px;
+  font-size:14px;
+  color: rgba(176,126,136,0.34);
+  pointer-events:none;
 }
 .sidebar-card h3{
   font-family: 'Cinzel', serif;
@@ -2737,13 +2762,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
 
 
 
