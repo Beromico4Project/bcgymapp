@@ -2329,7 +2329,7 @@ if not is_ineix:
         if _wk_state < 1 or _wk_state > 12:
             st.session_state["semana_sel"] = 1
             _wk_state = 1
-        st.sidebar.markdown("<h3>🧭 Periodização</h3>", unsafe_allow_html=True)
+        st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
         semana_sel = st.sidebar.radio(
             "Semana do ciclo:",
             list(range(1,13)),
@@ -2387,7 +2387,7 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>🩺 Sinais do corpo</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Sinais do corpo</h3>", unsafe_allow_html=True)
 dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
 dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
 dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
@@ -3220,6 +3220,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
