@@ -1802,7 +1802,7 @@ with tab_treino:
 
         label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
         st.info(label)
-        ctm1, ctm2, ctm3 = st.columns([2,1,1])
+        ctm1, ctm2, ctm3, ctm4 = st.columns([1.7,1,1,1])
         ctm1.metric("Descanso", f"{rem}s")
         if ctm2.button("⏭️ -15s", key="rest_skip15", width='stretch', disabled=(rem <= 0)):
             novo_fim = max(float(time.time()), float(st.session_state.get("rest_auto_end_ts", end_ts)) - 15.0)
@@ -1811,14 +1811,10 @@ with tab_treino:
         if ctm3.button("⏭️ Total", key="rest_skip_all", width='stretch', disabled=(rem <= 0)):
             st.session_state["rest_auto_end_ts"] = float(time.time())
             st.rerun()
-        st.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
-        ctm4, ctm5 = st.columns(2)
-        if ctm4.button("⏹️ Parar", key="rest_stop", width='stretch'):
+        if ctm4.button("⏹️ Parar", key="rest_stop", width='stretch', disabled=(rem <= 0)):
             st.session_state["rest_auto_run"] = False
             st.rerun()
-        if ctm5.button("🔁 Reiniciar", key="rest_restart", width='stretch'):
-            st.session_state["rest_auto_end_ts"] = float(time.time()) + float(total_rest)
-            st.rerun()
+        st.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
 
         if rem <= 0:
             st.success("Descanso concluído ✅")
@@ -1892,28 +1888,35 @@ Dor articular pontiaguda = troca variação no dia.
         st.session_state[pure_nav_key] = max(0, min(max_idx, st.session_state[pure_nav_key]))
         pure_idx = int(st.session_state[pure_nav_key])
 
+        def _set_pure_idx(_ix:int):
+            _ix = max(0, min(max_idx, int(_ix)))
+            st.session_state[pure_nav_key] = _ix
+            st.session_state[f"pt_pick_{pure_nav_key}"] = _ix
+
+        st.session_state.setdefault(f"pt_pick_{pure_nav_key}", pure_idx)
+        # garante que o select acompanha navegação automática/botões
+        st.session_state[f"pt_pick_{pure_nav_key}"] = int(st.session_state.get(pure_nav_key, pure_idx))
+
         nav1, nav2, nav3 = st.columns([1,2,1])
         if nav1.button("← Anterior", key=f"pt_prev_{dia}", width='stretch', disabled=(pure_idx <= 0)):
-            st.session_state[pure_nav_key] = max(0, pure_idx - 1)
+            _set_pure_idx(pure_idx - 1)
             st.rerun()
-        nav2.selectbox(
+        _picked = nav2.selectbox(
             "Exercício atual",
             list(range(len(ex_names))),
-            index=pure_idx,
+            index=int(st.session_state.get(f"pt_pick_{pure_nav_key}", pure_idx)),
             format_func=lambda ix: f"{ix+1}/{len(ex_names)} • {ex_names[ix]}",
             key=f"pt_pick_{pure_nav_key}",
-            on_change=lambda key=pure_nav_key: st.session_state.__setitem__(key, int(st.session_state.get(f"pt_pick_{key}", 0))),
             label_visibility="collapsed"
         )
-        # Sincroniza a seleção (caso o utilizador mude no select)
         try:
-            pure_idx = int(st.session_state.get(f"pt_pick_{pure_nav_key}", st.session_state.get(pure_nav_key, 0)))
+            pure_idx = int(_picked)
         except Exception:
             pure_idx = int(st.session_state.get(pure_nav_key, 0))
         pure_idx = max(0, min(max_idx, pure_idx))
         st.session_state[pure_nav_key] = pure_idx
         if nav3.button("Seguinte →", key=f"pt_next_{dia}", width='stretch', disabled=(pure_idx >= max_idx)):
-            st.session_state[pure_nav_key] = min(max_idx, pure_idx + 1)
+            _set_pure_idx(pure_idx + 1)
             st.rerun()
 
         st.caption("1 exercício + 1 série de cada vez. Só grava na Sheet na última série do exercício; depois avança automaticamente.")
@@ -2031,8 +2034,7 @@ Dor articular pontiaguda = troca variação no dia.
                     total_series = int(item["series"])
                     done_series = max(0, min(total_series, done_series))
                     st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
-                    q1, q2 = st.columns([1.2, 1])
-                    if q2.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
+                    if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
                         st.session_state[series_key] = []
                         st.session_state[done_key] = 0
                         st.rerun()
@@ -2128,7 +2130,7 @@ Dor articular pontiaguda = troca variação no dia.
                                             st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                         except Exception:
                                             pass
-                                        st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                        _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                         _queue_auto_rest(int(item["descanso_s"]), ex)
                                         st.success("Exercício guardado. A seguir…")
                                         time.sleep(0.35)
@@ -2147,13 +2149,13 @@ Dor articular pontiaguda = troca variação no dia.
                                     st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                 except Exception:
                                     pass
-                                st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                 _queue_auto_rest(int(item["descanso_s"]), ex)
                                 st.success("Exercício guardado. A seguir…")
                                 time.sleep(0.35)
                                 st.rerun()
                         if c_done2.button("Seguinte exercício →", key=f"pt_force_next_{i}", width='stretch'):
-                            st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                            _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                             st.rerun()
                 else:
                     lista_sets = []
@@ -2179,7 +2181,7 @@ Dor articular pontiaguda = troca variação no dia.
                                         st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                     except Exception:
                                         pass
-                                    st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
+                                    _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                 st.success("Exercício gravado!")
                                 time.sleep(0.4)
                                 st.rerun()
@@ -2489,4 +2491,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
