@@ -2409,6 +2409,7 @@ def sugestao_articular(ex):
 
 # --- 7. CABEÇALHO ---
 st.markdown("<div class='bc-main-title'>♣️Black Clover Training♣️</div>", unsafe_allow_html=True)
+st.caption("")
 st.caption("A minha magia é não desistir 🗡️🖤")
 
 try:
