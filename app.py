@@ -17,8 +17,8 @@ import urllib.parse
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 # --- UI theme knobs (ajusta facilmente) ---
 BANNER_BLUR_PX = 2.5
-BANNER_BRIGHTNESS = 0.50
-CLOVER_OPACITY = 0.10
+BANNER_BRIGHTNESS = 0.75
+CLOVER_OPACITY = 0.25
 
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="collapsed")
 
@@ -2737,6 +2737,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
