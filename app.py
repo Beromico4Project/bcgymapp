@@ -958,6 +958,384 @@ def get_data(force_refresh: bool = False):
 
 
 
+
+# --- 4.1 HELPERS DE DADOS / XP / HISTÓRICO ---
+def _parse_num_list(v):
+    if v is None:
+        return []
+    if isinstance(v, (list, tuple)):
+        out=[]
+        for x in v:
+            try:
+                if pd.isna(x):
+                    continue
+            except Exception:
+                pass
+            sx = str(x).strip().replace(',', '.')
+            if sx == '':
+                continue
+            try:
+                out.append(float(sx))
+            except Exception:
+                pass
+        return out
+    s = str(v).strip()
+    if s == '' or s.lower() == 'nan':
+        return []
+    # prioridade: separador de listas é vírgula; decimal pode vir com ponto.
+    parts = [x.strip() for x in s.split(',')]
+    out=[]
+    for x in parts:
+        if x == '':
+            continue
+        x = x.replace(';', '').strip()
+        try:
+            out.append(float(x))
+        except Exception:
+            try:
+                out.append(float(x.replace(',', '.')))
+            except Exception:
+                pass
+    return out
+
+
+def _join_num_list(vals, decimals=1):
+    out=[]
+    for v in list(vals or []):
+        try:
+            fv=float(v)
+        except Exception:
+            continue
+        if decimals == 0:
+            out.append(str(int(round(fv))))
+        else:
+            txt=f"{fv:.{decimals}f}".rstrip('0').rstrip('.')
+            if txt == '-0': txt='0'
+            out.append(txt)
+    return ','.join(out)
+
+
+def normalize_for_save(df: pd.DataFrame) -> pd.DataFrame:
+    df = pd.DataFrame() if df is None else df.copy()
+    for c in SCHEMA_COLUMNS:
+        if c not in df.columns:
+            df[c] = None
+    df = df[SCHEMA_COLUMNS].copy()
+
+    bool_cols = ["Aquecimento","Mobilidade","Cardio","Tendões","Core","Cooldown","Checklist_OK"]
+    for c in bool_cols:
+        df[c] = df[c].apply(lambda x: True if str(x).strip().lower() in ['true','1','yes','sim'] else (False if str(x).strip().lower() in ['false','0','no','não','nao'] else x))
+
+    # normalizar colunas de listas
+    for c in ["Peso","Reps","RIR"]:
+        def _norm_cell(x):
+            if isinstance(x, (list, tuple)):
+                if c == 'Reps':
+                    return _join_num_list(x, decimals=0)
+                return _join_num_list(x, decimals=1)
+            try:
+                if pd.isna(x):
+                    return ''
+            except Exception:
+                pass
+            return str(x)
+        df[c] = df[c].apply(_norm_cell)
+
+    # datas em dd/mm/aaaa
+    if 'Data' in df.columns:
+        def _norm_date(x):
+            try:
+                if pd.isna(x):
+                    return datetime.date.today().strftime('%d/%m/%Y')
+            except Exception:
+                pass
+            sx=str(x).strip()
+            if not sx:
+                return datetime.date.today().strftime('%d/%m/%Y')
+            dt = pd.to_datetime(sx, dayfirst=True, errors='coerce')
+            if pd.notna(dt):
+                return dt.strftime('%d/%m/%Y')
+            return sx
+        df['Data'] = df['Data'].apply(_norm_date)
+
+    # evitar NaN para gravação
+    return df.where(pd.notnull(df), None)
+
+
+def checklist_xp(req: dict, justificativa: str = ""):
+    req = req or {}
+    keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if bool(req.get(f"{k}_req", False))]
+    total = len(keys)
+    done = sum(1 for k in keys if bool(req.get(k, False)))
+    ok = (done >= total) if total > 0 else True
+    just_ok = bool(str(justificativa or '').strip())
+
+    # XP por exercício (mantido simples e estável)
+    xp = 10 + done * 2
+    if ok:
+        xp += 4
+    elif just_ok:
+        xp += 2
+    xp = int(max(0, min(30, xp)))
+    return xp, (ok or just_ok)
+
+
+def _unique_profile_dates(df: pd.DataFrame, perfil: str):
+    if df is None or df.empty or 'Perfil' not in df.columns:
+        return []
+    d = df[df['Perfil'].astype(str) == str(perfil)].copy()
+    if d.empty or 'Data' not in d.columns:
+        return []
+    dt = pd.to_datetime(d['Data'], dayfirst=True, errors='coerce').dropna().dt.date.unique().tolist()
+    dt = sorted(dt)
+    return dt
+
+
+def get_last_streak(df: pd.DataFrame, perfil: str) -> int:
+    dates = _unique_profile_dates(df, perfil)
+    if not dates:
+        return 0
+    streak = 1
+    cur = dates[-1]
+    seen = set(dates)
+    while True:
+        prev = cur - datetime.timedelta(days=1)
+        if prev in seen:
+            streak += 1
+            cur = prev
+        else:
+            break
+    return streak
+
+
+def _compute_streak_if_add_today(df: pd.DataFrame, perfil: str, day: datetime.date) -> int:
+    dates = set(_unique_profile_dates(df, perfil))
+    dates.add(day)
+    if day not in dates:
+        return 0
+    streak = 1
+    cur = day
+    while (cur - datetime.timedelta(days=1)) in dates:
+        cur = cur - datetime.timedelta(days=1)
+        streak += 1
+    return streak
+
+
+def get_historico_detalhado(df: pd.DataFrame, perfil: str, ex: str):
+    if df is None or df.empty:
+        return None, 0.0, 2.0, '—'
+    d = df.copy()
+    d = d[(d['Perfil'].astype(str) == str(perfil)) & (d['Exercício'].astype(str) == str(ex))]
+    if d.empty:
+        return None, 0.0, 2.0, '—'
+    d['_dt'] = pd.to_datetime(d['Data'], dayfirst=True, errors='coerce')
+    d = d.sort_values('_dt', ascending=False, na_position='last')
+    row = d.iloc[0]
+    pesos = _parse_num_list(row.get('Peso'))
+    reps = _parse_num_list(row.get('Reps'))
+    rirs = _parse_num_list(row.get('RIR'))
+    n = max(len(pesos), len(reps), len(rirs))
+    if n == 0:
+        return None, 0.0, 2.0, str(row.get('Data', '—'))
+    # broadcast simples quando uma lista tem só 1 valor
+    def _get(arr, i):
+        if not arr:
+            return None
+        if len(arr) == 1:
+            return arr[0]
+        return arr[i] if i < len(arr) else None
+    recs=[]
+    for i in range(n):
+        recs.append({
+            'Série': i+1,
+            'Peso (kg)': _get(pesos, i),
+            'Reps': _get(reps, i),
+            'RIR': _get(rirs, i),
+        })
+    df_last = pd.DataFrame(recs)
+    peso_medio = float(pd.to_numeric(df_last['Peso (kg)'], errors='coerce').dropna().mean() or 0.0)
+    rir_vals = pd.to_numeric(df_last['RIR'], errors='coerce').dropna()
+    rir_medio = float(rir_vals.mean()) if not rir_vals.empty else 2.0
+    data_ultima = str(row.get('Data', '—'))
+    return df_last, peso_medio, rir_medio, data_ultima
+
+
+def sugerir_carga(peso_medio: float, rir_medio: float, rir_alvo_num: float, passo_up: float = 0.025, passo_down: float = 0.05):
+    try:
+        p = float(peso_medio)
+    except Exception:
+        return 0.0
+    if p <= 0:
+        return 0.0
+    try:
+        rm = float(rir_medio)
+    except Exception:
+        rm = float(rir_alvo_num)
+    try:
+        rt = float(rir_alvo_num)
+    except Exception:
+        rt = 2.0
+
+    # Se o RIR foi alto demais, sobe; se ficou baixo demais, baixa um pouco.
+    if rm >= rt + 0.75:
+        p = p * (1.0 + float(passo_up))
+    elif rm <= rt - 0.75:
+        p = p * (1.0 - float(passo_down))
+    # arredonda ao 0.5 mais próximo para facilitar no ginásio
+    p = round(p * 2) / 2.0
+    return max(0.0, float(p))
+
+
+def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa=""):
+    """Grava um exercício (várias séries agregadas numa linha). Retorna True/False."""
+    lista_sets = list(lista_sets or [])
+    if not lista_sets:
+        return False
+
+    # anti-duplo-toque simples (mobile)
+    try:
+        payload_sig = f"{perfil}|{dia}|{bloco}|{ex}|{[(round(float(s.get('peso',0)),2), int(s.get('reps',0)), round(float(s.get('rir',0)),1)) for s in lista_sets]}"
+        sig = hashlib.sha1(payload_sig.encode('utf-8')).hexdigest()
+        now_ts = time.time()
+        if st.session_state.get('_last_save_sig') == sig and (now_ts - float(st.session_state.get('_last_save_sig_ts', 0))) < 4.0:
+            st.session_state['last_save_status'] = 'warn_duplicate'
+            return False
+        st.session_state['_last_save_sig'] = sig
+        st.session_state['_last_save_sig_ts'] = now_ts
+    except Exception:
+        pass
+
+    req = req or {}
+    justificativa = str(justificativa or '').strip()
+    xp, checklist_ok = checklist_xp(req, justificativa)
+
+    today = datetime.date.today()
+    data_str = today.strftime('%d/%m/%Y')
+    df_now = get_data()  # usa cache curta (menos quota)
+    streak = _compute_streak_if_add_today(df_now, str(perfil), today)
+
+    pesos = [float(s.get('peso', 0) or 0) for s in lista_sets]
+    repss = [int(float(s.get('reps', 0) or 0)) for s in lista_sets]
+    rirs  = [float(s.get('rir', 0) or 0) for s in lista_sets]
+
+    row = {
+        'Data': data_str,
+        'Perfil': str(perfil),
+        'Dia': str(dia),
+        'Bloco': str(bloco),
+        'Plano_ID': str(st.session_state.get('plano_id_sel', 'Base')),
+        'Exercício': str(ex),
+        'Peso': _join_num_list(pesos, decimals=1),
+        'Reps': _join_num_list(repss, decimals=0),
+        'RIR': _join_num_list(rirs, decimals=1),
+        'Notas': justificativa,
+        'Aquecimento': bool(req.get('aquecimento', False)),
+        'Mobilidade': bool(req.get('mobilidade', False)),
+        'Cardio': bool(req.get('cardio', False)),
+        'Tendões': bool(req.get('tendoes', False)),
+        'Core': bool(req.get('core', False)),
+        'Cooldown': bool(req.get('cooldown', False)),
+        'XP': int(xp),
+        'Streak': int(streak),
+        'Checklist_OK': bool(checklist_ok),
+    }
+    df_row = pd.DataFrame([row], columns=SCHEMA_COLUMNS)
+    ok, err = safe_append_rows(df_row)
+
+    # atualiza cache local em sessão para evitar reads imediatas à API
+    try:
+        if ok:
+            _cached = st.session_state.get('_df_cache_data')
+            if isinstance(_cached, pd.DataFrame):
+                st.session_state['_df_cache_data'] = pd.concat([_cached, df_row], ignore_index=True)
+                st.session_state['_df_cache_ts'] = time.time()
+    except Exception:
+        pass
+
+    if ok:
+        st.session_state['last_save_status'] = 'ok'
+        return True
+    else:
+        st.session_state['last_save_status'] = 'error'
+        if err:
+            # mensagem curta; evita stacktrace no mobile
+            st.warning('Falha ao gravar na Google Sheet. Ficou em backup local e podes sincronizar depois.')
+        return False
+
+
+def calcular_rank(xp_total: int, streak_max: int, checklist_rate: float):
+    xp_total = int(xp_total or 0)
+    streak_max = int(streak_max or 0)
+    checklist_rate = float(checklist_rate or 0.0)
+    score = xp_total + (streak_max * 40) + (checklist_rate * 400)
+    if score >= 5000 or (xp_total >= 2500 and checklist_rate >= 0.9):
+        return '💎 PLATINA', 'Consistência de elite'
+    if score >= 2500:
+        return '🥇 OURO', 'Muito consistente'
+    if score >= 1000:
+        return '🥈 PRATA', 'Boa base criada'
+    return '🥉 BRONZE', 'A construir consistência'
+
+
+def add_calendar_week(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=list(df.columns) + ['Data_dt','Semana_ID']) if isinstance(df, pd.DataFrame) else pd.DataFrame()
+    out = df.copy()
+    out['Data_dt'] = pd.to_datetime(out['Data'], dayfirst=True, errors='coerce')
+    out = out.dropna(subset=['Data_dt']).copy()
+    if out.empty:
+        return out
+    iso = out['Data_dt'].dt.isocalendar()
+    out['ISO_Ano'] = iso['year'].astype(int)
+    out['ISO_Semana'] = iso['week'].astype(int)
+    out['Semana_ID'] = out['ISO_Ano'].astype(str) + '-W' + out['ISO_Semana'].astype(str).str.zfill(2)
+    return out
+
+
+def series_count_row(row):
+    reps = [r for r in _parse_num_list(row.get('Reps')) if r > 0]
+    return int(len(reps))
+
+
+def tonnage_row(row):
+    pesos = _parse_num_list(row.get('Peso'))
+    reps = _parse_num_list(row.get('Reps'))
+    if not pesos or not reps:
+        return 0.0
+    if len(pesos) == 1 and len(reps) > 1:
+        pesos = pesos * len(reps)
+    n = min(len(pesos), len(reps))
+    return float(sum(max(0.0, float(pesos[i])) * max(0.0, float(reps[i])) for i in range(n)))
+
+
+def avg_rir_row(row):
+    rirs = _parse_num_list(row.get('RIR'))
+    if not rirs:
+        return 0.0
+    return float(sum(rirs) / len(rirs))
+
+
+def best_1rm_row(row):
+    pesos = _parse_num_list(row.get('Peso'))
+    reps = _parse_num_list(row.get('Reps'))
+    if not pesos or not reps:
+        return 0.0
+    if len(pesos) == 1 and len(reps) > 1:
+        pesos = pesos * len(reps)
+    n = min(len(pesos), len(reps))
+    best = 0.0
+    for i in range(n):
+        w = float(pesos[i])
+        r = float(reps[i])
+        if w <= 0 or r <= 0:
+            continue
+        # Epley (simples). Para reps muito altas fica pouco fiável, mas serve como tendência.
+        est = w * (1.0 + min(r, 15.0)/30.0)
+        if est > best:
+            best = est
+    return float(best)
+
+
 # --- PLANO (8 semanas) ---
 def semana_label(w):
     if w in [1,2,3]:
