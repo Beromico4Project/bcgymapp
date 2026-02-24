@@ -568,6 +568,7 @@ st.markdown("""
 }
 [data-testid='stNumberInput'] button{ min-width: 34px !important; }
 [data-testid='stProgressBar'] > div > div{ border-radius: 999px !important; }
+[data-testid='stProgressBar']{ margin: .40rem 0 .90rem 0 !important; }
 .bc-rest-track{ width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); overflow:hidden; margin-top:6px; }
 .bc-rest-fill{ height:100%; border-radius:999px; background:linear-gradient(90deg, rgba(140,29,44,.9), rgba(180,60,82,.95)); }
 .bc-rest-caption{ font-size:.78rem; color:#E8E2E2; opacity:.95; margin-top:4px; }
@@ -848,7 +849,7 @@ p{ margin-bottom: .35rem !important; }
 .app-bottom-safe{ height: 98px !important; }
 
 /* treino progress + chips */
-.bc-progress-wrap{ margin: .55rem 0 .5rem 0; }
+.bc-progress-wrap{ margin: .85rem 0 .85rem 0; }
 .bc-progress-label{ font-size:.92rem; color:#EAE6E6; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
 .bc-progress-label span{ color:#B9B1B1; font-size:.80rem; }
 .bc-progress-track{ width:100%; height:8px; border-radius:999px; background:rgba(255,255,255,.10); overflow:hidden; border:1px solid rgba(255,255,255,.06); }
@@ -2599,20 +2600,27 @@ Dor articular pontiaguda = troca variação no dia.
         render_progress_compact(_done_ex, len(cfg["exercicios"]))
 
         st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
-        nav1, nav2, nav3 = st.columns([1,2,1])
-        if nav1.button("← Anterior", key=f"pt_prev_{dia}", width='stretch', disabled=(pure_idx <= 0)):
-            _set_pure_idx(pure_idx - 1)
-            st.rerun()
-        # Sem selectbox com digitação: centro fica apenas informativo (navegação pelos botões)
-        nav2.markdown(
-            f"<div class='bc-float-bar' style='position:static; transform:none; width:100%; margin:0; font-size:12px; padding:8px 10px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'><b>{pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])}</div>",
-            unsafe_allow_html=True
+        _opt_ix = list(range(len(ex_names)))
+        _sel_ix = st.selectbox(
+            "Exercício atual",
+            options=_opt_ix,
+            index=int(max(0, min(max_idx, pure_idx))),
+            key=_pick_key,
+            format_func=lambda _x: f"{int(_x)+1}/{len(ex_names)} • {ex_names[int(_x)]}",
+            label_visibility="collapsed",
         )
-        pure_idx = max(0, min(max_idx, int(st.session_state.get(pure_nav_key, pure_idx))))
-        st.session_state[pure_nav_key] = pure_idx
-        if nav3.button("Seguinte →", key=f"pt_next_{dia}", width='stretch', disabled=(pure_idx >= max_idx)):
-            _set_pure_idx(pure_idx + 1)
-            st.rerun()
+        try:
+            _sel_ix = int(_sel_ix)
+        except Exception:
+            _sel_ix = int(pure_idx)
+        _sel_ix = max(0, min(max_idx, _sel_ix))
+        if _sel_ix != int(st.session_state.get(pure_nav_key, pure_idx)):
+            st.session_state[pure_nav_key] = _sel_ix
+            pure_idx = _sel_ix
+            st.session_state["scroll_to_ex_nav"] = True
+        else:
+            pure_idx = max(0, min(max_idx, int(st.session_state.get(pure_nav_key, pure_idx))))
+            st.session_state[pure_nav_key] = pure_idx
         if bool(st.session_state.pop("scroll_to_ex_nav", False)):
             scroll_to_dom_id("exercise-current-anchor")
         try:
