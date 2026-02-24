@@ -998,6 +998,17 @@ def _is_lower_exercise(ex_name: str) -> bool:
     return any(k in ex for k in lower_keys)
 
 
+def _rep_low_from_text(rep_str: str) -> int:
+    s = str(rep_str).strip()
+    nums = re.findall(r"\d+(?:[\.,]\d+)?", s)
+    if not nums:
+        return 0
+    try:
+        return int(float(nums[0].replace(",", ".")))
+    except Exception:
+        return 0
+
+
 def _rep_top_from_range(rep_str: str) -> int:
     s = str(rep_str).strip().replace(" ", "")
     if "-" in s:
@@ -1005,10 +1016,8 @@ def _rep_top_from_range(rep_str: str) -> int:
             return int(float(s.split("-")[-1]))
         except Exception:
             return 0
-    try:
-        return int(float(s))
-    except Exception:
-        return 0
+    # Para esquemas fixos/descendentes (15/12/10/8, 10+M+M, drop), não aplicar progressão dupla automática
+    return 0
 
 
 def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_target_num: float):
@@ -1634,7 +1643,46 @@ def is_deload(week):
 def is_intensify_hypertrophy(week):
     return week in [3,7]
 
+GUI_PPLA_ID = "GUI_PPLA_v1"
+GUI_BLOCOS = {"PUSH", "PULL", "LEGS", "ARMS"}
+
+def gui_stage_week(week: int) -> int:
+    """Mapeia semanas 1-12 para estágio do mesociclo (1-5, 6=deload)."""
+    try:
+        w = int(week)
+    except Exception:
+        w = 1
+    if w <= 6:
+        return w
+    if 7 <= w <= 11:
+        return w - 6
+    return 6
+
+def is_gui_deload_week(week: int) -> bool:
+    return int(week) in (6, 12)
+
+def semana_label_gui(week: int) -> str:
+    w = int(week)
+    stage = gui_stage_week(w)
+    if stage == 6:
+        return f"Semana {w} — DELOAD"
+    if w <= 5:
+        return f"Semana {w} — Mesociclo {stage}"
+    return f"Semana {w} — Repetição M{stage}"
+
+def semana_label_por_plano(week: int, plano_id: str) -> str:
+    if plano_id == GUI_PPLA_ID:
+        return semana_label_gui(week)
+    return semana_label(week)
+
+def is_deload_for_plan(week: int, plano_id: str) -> bool:
+    if plano_id == GUI_PPLA_ID:
+        return is_gui_deload_week(week)
+    return is_deload(week)
+
 def rir_alvo(item_tipo, bloco, week):
+    if bloco in GUI_BLOCOS:
+        return "2–4" if is_gui_deload_week(week) else "2"
     if bloco == "ABC":
         return "2"
     if bloco == "Força":
@@ -1666,6 +1714,8 @@ def tempo_exec(item_tipo):
 def descanso_recomendado_s(item_tipo, bloco):
     if bloco == "Força":
         return 180
+    if bloco in GUI_BLOCOS:
+        return 75
     if bloco == "ABC":
         return 75
     if item_tipo == "composto":
@@ -1835,9 +1885,194 @@ treinos_ineix_casa = {
 
 treinos_ineix = {"Ginásio": treinos_ineix_gym, "Casa": treinos_ineix_casa}
 
-PLANOS = {"Base": treinos_base, "INEIX_ABC_v1": treinos_ineix}
+# --- PLANO GUI (PUSH / PULL / LEGS / ARMS com mesociclos 1-5 + deload) ---
+# Nota: usamos reps em texto (ex.: 15/12/10/8, 10 + M + M, drop) para respeitar a sheet original.
+# A progressão de cargas é manual na app (peso/reps/RIR), e o deload reduz volume automaticamente.
+treinos_gui = {
+    "Segunda — PUSH": {
+        "bloco": "PUSH",
+        "sessao": "75–95 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Rotadores (aquecimento)", "series":3, "reps":"15", "tipo":"isolado"},
+            {"ex":"Supino Inclinado (halteres)", "series":4, "reps":"15/12/10/8", "tipo":"composto"},
+            {"ex":"Press Ombro (halteres)", "series":4, "reps":"15/12/10/8", "tipo":"composto"},
+            {"ex":"Crossover (3s contração)", "series":4, "reps":"5/4/3/2/1*", "tipo":"isolado"},
+            {"ex":"Supino (máquina)", "series":2, "reps":"15", "tipo":"composto"},
+            {"ex":"Rope Pushdown", "series":2, "reps":"20", "tipo":"isolado"},
+            {"ex":"Barra à testa (barra W)", "series":4, "reps":"15/12/10/8", "tipo":"isolado"},
+            {"ex":"Prancha (segundos)", "series":4, "reps":"60", "tipo":"isolado"},
+            {"ex":"Anjos e demónios", "series":3, "reps":"12", "tipo":"isolado"},
+        ]
+    },
+    "Terça — PULL": {
+        "bloco": "PULL",
+        "sessao": "75–95 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Rotadores (aquecimento)", "series":3, "reps":"15", "tipo":"isolado"},
+            {"ex":"Puxada (5s entre mini-sets)", "series":3, "reps":"10 + M + M", "tipo":"composto"},
+            {"ex":"Remada curvada (barra)", "series":4, "reps":"15/12/10/8", "tipo":"composto"},
+            {"ex":"Puxada neutra", "series":4, "reps":"15/12/10/8", "tipo":"composto"},
+            {"ex":"Pullover (corda)", "series":3, "reps":"15", "tipo":"isolado"},
+            {"ex":"Facepull", "series":3, "reps":"15", "tipo":"isolado"},
+            {"ex":"Scott", "series":2, "reps":"20", "tipo":"isolado"},
+            {"ex":"Curl martelo (alternado)", "series":4, "reps":"15/12/10/8", "tipo":"isolado"},
+            {"ex":"Lombares", "series":3, "reps":"12", "tipo":"isolado"},
+        ]
+    },
+    "Quarta — DESCANSO (mobilidade leve)": {
+        "bloco": "Fisio",
+        "sessao": "15–30 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": False},
+        "exercicios": []
+    },
+    "Quinta — LEGS": {
+        "bloco": "LEGS",
+        "sessao": "80–110 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Extensora (aquecimento)", "series":3, "reps":"20", "tipo":"isolado"},
+            {"ex":"Lunge (alternado/sem peso)", "series":2, "reps":"60", "tipo":"composto"},
+            {"ex":"Prensa", "series":4, "reps":"15/12/10/8", "tipo":"composto"},
+            {"ex":"Elevação pélvica", "series":4, "reps":"15/12/10/8", "tipo":"composto"},
+            {"ex":"Flexora", "series":4, "reps":"5/4/3/2/1*", "tipo":"isolado"},
+            {"ex":"Extensora", "series":4, "reps":"5/4/3/2/1*", "tipo":"isolado"},
+            {"ex":"Gémeo (multipower/máquina)", "series":4, "reps":"20/15/12/10", "tipo":"isolado"},
+            {"ex":"Leg raise", "series":3, "reps":"20", "tipo":"isolado"},
+            {"ex":"Russian twist", "series":3, "reps":"20", "tipo":"isolado"},
+        ]
+    },
+    "Sexta — ARMS": {
+        "bloco": "ARMS",
+        "sessao": "70–95 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": True},
+        "exercicios": [
+            {"ex":"Elevação LFL (10+10+10)", "series":3, "reps":"10+10+10", "tipo":"isolado"},
+            {"ex":"Elevação frontal (simultâneo)", "series":4, "reps":"15/12/10/8", "tipo":"isolado"},
+            {"ex":"Elevação lateral", "series":3, "reps":"10", "tipo":"isolado"},
+            {"ex":"Pushdown (barra)", "series":4, "reps":"15/12/10/8", "tipo":"isolado"},
+            {"ex":"Tríceps francês", "series":3, "reps":"15", "tipo":"isolado"},
+            {"ex":"Bíceps curl banco 45 (simultâneo)", "series":3, "reps":"15", "tipo":"isolado"},
+            {"ex":"Curl W (barra W)", "series":4, "reps":"15/12/10/8", "tipo":"isolado"},
+            {"ex":"Lombares", "series":3, "reps":"12", "tipo":"isolado"},
+            {"ex":"Anjos e demónios", "series":3, "reps":"12", "tipo":"isolado"},
+        ]
+    },
+    "Sábado — DESCANSO (caminhada leve)": {
+        "bloco": "Fisio",
+        "sessao": "opcional",
+        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": False},
+        "exercicios": []
+    },
+    "Domingo — DESCANSO (caminhada leve)": {
+        "bloco": "Fisio",
+        "sessao": "opcional",
+        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": False},
+        "exercicios": []
+    },
+}
 
-def gerar_treino_do_dia(dia, week, treinos_dict=None):
+def _apply_gui_week_overrides(cfg: dict, week: int):
+    """Aplica as mudanças dos mesociclos (Sem 1-5) e repetição (Sem 7-11)."""
+    stage = gui_stage_week(week)
+    bloco = str(cfg.get("bloco",""))
+    out = []
+    for item in cfg.get("exercicios", []):
+        it = dict(item)
+        exn = str(it.get("ex",""))
+
+        if bloco == "PUSH":
+            if exn.startswith("Supino (máquina)"):
+                if stage == 1: it.update(series=2, reps="15")
+                elif stage == 2: it.update(series=3, reps="15")
+                elif stage in (3,4): it.update(series=4, reps="15/12/10/8")
+                elif stage == 5: it.update(series=4, reps="15/12/10/8 + drop")
+            elif exn.startswith("Rope Pushdown"):
+                if stage in (1,2): it.update(series=2, reps="20")
+                elif stage == 3: it.update(series=3, reps="15")
+                elif stage == 4: it.update(series=4, reps="15")
+                elif stage == 5: it.update(series=4, reps="15")
+
+        elif bloco == "PULL":
+            if exn.startswith("Puxada (5s entre mini-sets)"):
+                if stage in (1,2): it.update(series=3, reps="10 + M + M")
+                elif stage >= 3: it.update(series=4, reps="8 + M + M")
+            elif exn == "Scott":
+                if stage == 1: it.update(series=2, reps="20")
+                elif stage == 2: it.update(series=3, reps="15")
+                elif stage >= 3: it.update(series=4, reps="15/12/10/8")
+            elif exn.startswith("Pullover (corda)") and stage == 5:
+                it.update(series=4, reps="15")
+            elif exn == "Facepull" and stage == 5:
+                it.update(series=4, reps="15")
+            elif exn == "Lombares" and stage >= 4:
+                it.update(series=4, reps="12")
+
+        elif bloco == "LEGS":
+            if exn.startswith("Lunge"):
+                if stage in (1,2): it.update(series=2, reps="60")
+                elif stage in (3,4): it.update(series=3, reps="60")
+                elif stage == 5: it.update(series=4, reps="40")
+            elif exn == "Leg raise":
+                if stage >= 4: it.update(series=4, reps="20")
+
+        elif bloco == "ARMS":
+            if exn == "Elevação lateral":
+                if stage == 1: it.update(series=3, reps="10")
+                elif stage >= 2: it.update(series=4, reps="10")
+            elif exn == "Tríceps francês":
+                if stage in (1,2): it.update(series=3, reps="15")
+                elif stage >= 3: it.update(series=4, reps="15/12/10/8")
+            elif exn.startswith("Bíceps curl banco 45") and stage >= 4:
+                it.update(series=4, reps="12")
+            elif exn == "Lombares" and stage >= 5:
+                it.update(series=4, reps="12")
+
+        out.append(it)
+
+    # Deload (Sem 6 / 12) — reduz volume e remove intensificadores no texto
+    if is_gui_deload_week(week) and bloco in GUI_BLOCOS:
+        deload = []
+        for it in out:
+            x = dict(it)
+            base_s = int(x.get("series", 1) or 1)
+            x["series"] = max(1, int(round(base_s * 0.55)))
+            reps_txt = str(x.get("reps", ""))
+            reps_txt = reps_txt.replace(" + drop", "")
+            if "M + M" in reps_txt:
+                reps_txt = reps_txt.split("+")[0].strip()
+            x["reps"] = reps_txt
+            x["nota_semana"] = "DELOAD: baixa a carga 10–15%, sem falha, técnica limpa (RIR 2–4)."
+            deload.append(x)
+        out = deload
+    else:
+        if week >= 7 and bloco in GUI_BLOCOS:
+            for it in out:
+                it["nota_semana"] = "Repetição do mesociclo: tenta +2,5 kg ou +1–2 reps mantendo técnica."
+                break
+
+    return out
+
+def gerar_treino_gui_dia(dia, week):
+    cfg = treinos_gui.get(dia, None)
+    if not cfg:
+        return {"bloco":"—","sessao":"","protocolos":{}, "exercicios":[]}
+    bloco = cfg["bloco"]
+    treino_final = []
+    for item in _apply_gui_week_overrides(cfg, week):
+        novo = dict(item)
+        novo["rir_alvo"] = rir_alvo(item.get("tipo","isolado"), bloco, week)
+        novo["tempo"] = tempo_exec(item.get("tipo","isolado"))
+        novo["descanso_s"] = descanso_recomendado_s(item.get("tipo","isolado"), bloco)
+        treino_final.append(novo)
+    return {"bloco": bloco, "sessao": cfg["sessao"], "protocolos": cfg["protocolos"], "exercicios": treino_final}
+
+PLANOS = {"Base": treinos_base, "INEIX_ABC_v1": treinos_ineix, GUI_PPLA_ID: treinos_gui}
+
+def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
+    if plan_id == GUI_PPLA_ID:
+        return gerar_treino_gui_dia(dia, week)
     treinos_dict = treinos_dict or treinos_base
     cfg = treinos_dict.get(dia, None)
     if not cfg:
@@ -1846,7 +2081,7 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None):
     treino_final = []
     for item in cfg["exercicios"]:
         novo = dict(item)
-        if is_deload(week) and bloco in ["Força","Hipertrofia"]:
+        if ((plan_id == "Base" and is_deload(week) and bloco in ["Força","Hipertrofia"]) or (plan_id == GUI_PPLA_ID and is_gui_deload_week(week) and bloco in GUI_BLOCOS)):
             base_series = int(item["series"])
             if item["tipo"] == "composto":
                 novo["series"] = max(2, int(round(base_series*0.6)))
@@ -1960,6 +2195,8 @@ perfil_sel = st.sidebar.selectbox(
 plano_id_sel = get_plan_id_for_profile(perfil_sel, df_profiles) if df_profiles is not None else "Base"
 if str(perfil_sel).strip().lower() == "ineix":
     plano_id_sel = "INEIX_ABC_v1"
+elif str(perfil_sel).strip().lower() == "gui":
+    plano_id_sel = GUI_PPLA_ID
 if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
@@ -1974,22 +2211,44 @@ except Exception as _e:
 bk_df = _load_offline_backup()
 pass  # sidebar divider removido
 
-# SEMANA (8) — só para o plano Base (8 semanas)
-is_ineix = (st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1")
+# SEMANA — varia por plano (Base 8 semanas / Gui 12 semanas / Ineix sem ciclo)
+plano_cycle = st.session_state.get("plano_id_sel","Base")
+is_ineix = (plano_cycle == "INEIX_ABC_v1")
 if not is_ineix:
-    st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
-    semana_sel = st.sidebar.radio(
-        "Semana do ciclo:",
-        list(range(1,9)),
-        format_func=semana_label,
-        index=0,
-        key="semana_sel",
-        on_change=_reset_daily_state,
-    )
-    semana = semana_sel
+    try:
+        _wk_state = int(st.session_state.get("semana_sel", 1))
+    except Exception:
+        _wk_state = 1
+    if plano_cycle == GUI_PPLA_ID:
+        if _wk_state < 1 or _wk_state > 12:
+            st.session_state["semana_sel"] = 1
+            _wk_state = 1
+        st.sidebar.markdown("<h3>🧭 Periodização (12 semanas)</h3>", unsafe_allow_html=True)
+        semana_sel = st.sidebar.radio(
+            "Semana do ciclo:",
+            list(range(1,13)),
+            format_func=semana_label_gui,
+            index=min(max(int(st.session_state.get("semana_sel",1))-1,0),11),
+            key="semana_sel",
+            on_change=_reset_daily_state,
+        )
+    else:
+        if _wk_state < 1 or _wk_state > 8:
+            st.session_state["semana_sel"] = 1
+            _wk_state = 1
+        st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
+        semana_sel = st.sidebar.radio(
+            "Semana do ciclo:",
+            list(range(1,9)),
+            format_func=semana_label,
+            index=min(max(int(st.session_state.get("semana_sel",1))-1,0),7),
+            key="semana_sel",
+            on_change=_reset_daily_state,
+        )
+    semana = int(semana_sel)
     pass  # sidebar divider removido
 else:
-    # Plano Ineix (A/B/C) não usa periodização 8 semanas
+    # Plano Ineix (A/B/C) não usa periodização por semanas
     semana = 1
     pass  # sidebar divider removido
 
@@ -2117,13 +2376,23 @@ with tab_treino:
             st.rerun()
     if show_rules:
         with st.expander("📜 Regras rápidas do plano"):
-            if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
+            _pid_rules = st.session_state.get("plano_id_sel","Base")
+            if _pid_rules == "INEIX_ABC_v1":
                 st.markdown("""
 **Plano Ineix (A/B/C 3x/sem):**  
 **Intensidade:** RIR **2** em todas as séries (sem falhar).  
-**Descanso:** **60–90s** (use o slider se precisares).  
+**Descanso:** **60–90s**.  
 **Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
 Dor articular pontiaguda = troca variação no dia.
+""")
+            elif _pid_rules == GUI_PPLA_ID:
+                st.markdown(f"""
+**Plano Gui (PUSH / PULL / LEGS / ARMS):**  
+**Intensidade:** RIR **2** na maior parte do ciclo.  
+**Descanso:** **60–90s**.  
+**Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
+**Semana atual:** **{semana_label_gui(semana)}**  
+**Deload (sem 6 e 12):** ~50–60% das séries, -10 a -15% carga, sem drop / sem M+M, RIR 2–4.
 """)
             else:
                 st.markdown("""
@@ -2138,12 +2407,12 @@ Dor articular pontiaguda = troca variação no dia.
     elif pure_workout_mode:
         st.caption("Modo treino puro ativo: foco total no treino.")
 
-    cfg = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict)
+    cfg = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict, plan_id=st.session_state.get("plano_id_sel","Base"))
     bloco = cfg["bloco"]
 
     _plano = str(st.session_state.get("plano_id_sel", "Base"))
     _local = str(st.session_state.get("ineix_local", "")) if _plano == "INEIX_ABC_v1" else ""
-    _week_txt = "RIR 2 fixo" if _plano == "INEIX_ABC_v1" else semana_label(semana)
+    _week_txt = "RIR 2 fixo" if _plano == "INEIX_ABC_v1" else semana_label_por_plano(semana, _plano)
     _sessao_alvo = str(cfg.get("sessao", treinos_dict.get(dia, {}).get("sessao", "")))
     st.markdown(
         f"""
@@ -2292,6 +2561,13 @@ Dor articular pontiaguda = troca variação no dia.
                 st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
             if semana == 7 and bloco == "Hipertrofia":
                 st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
+        elif bloco in GUI_BLOCOS:
+            if is_gui_deload_week(semana):
+                st.warning("DELOAD GUI: ~50–60% das séries, -10 a -15% carga, sem drop e sem mini-sets.")
+            elif semana >= 7:
+                st.info("Gui: repetição do mesociclo (semanas 7–11). Tenta +2,5 kg ou +1–2 reps mantendo RIR 2.")
+            else:
+                st.info("Gui: progressão semanal da sheet (Mesociclos 1→5). Mantém descanso 60–90s e RIR 2.")
         df_now = df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data()
         for i,item in enumerate(cfg["exercicios"]):
             if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
@@ -2305,7 +2581,7 @@ Dor articular pontiaguda = troca variação no dia.
             passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
             peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
 
-            reps_low = int(str(item["reps"]).split("-")[0]) if "-" in str(item["reps"]) else int(float(item["reps"]))
+            reps_low = _rep_low_from_text(item.get("reps", "")) or 8
 
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
