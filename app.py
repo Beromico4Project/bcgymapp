@@ -9,6 +9,7 @@ import os
 import hashlib
 import html
 import urllib.parse
+from zoneinfo import ZoneInfo
 
 # =========================================================
 # ♣ BLACK CLOVER WORKOUT — RIR Edition (8 semanas + perfis)
@@ -16,9 +17,9 @@ import urllib.parse
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 # --- UI theme knobs (ajusta facilmente) ---
-BANNER_BLUR_PX = 3.5
-BANNER_BRIGHTNESS = 0.7
-CLOVER_OPACITY = 0.1
+BANNER_BLUR_PX = 5.5
+BANNER_BRIGHTNESS = 0.46
+CLOVER_OPACITY = 0.06
 
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="collapsed")
 
@@ -1880,6 +1881,55 @@ def _reset_daily_state():
             except Exception:
                 pass
 
+
+def _get_today_weekday_pt():
+    """Dia atual em PT (timezone Lisboa), ex.: Segunda, Terça, ..."""
+    try:
+        now_local = datetime.datetime.now(ZoneInfo("Europe/Lisbon"))
+    except Exception:
+        now_local = datetime.datetime.now()
+    nomes = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+    return nomes[now_local.weekday()], now_local.weekday()
+
+
+def _default_treino_index_for_today(options):
+    """Escolhe o treino correspondente ao dia atual; se não existir, pega no próximo treino da semana."""
+    if not options:
+        return 0
+    dia_nome, dia_idx = _get_today_weekday_pt()
+    opts = [str(o) for o in options]
+
+    # 1) Match direto por nome do dia no início (Segunda, Terça, ...)
+    for i, op in enumerate(opts):
+        if op.startswith(dia_nome):
+            return i
+
+    # 2) Match por conter o nome do dia (mais flexível)
+    for i, op in enumerate(opts):
+        if dia_nome in op:
+            return i
+
+    # 3) Se os treinos têm dias PT no nome, escolhe o próximo dia disponível a partir de hoje
+    ordem = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+    dias_presentes = []
+    for i, op in enumerate(opts):
+        idx = None
+        for j, nome in enumerate(ordem):
+            if op.startswith(nome) or nome in op:
+                idx = j
+                break
+        dias_presentes.append(idx)
+
+    if any(v is not None for v in dias_presentes):
+        for offset in range(1, 8):
+            alvo = (dia_idx + offset) % 7
+            for i, d_idx in enumerate(dias_presentes):
+                if d_idx == alvo:
+                    return i
+
+    # 4) Fallback (planos A/B/C etc.): mantém primeiro
+    return 0
+
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>👤 Perfil</h3>", unsafe_allow_html=True)
 
@@ -1955,7 +2005,15 @@ if plan_id_active == "INEIX_ABC_v1" and isinstance(plan_obj, dict):
 else:
     treinos_dict = plan_obj
 
-dia = st.sidebar.selectbox("Treino", list(treinos_dict.keys()), index=0, key="dia_sel", on_change=_reset_daily_state)
+_treino_options = list(treinos_dict.keys())
+if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
+    _idx_today = _default_treino_index_for_today(_treino_options)
+    try:
+        st.session_state["dia_sel"] = _treino_options[_idx_today]
+    except Exception:
+        pass
+
+dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state)
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
@@ -2762,7 +2820,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
