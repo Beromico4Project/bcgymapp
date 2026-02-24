@@ -1919,7 +1919,6 @@ Dor articular pontiaguda = troca variação no dia.
             _set_pure_idx(pure_idx + 1)
             st.rerun()
 
-        st.caption("1 exercício + 1 série de cada vez. Só grava na Sheet na última série do exercício; depois avança automaticamente.")
         _done_ex = 0
         for _ix, _it in enumerate(cfg["exercicios"]):
             _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
@@ -1991,12 +1990,6 @@ Dor articular pontiaguda = troca variação no dia.
 """)
         else:
             st.markdown("Caminhada leve + mobilidade.")
-    else:
-        st.subheader(f"📘 Sessão: **{dia}**")
-        if st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1":
-            st.caption(f"Bloco **{bloco}** · RIR alvo **2** · Descanso **60–90s**")
-        else:
-            st.caption(f"Bloco: **{bloco}** | Semana: **{semana_label(semana)}**")
 
         if bloco in ["Força","Hipertrofia"]:
             if semana in [2,6]:
@@ -2491,3 +2484,4 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
