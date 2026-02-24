@@ -2380,7 +2380,7 @@ if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not i
     except Exception:
         pass
 
-st.sidebar.markdown("<h3>🏋🏻Treino</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3>🏋 Treino</h3>", unsafe_allow_html=True)
 dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
@@ -3220,6 +3220,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
