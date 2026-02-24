@@ -2294,7 +2294,8 @@ perfil_sel = st.sidebar.selectbox(
     perfis,
     index=0,
     key="perfil_sel",
-    on_change=_reset_daily_state
+    on_change=_reset_daily_state,
+    label_visibility="collapsed",
 )
 
 # plano do perfil (preparado para ter planos diferentes no futuro)
@@ -2336,6 +2337,7 @@ if not is_ineix:
             index=min(max(_wk_state-1,0),11),
             key="semana_sel",
             on_change=_reset_daily_state,
+            label_visibility="collapsed",
         )
     else:
         if _wk_state < 1 or _wk_state > 8:
@@ -2349,6 +2351,7 @@ if not is_ineix:
             index=min(max(_wk_state-1,0),7),
             key="semana_sel",
             on_change=_reset_daily_state,
+            label_visibility="collapsed",
         )
     semana = int(semana_sel)
     pass  # sidebar divider removido
@@ -2377,7 +2380,8 @@ if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not i
     except Exception:
         pass
 
-dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state)
+st.sidebar.markdown("<h3>Treino</h3>", unsafe_allow_html=True)
+dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
