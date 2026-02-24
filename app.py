@@ -2182,10 +2182,6 @@ Dor articular pontiaguda = troca variação no dia.
                     done_series = len(pending_sets)
                     total_series = int(item["series"])
                     done_series = max(0, min(total_series, done_series))
-                    if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
-                        st.session_state[series_key] = []
-                        st.session_state[done_key] = 0
-                        st.rerun()
 
                 art = sugestao_articular(ex)
                 if art:
@@ -2213,12 +2209,48 @@ Dor articular pontiaguda = troca variação no dia.
                         st.markdown(f"**Carga sugerida (média):** {peso_sug} kg")
                         st.caption("Se o RIR fugir do alvo, ajusta na hora. Técnica primeiro.")
 
-                pre1, pre2 = st.columns(2)
+                if pure_workout_mode and pure_nav_key is not None:
+
+
+                    pre1, pre2, pre3 = st.columns(3)
+
+
+                else:
+
+
+                    pre1, pre2 = st.columns(2)
+
+
+                    pre3 = None
+
+
                 if pre1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
+
+
                     _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
+
+
                     st.rerun()
+
+
                 if pre2.button("🎯 Usar sugestão", key=f"pref_sug_{i}", width='stretch'):
+
+
                     _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
+
+
+                    st.rerun()
+
+
+                if pre3 is not None and pre3.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
+
+
+                    st.session_state[f"pt_sets::{perfil_sel}::{dia}::{i}"] = []
+
+
+                    st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = 0
+
+
                     st.rerun()
 
                 if pure_workout_mode and pure_nav_key is not None:
@@ -2243,7 +2275,7 @@ Dor articular pontiaguda = troca variação no dia.
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
-                            st.progress((s) / max(1, total_series), text=f"Séries feitas: {s}/{total_series}")
+                            st.progress((s) / max(1, total_series))
                             default_peso = float(peso_sug) if peso_sug > 0 else 0.0
                             if pending_sets:
                                 try:
