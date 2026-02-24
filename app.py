@@ -148,6 +148,7 @@ def _latest_set_summary_from_df_last(df_last: pd.DataFrame):
         except Exception:
             rr_txt = str(rr) if rr is not None else "—"
         return f"Último set: {w_txt} kg × {r_txt} @ RIR {rr_txt}"
+        return ""
     except Exception:
         return ""
 
@@ -162,7 +163,7 @@ def render_progress_compact(done_n: int, total_n: int):
     st.markdown(
         f"""
         <div id='exercise-progress-anchor' class='bc-progress-wrap'>
-          <div class='bc-progress-label'>Progresso do treino: <b>{done_n}/{total_n}</b> exercícios <span>{pct_txt}%</span></div>
+          <div class='bc-progress-label'>Progresso do treino: {done_n}/{total_n} exercícios <span>{pct_txt}%</span></div>
           <div class='bc-progress-track'>
             <div class='bc-progress-fill {state_cls}' style='width:{pct*100:.1f}%'></div>
           </div>
@@ -2675,3 +2676,4 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
