@@ -9,6 +9,7 @@ import os
 import hashlib
 import html
 import urllib.parse
+import re
 from zoneinfo import ZoneInfo
 
 # =========================================================
@@ -2228,7 +2229,7 @@ if not is_ineix:
             "Semana do ciclo:",
             list(range(1,13)),
             format_func=semana_label_gui,
-            index=min(max(int(st.session_state.get("semana_sel",1))-1,0),11),
+            index=min(max(_wk_state-1,0),11),
             key="semana_sel",
             on_change=_reset_daily_state,
         )
@@ -2241,7 +2242,7 @@ if not is_ineix:
             "Semana do ciclo:",
             list(range(1,9)),
             format_func=semana_label,
-            index=min(max(int(st.session_state.get("semana_sel",1))-1,0),7),
+            index=min(max(_wk_state-1,0),7),
             key="semana_sel",
             on_change=_reset_daily_state,
         )
