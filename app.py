@@ -523,6 +523,63 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
+st.markdown("""
+<style>
+/* Compact mode (visual only) */
+.rune-divider{display:none !important;}
+.block-container{
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.7rem !important;
+}
+@media (max-width: 768px){
+  .block-container{
+    padding-top: 0.4rem !important;
+    padding-left: 0.55rem !important;
+    padding-right: 0.55rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+}
+div[data-testid="stVerticalBlock"]{ gap: .35rem !important; }
+div[data-testid="stTabs"] [data-baseweb="tab-list"]{
+  padding: 6px !important;
+  gap: 6px !important;
+  margin-bottom: 0 !important;
+}
+.stTabs [data-baseweb="tab"]{
+  height: 42px !important;
+  min-height: 42px !important;
+}
+div[data-testid="stTabs"] div[role="tabpanel"]{
+  padding-top: .2rem !important;
+}
+div[data-testid="stExpander"]{ margin: 0 0 6px 0 !important; }
+.streamlit-expanderHeader{ min-height: 42px !important; padding-top: 6px !important; padding-bottom: 6px !important; }
+.streamlit-expanderContent{ padding-top: 4px !important; }
+[data-testid="stMetric"]{ padding: 6px 8px !important; }
+section[data-testid="stSidebar"] > div{ padding-top: 6px !important; }
+.sidebar-seal{
+  margin: 6px 8px 8px 8px !important;
+  padding: 10px 12px 9px 12px !important;
+  border-radius: 14px !important;
+}
+.sidebar-seal-sub{ margin-top: 3px !important; }
+.sidebar-card{
+  margin: 0 8px 8px 8px !important;
+  padding: 9px 10px !important;
+  border-radius: 13px !important;
+}
+.sidebar-card h3{ margin: 0 0 4px 0 !important; font-size: .88rem !important; }
+section[data-testid="stSidebar"] div[role="radiogroup"]{ padding: 6px !important; border-radius: 12px !important; }
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{ margin: 0 !important; }
+section[data-testid="stSidebar"] [data-testid="stSelectbox"],
+section[data-testid="stSidebar"] [data-testid="stRadio"],
+section[data-testid="stSidebar"] [data-testid="stCheckbox"]{ margin-bottom: .1rem !important; }
+p{ margin-bottom: .35rem !important; }
+.app-bottom-safe{ height: 98px !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # --- 4. CONEXÃO E DADOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -1695,7 +1752,7 @@ except Exception as _e:
     _ok_conn, _err_conn = False, str(_e)
 
 bk_df = _load_offline_backup()
-st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+pass  # sidebar divider removido
 
 # SEMANA (8) — só para o plano Base (8 semanas)
 is_ineix = (st.session_state.get("plano_id_sel","Base") == "INEIX_ABC_v1")
@@ -1710,11 +1767,11 @@ if not is_ineix:
         on_change=_reset_daily_state,
     )
     semana = semana_sel
-    st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+    pass  # sidebar divider removido
 else:
     # Plano Ineix (A/B/C) não usa periodização 8 semanas
     semana = 1
-    st.sidebar.markdown('<hr class="rune-divider">', unsafe_allow_html=True)
+    pass  # sidebar divider removido
 
 # DIA
 # Plano ativo (preparado para suportar planos diferentes por perfil)
