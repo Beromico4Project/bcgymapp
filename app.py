@@ -2182,7 +2182,6 @@ Dor articular pontiaguda = troca variação no dia.
                     done_series = len(pending_sets)
                     total_series = int(item["series"])
                     done_series = max(0, min(total_series, done_series))
-                    st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
                     if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
                         st.session_state[series_key] = []
                         st.session_state[done_key] = 0
@@ -2244,6 +2243,7 @@ Dor articular pontiaguda = troca variação no dia.
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
+                            st.progress((s) / max(1, total_series), text=f"Séries feitas: {s}/{total_series}")
                             default_peso = float(peso_sug) if peso_sug > 0 else 0.0
                             if pending_sets:
                                 try:
