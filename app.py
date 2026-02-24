@@ -2450,12 +2450,29 @@ Dor articular pontiaguda = troca variação no dia.
         def _set_pure_idx(_ix:int):
             _ix = max(0, min(max_idx, int(_ix)))
             st.session_state[pure_nav_key] = _ix
-            st.session_state[f"pt_pick_{pure_nav_key}"] = _ix
+            # NÃO escrever diretamente no widget key depois do selectbox existir (StreamlitAPIException).
+            # Em vez disso, agenda a sincronização para o próximo rerun.
+            st.session_state[f"pt_pick_pending_{pure_nav_key}"] = _ix
             st.session_state["scroll_to_ex_nav"] = True
 
-        st.session_state.setdefault(f"pt_pick_{pure_nav_key}", pure_idx)
-        # garante que o select acompanha navegação automática/botões
-        st.session_state[f"pt_pick_{pure_nav_key}"] = int(st.session_state.get(pure_nav_key, pure_idx))
+        _pick_key = f"pt_pick_{pure_nav_key}"
+        _pick_pending_key = f"pt_pick_pending_{pure_nav_key}"
+        if _pick_pending_key in st.session_state:
+            try:
+                st.session_state[_pick_key] = int(st.session_state.get(_pick_pending_key, pure_idx))
+            except Exception:
+                st.session_state[_pick_key] = int(pure_idx)
+            try:
+                del st.session_state[_pick_pending_key]
+            except Exception:
+                pass
+        else:
+            st.session_state.setdefault(_pick_key, pure_idx)
+            # sincronização segura ANTES do widget ser instanciado neste rerun
+            try:
+                st.session_state[_pick_key] = int(st.session_state.get(pure_nav_key, pure_idx))
+            except Exception:
+                st.session_state[_pick_key] = int(pure_idx)
 
         _done_ex = 0
         for _ix, _it in enumerate(cfg["exercicios"]):
@@ -2476,9 +2493,9 @@ Dor articular pontiaguda = troca variação no dia.
         _picked = nav2.selectbox(
             "Exercício atual",
             list(range(len(ex_names))),
-            index=int(st.session_state.get(f"pt_pick_{pure_nav_key}", pure_idx)),
+            index=int(st.session_state.get(_pick_key, pure_idx)),
             format_func=lambda ix: f"{ix+1}/{len(ex_names)} • {ex_names[ix]}",
-            key=f"pt_pick_{pure_nav_key}",
+            key=_pick_key,
             label_visibility="collapsed"
         )
         try:
