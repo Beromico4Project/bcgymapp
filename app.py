@@ -2032,10 +2032,6 @@ Dor articular pontiaguda = troca variação no dia.
                     done_series = max(0, min(total_series, done_series))
                     st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
                     q1, q2 = st.columns([1.2, 1])
-                    if q1.button("➡️ Próx exercício", key=f"pt_jump_{i}", width='stretch'):
-                        if pure_nav_key in st.session_state:
-                            st.session_state[pure_nav_key] = min(len(cfg["exercicios"]) - 1, i + 1)
-                        st.rerun()
                     if q2.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
                         st.session_state[series_key] = []
                         st.session_state[done_key] = 0
@@ -2493,3 +2489,4 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
