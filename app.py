@@ -1,4 +1,3 @@
-
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_gsheets import GSheetsConnection
@@ -100,6 +99,77 @@ def trigger_rest_done_feedback():
         )
     except Exception:
         pass
+
+
+def scroll_to_dom_id(dom_id: str, behavior: str = "smooth"):
+    """Tenta fazer scroll suave até um elemento da app (mobile-friendly)."""
+    try:
+        did = html.escape(str(dom_id or ""), quote=True)
+        beh = "smooth" if str(behavior).lower() == "smooth" else "auto"
+        components.html(
+            f"""
+            <script>
+            (function() {{
+              try {{
+                const target = parent.document.getElementById('{did}') || document.getElementById('{did}');
+                if (!target) return;
+                target.scrollIntoView({{ behavior: '{beh}', block: 'start' }});
+              }} catch (e) {{}}
+            }})();
+            </script>
+            """,
+            height=0,
+            width=0,
+        )
+    except Exception:
+        pass
+
+
+def _latest_set_summary_from_df_last(df_last: pd.DataFrame):
+    if df_last is None or not isinstance(df_last, pd.DataFrame) or df_last.empty:
+        return ""
+    try:
+        row = df_last.iloc[-1]
+        w = row.get('Peso (kg)')
+        r = row.get('Reps')
+        rr = row.get('RIR')
+        if pd.isna(w) and pd.isna(r) and pd.isna(rr):
+            return ""
+        try:
+            w_txt = f"{float(w):.1f}".rstrip('0').rstrip('.')
+        except Exception:
+            w_txt = str(w) if w is not None else "—"
+        try:
+            r_txt = str(int(float(r)))
+        except Exception:
+            r_txt = str(r) if r is not None else "—"
+        try:
+            rr_txt = f"{float(rr):.1f}".rstrip('0').rstrip('.')
+        except Exception:
+            rr_txt = str(rr) if rr is not None else "—"
+        return f"Último set: {w_txt} kg × {r_txt} @ RIR {rr_txt}"
+    except Exception:
+        return ""
+
+
+def render_progress_compact(done_n: int, total_n: int):
+    total_n = max(1, int(total_n or 0))
+    done_n = max(0, min(total_n, int(done_n or 0)))
+    pct = done_n / total_n
+    rem = total_n - done_n
+    state_cls = 'end' if rem <= 2 else ('mid' if done_n > 0 else 'start')
+    pct_txt = int(round(pct * 100))
+    st.markdown(
+        f"""
+        <div id='exercise-progress-anchor' class='bc-progress-wrap'>
+          <div class='bc-progress-label'>Progresso do treino: <b>{done_n}/{total_n}</b> exercícios <span>{pct_txt}%</span></div>
+          <div class='bc-progress-track'>
+            <div class='bc-progress-fill {state_cls}' style='width:{pct*100:.1f}%'></div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # --- 3. CSS DA INTERFACE ---
@@ -577,6 +647,19 @@ section[data-testid="stSidebar"] [data-testid="stRadio"],
 section[data-testid="stSidebar"] [data-testid="stCheckbox"]{ margin-bottom: .1rem !important; }
 p{ margin-bottom: .35rem !important; }
 .app-bottom-safe{ height: 98px !important; }
+
+/* treino progress + chips */
+.bc-progress-wrap{ margin: .55rem 0 .5rem 0; }
+.bc-progress-label{ font-size:.92rem; color:#EAE6E6; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.bc-progress-label span{ color:#B9B1B1; font-size:.80rem; }
+.bc-progress-track{ width:100%; height:8px; border-radius:999px; background:rgba(255,255,255,.10); overflow:hidden; border:1px solid rgba(255,255,255,.06); }
+.bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
+.bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
+.bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
+.bc-last-chip{ margin: 0 0 .35rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-final-summary{ margin: .3rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
+.bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
+.bc-final-summary .sub{ color:#CFC9C9; font-size:.88rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1847,8 +1930,10 @@ with tab_treino:
         st.session_state["rest_auto_end_ts"] = float(time.time()) + float(secs)
         st.session_state["rest_auto_run"] = True
         st.session_state["rest_auto_notified"] = False
+        st.session_state["scroll_to_rest_timer"] = True
 
     if st.session_state.get("rest_auto_run", False):
+        st.markdown("<div id='rest-timer-anchor'></div>", unsafe_allow_html=True)
         total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
         ex_rest = str(st.session_state.get("rest_auto_from", ""))
         end_ts = float(st.session_state.get("rest_auto_end_ts", float(time.time()) + total_rest))
@@ -1859,6 +1944,8 @@ with tab_treino:
 
         label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
         st.info(label)
+        if bool(st.session_state.pop("scroll_to_rest_timer", False)):
+            scroll_to_dom_id("rest-timer-anchor")
         ctm1, ctm2, ctm3, ctm4 = st.columns([1.7,1,1,1])
         ctm1.metric("Descanso", f"{rem}s")
         if ctm2.button("⏭️ -15s", key="rest_skip15", width='stretch', disabled=(rem <= 0)):
@@ -1949,6 +2036,7 @@ Dor articular pontiaguda = troca variação no dia.
             _ix = max(0, min(max_idx, int(_ix)))
             st.session_state[pure_nav_key] = _ix
             st.session_state[f"pt_pick_{pure_nav_key}"] = _ix
+            st.session_state["scroll_to_ex_nav"] = True
 
         st.session_state.setdefault(f"pt_pick_{pure_nav_key}", pure_idx)
         # garante que o select acompanha navegação automática/botões
@@ -1963,8 +2051,9 @@ Dor articular pontiaguda = troca variação no dia.
                 _done_val = 0
             if _done_val >= int(_it.get("series", 0) or 0):
                 _done_ex += 1
-        st.progress(_done_ex / max(1, len(cfg["exercicios"])), text=f"Progresso do treino: {_done_ex}/{len(cfg['exercicios'])} exercícios")
+        render_progress_compact(_done_ex, len(cfg["exercicios"]))
 
+        st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
         nav1, nav2, nav3 = st.columns([1,2,1])
         if nav1.button("← Anterior", key=f"pt_prev_{dia}", width='stretch', disabled=(pure_idx <= 0)):
             _set_pure_idx(pure_idx - 1)
@@ -1986,6 +2075,8 @@ Dor articular pontiaguda = troca variação no dia.
         if nav3.button("Seguinte →", key=f"pt_next_{dia}", width='stretch', disabled=(pure_idx >= max_idx)):
             _set_pure_idx(pure_idx + 1)
             st.rerun()
+        if bool(st.session_state.pop("scroll_to_ex_nav", False)):
+            scroll_to_dom_id("exercise-current-anchor")
         try:
             _pt_pending = st.session_state.get(f"pt_sets::{perfil_sel}::{dia}::{pure_idx}", [])
             if not isinstance(_pt_pending, list):
@@ -2072,8 +2163,14 @@ Dor articular pontiaguda = troca variação no dia.
             reps_low = int(str(item["reps"]).split("-")[0]) if "-" in str(item["reps"]) else int(float(item["reps"]))
 
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
+                if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
+                    st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
                 st.markdown(f"**Meta:** {item['series']}×{item['reps']}   •  **RIR alvo:** {rir_target_str}")
                 st.caption(f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s")
+
+                _last_chip = _latest_set_summary_from_df_last(df_last)
+                if _last_chip:
+                    st.markdown(f"<div class='bc-last-chip'>⏮️ {_last_chip}</div>", unsafe_allow_html=True)
 
                 if pure_workout_mode and pure_nav_key is not None:
                     done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
@@ -2166,7 +2263,13 @@ Dor articular pontiaguda = troca variação no dia.
                             )
 
                             is_last = (s == total_series - 1)
-                            btn_label = "Guardar última série + avançar" if is_last else "Guardar série + descanso"
+                            is_last_ex = (i == len(cfg["exercicios"]) - 1)
+                            if is_last and is_last_ex:
+                                btn_label = "Guardar última série + terminar"
+                            elif is_last:
+                                btn_label = "Guardar última série + avançar"
+                            else:
+                                btn_label = "Guardar série + descanso"
                             submitted = st.form_submit_button(btn_label, width='stretch')
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
@@ -2181,9 +2284,13 @@ Dor articular pontiaguda = troca variação no dia.
                                             st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                         except Exception:
                                             pass
-                                        _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                        _queue_auto_rest(int(item["descanso_s"]), ex)
-                                        st.success("Exercício guardado. A seguir…")
+                                        if is_last_ex:
+                                            st.session_state["session_finished_flash"] = True
+                                            st.success("Último exercício guardado. Treino pronto ✅")
+                                        else:
+                                            _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                            _queue_auto_rest(int(item["descanso_s"]), ex)
+                                            st.success("Exercício guardado. A seguir…")
                                         time.sleep(0.35)
                                         st.rerun()
                                 else:
@@ -2191,8 +2298,7 @@ Dor articular pontiaguda = troca variação no dia.
                                     st.rerun()
                     else:
                         st.success("Exercício concluído.")
-                        c_done1, c_done2 = st.columns(2)
-                        if c_done1.button("Guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
+                        if st.button("Tentar guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
                             ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
                             if ok_gravou:
                                 st.session_state[series_key] = []
@@ -2200,14 +2306,16 @@ Dor articular pontiaguda = troca variação no dia.
                                     st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                 except Exception:
                                     pass
-                                _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                _queue_auto_rest(int(item["descanso_s"]), ex)
-                                st.success("Exercício guardado. A seguir…")
+                                is_last_ex2 = (i == len(cfg["exercicios"]) - 1)
+                                if is_last_ex2:
+                                    st.session_state["session_finished_flash"] = True
+                                    st.success("Último exercício guardado. Treino pronto ✅")
+                                else:
+                                    _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                    _queue_auto_rest(int(item["descanso_s"]), ex)
+                                    st.success("Exercício guardado. A seguir…")
                                 time.sleep(0.35)
                                 st.rerun()
-                        if c_done2.button("Seguinte exercício →", key=f"pt_force_next_{i}", width='stretch'):
-                            _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                            st.rerun()
                 else:
                     lista_sets = []
                     with st.form(key=f"form_{i}"):
@@ -2331,12 +2439,37 @@ Dor articular pontiaguda = troca variação no dia.
         m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
         m3.metric("Streak", f"{streak_atual}")
 
+        # resumo final (aparece quando todos os exercícios estão concluídos)
+        _done_ex_final = 0
+        for _ix, _it in enumerate(cfg.get("exercicios", [])):
+            try:
+                _dv = int(st.session_state.get(f"pt_done::{perfil_sel}::{dia}::{_ix}", 0) or 0)
+            except Exception:
+                _dv = 0
+            if _dv >= int(_it.get("series", 0) or 0):
+                _done_ex_final += 1
+        _total_ex_final = len(cfg.get("exercicios", []))
+        _all_done = (_total_ex_final > 0 and _done_ex_final >= _total_ex_final)
+        if _all_done:
+            st.markdown(
+                f"""
+                <div class='bc-final-summary'>
+                  <div class='ttl'>✅ Treino pronto</div>
+                  <div class='sub'>Exercícios concluídos: <b>{_done_ex_final}/{_total_ex_final}</b> · Sessão alvo: <b>{html.escape(str(_sessao_alvo))}</b> · XP previsto: <b>{xp_pre}</b></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if bool(st.session_state.pop("session_finished_flash", False)):
+                st.toast("Treino concluído ✅")
+
         req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
         done_req = sum(1 for k in req_keys if req.get(k, False))
         total_req = max(1, len(req_keys))
         st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
 
-        if st.button("✅ Terminar treino", type="primary"):
+        _finish_label = "✅ Terminar treino" if not _all_done else "✅ Terminar treino (concluído)"
+        if st.button(_finish_label, type="primary"):
             st.balloons()
             time.sleep(1.2)
             st.rerun()
@@ -2542,4 +2675,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
