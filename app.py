@@ -1897,6 +1897,17 @@ Dor articular pontiaguda = troca variação no dia.
         # garante que o select acompanha navegação automática/botões
         st.session_state[f"pt_pick_{pure_nav_key}"] = int(st.session_state.get(pure_nav_key, pure_idx))
 
+        _done_ex = 0
+        for _ix, _it in enumerate(cfg["exercicios"]):
+            _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
+            try:
+                _done_val = int(st.session_state.get(_done_key, 0) or 0)
+            except Exception:
+                _done_val = 0
+            if _done_val >= int(_it.get("series", 0) or 0):
+                _done_ex += 1
+        st.progress(_done_ex / max(1, len(cfg["exercicios"])), text=f"Progresso do treino: {_done_ex}/{len(cfg['exercicios'])} exercícios")
+
         nav1, nav2, nav3 = st.columns([1,2,1])
         if nav1.button("← Anterior", key=f"pt_prev_{dia}", width='stretch', disabled=(pure_idx <= 0)):
             _set_pure_idx(pure_idx - 1)
@@ -1920,16 +1931,6 @@ Dor articular pontiaguda = troca variação no dia.
             st.rerun()
 
         st.caption("1 exercício + 1 série de cada vez. Só grava na Sheet na última série do exercício; depois avança automaticamente.")
-        _done_ex = 0
-        for _ix, _it in enumerate(cfg["exercicios"]):
-            _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
-            try:
-                _done_val = int(st.session_state.get(_done_key, 0) or 0)
-            except Exception:
-                _done_val = 0
-            if _done_val >= int(_it.get("series", 0) or 0):
-                _done_ex += 1
-        st.progress(_done_ex / max(1, len(cfg["exercicios"])), text=f"Progresso do treino: {_done_ex}/{len(cfg['exercicios'])} exercícios")
         try:
             _pt_pending = st.session_state.get(f"pt_sets::{perfil_sel}::{dia}::{pure_idx}", [])
             if not isinstance(_pt_pending, list):
