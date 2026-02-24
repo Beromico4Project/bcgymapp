@@ -198,6 +198,23 @@ def _enforce_mobile_ui_behaviour():
                       } catch (e) {}
                     });
 
+                    // Limpa artefactos vazios na sidebar (cards HTML abertos/fechados sem conteúdo útil)
+                    d.querySelectorAll('section[data-testid="stSidebar"] .sidebar-card, section[data-testid="stSidebar"] .sidebar-seal').forEach((el) => {
+                      try {
+                        const txt = ((el.innerText || '') + '').replace(/\s+/g, '').trim();
+                        const hasWidget = !!el.querySelector('[data-testid], [data-baseweb], input, button, textarea, select, label');
+                        const hasContent = !!el.querySelector('h1,h2,h3,h4,p,span,small');
+                        const tooSmall = (el.getBoundingClientRect ? el.getBoundingClientRect().height : 0) < 24;
+                        if ((!txt && !hasWidget && !hasContent) || (tooSmall && !hasWidget && txt.length <= 1)) {
+                          el.style.display = 'none';
+                          el.style.margin = '0';
+                          el.style.padding = '0';
+                          el.style.border = '0';
+                          el.style.boxShadow = 'none';
+                        }
+                      } catch (e) {}
+                    });
+
                     // Sidebar aberta por defeito (faz só uma vez)
                     if (!w.__bc_sidebar_auto_opened_once) {
                       const collapsedBtn = d.querySelector('[data-testid="collapsedControl"] button');
@@ -689,6 +706,10 @@ section[data-testid="stSidebar"] > div{ padding-top: 10px !important; }
   font-size:14px;
   color: rgba(176,126,136,0.34);
   pointer-events:none;
+}
+section[data-testid="stSidebar"] .sidebar-card:empty,
+section[data-testid="stSidebar"] .sidebar-seal:empty{
+  display:none !important;
 }
 .sidebar-card h3{
   font-family: 'Cinzel', serif;
