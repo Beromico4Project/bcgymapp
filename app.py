@@ -647,14 +647,6 @@ section[data-testid="stSidebar"] [data-testid="stSelectbox"],
 section[data-testid="stSidebar"] [data-testid="stRadio"],
 section[data-testid="stSidebar"] [data-testid="stCheckbox"]{ margin-bottom: .1rem !important; }
 p{ margin-bottom: .35rem !important; }
-
-/* Hide native +/- steppers on number inputs (mobile clean look) */
-input[type='number']::-webkit-outer-spin-button,
-input[type='number']::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-input[type='number'] { -moz-appearance: textfield; }
 .app-bottom-safe{ height: 98px !important; }
 
 /* treino progress + chips */
@@ -665,7 +657,7 @@ input[type='number'] { -moz-appearance: textfield; }
 .bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
 .bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
-.bc-last-chip{ margin: 0 0 .70rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-last-chip{ margin: 0 0 .35rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
 .bc-final-summary{ margin: .3rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
 .bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
 .bc-final-summary .sub{ color:#CFC9C9; font-size:.88rem; }
@@ -2250,90 +2242,61 @@ Dor articular pontiaguda = troca variação no dia.
                     if current_s < total_series:
                         kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
                         s = current_s
-                        st.markdown(f"### Série {s+1}/{total_series}")
+                        with st.form(key=f"form_pure_{i}_{s}"):
+                            st.markdown(f"### Série {s+1}/{total_series}")
+                            default_peso = float(peso_sug) if peso_sug > 0 else 0.0
+                            if pending_sets:
+                                try:
+                                    default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
+                                except Exception:
+                                    pass
+                            peso = st.number_input(
+                                f"Kg • S{s+1}", min_value=0.0,
+                                value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
+                            )
+                            rcol1, rcol2 = st.columns(2)
+                            reps = rcol1.number_input(
+                                f"Reps • S{s+1}", min_value=0, value=int(reps_low), step=1, key=f"reps_{i}_{s}"
+                            )
+                            rir = rcol2.number_input(
+                                f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
+                                value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}"
+                            )
 
-                        default_peso = float(peso_sug) if peso_sug > 0 else 0.0
-                        if pending_sets:
-                            try:
-                                default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
-                            except Exception:
-                                pass
-
-                        peso_key = f"peso_{i}_{s}"
-                        reps_key = f"reps_{i}_{s}"
-                        rir_key = f"rir_{i}_{s}"
-
-                        if peso_key not in st.session_state:
-                            st.session_state[peso_key] = float(default_peso)
-                        if reps_key not in st.session_state:
-                            st.session_state[reps_key] = int(reps_low)
-                        if rir_key not in st.session_state:
-                            st.session_state[rir_key] = float(rir_target_num)
-
-                        pcol, q1, q2 = st.columns([1.45, 0.8, 0.8])
-                        pcol.number_input(
-                            f"Kg • S{s+1}", min_value=0.0,
-                            step=0.5, key=peso_key, format="%.1f"
-                        )
-                        if q1.button("+2kg", key=f"quick_p2_{i}_{s}", width='stretch'):
-                            try:
-                                st.session_state[peso_key] = max(0.0, float(st.session_state.get(peso_key, 0.0)) + 2.0)
-                            except Exception:
-                                st.session_state[peso_key] = 2.0
-                            st.rerun()
-                        if q2.button("+2.5kg", key=f"quick_p25_{i}_{s}", width='stretch'):
-                            try:
-                                st.session_state[peso_key] = max(0.0, float(st.session_state.get(peso_key, 0.0)) + 2.5)
-                            except Exception:
-                                st.session_state[peso_key] = 2.5
-                            st.rerun()
-
-                        rcol1, rcol2 = st.columns(2)
-                        rcol1.number_input(
-                            f"Reps • S{s+1}", min_value=0, step=1, key=reps_key
-                        )
-                        rcol2.number_input(
-                            f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
-                            step=0.5, key=rir_key
-                        )
-
-                        is_last = (s == total_series - 1)
-                        is_last_ex = (i == len(cfg["exercicios"]) - 1)
-                        if is_last and is_last_ex:
-                            btn_label = "Guardar última série + terminar"
-                        elif is_last:
-                            btn_label = "Guardar última série + avançar"
-                        else:
-                            btn_label = "Guardar série + descanso"
-
-                        if st.button(btn_label, key=f"save_pure_{i}_{s}", width='stretch'):
-                            peso = float(st.session_state.get(peso_key, 0.0) or 0.0)
-                            reps = int(st.session_state.get(reps_key, 0) or 0)
-                            rir = float(st.session_state.get(rir_key, 0.0) or 0.0)
-                            novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
-                            st.session_state[series_key] = novos_sets
-                            st.session_state[f"rest_{i}"] = int(item["descanso_s"])
-
-                            if is_last:
-                                ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa)
-                                if ok_gravou:
-                                    st.session_state[series_key] = []
-                                    try:
-                                        st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
-                                    except Exception:
-                                        pass
-                                    if is_last_ex:
-                                        st.session_state["session_finished_flash"] = True
-                                        st.success("Último exercício guardado. Treino pronto ✅")
-                                    else:
-                                        _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                        _queue_auto_rest(int(item["descanso_s"]), ex)
-                                        st.success("Exercício guardado. A seguir…")
-                                    time.sleep(0.35)
-                                    st.rerun()
+                            is_last = (s == total_series - 1)
+                            is_last_ex = (i == len(cfg["exercicios"]) - 1)
+                            if is_last and is_last_ex:
+                                btn_label = "Guardar última série + terminar"
+                            elif is_last:
+                                btn_label = "Guardar última série + avançar"
                             else:
-                                _queue_auto_rest(int(item["descanso_s"]), ex)
-                                st.rerun()
+                                btn_label = "Guardar série + descanso"
+                            submitted = st.form_submit_button(btn_label, width='stretch')
+                            if submitted:
+                                novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
+                                st.session_state[series_key] = novos_sets
+                                st.session_state[f"rest_{i}"] = int(item["descanso_s"])
+
+                                if is_last:
+                                    ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa)
+                                    if ok_gravou:
+                                        st.session_state[series_key] = []
+                                        try:
+                                            st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
+                                        except Exception:
+                                            pass
+                                        if is_last_ex:
+                                            st.session_state["session_finished_flash"] = True
+                                            st.success("Último exercício guardado. Treino pronto ✅")
+                                        else:
+                                            _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                            _queue_auto_rest(int(item["descanso_s"]), ex)
+                                            st.success("Exercício guardado. A seguir…")
+                                        time.sleep(0.35)
+                                        st.rerun()
+                                else:
+                                    _queue_auto_rest(int(item["descanso_s"]), ex)
+                                    st.rerun()
                     else:
                         st.success("Exercício concluído.")
                         if st.button("Tentar guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
