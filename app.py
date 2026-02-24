@@ -22,7 +22,7 @@ BANNER_BLUR_PX = 5.5
 BANNER_BRIGHTNESS = 0.46
 CLOVER_OPACITY = 0.06
 
-st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Black Clover Training APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
 # --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
 def get_base64(bin_file):
@@ -584,7 +584,7 @@ st.markdown("""
   margin: 0 0 4px 0;
   padding: 0;
   font-family: 'Cinzel', serif;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
   color: #8C1D2C;
   text-shadow: 0 1px 10px rgba(0,0,0,.35);
@@ -2412,7 +2412,7 @@ def sugestao_articular(ex):
     return ""
 
 # --- 7. CABEÇALHO ---
-st.markdown("<div class='bc-main-title'>♣️Black Clover Training♣️</div>", unsafe_allow_html=True)
+st.markdown("<div class='bc-main-title'>Black Clover Training </div>", unsafe_allow_html=True)
 st.caption("")
 st.caption("A minha magia é não desistir 🗡️🖤")
 
@@ -3220,6 +3220,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
