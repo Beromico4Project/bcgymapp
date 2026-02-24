@@ -2343,7 +2343,7 @@ if not is_ineix:
         if _wk_state < 1 or _wk_state > 8:
             st.session_state["semana_sel"] = 1
             _wk_state = 1
-        st.sidebar.markdown("<h3>🧭 Periodização</h3>", unsafe_allow_html=True)
+        st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
         semana_sel = st.sidebar.radio(
             "Semana do ciclo:",
             list(range(1,9)),
@@ -3220,6 +3220,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
