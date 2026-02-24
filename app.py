@@ -462,7 +462,7 @@ st.markdown("""
   margin: 0 0 4px 0;
   padding: 0;
   font-family: 'Cinzel', serif;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
   color: #8C1D2C;
   text-shadow: 0 1px 10px rgba(0,0,0,.35);
@@ -2737,6 +2737,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
