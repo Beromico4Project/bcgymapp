@@ -2412,7 +2412,7 @@ def sugestao_articular(ex):
     return ""
 
 # --- 7. CABEÇALHO ---
-st.markdown("<div class='bc-main-title'>♣️Black Clover Training♣️</div>", unsafe_allow_html=True)
+st.markdown("<div class='bc-main-title'>Black Clover Training</div>", unsafe_allow_html=True)
 st.caption("")
 st.caption("A minha magia é não desistir 🗡️🖤")
 
@@ -3220,6 +3220,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
