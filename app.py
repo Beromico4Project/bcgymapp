@@ -279,7 +279,7 @@ div[data-testid="stExpander"]{
 div[data-testid="stExpander"]{
   background: rgba(14,14,14,0.34);
   border: 1px solid rgba(255,255,255,0.06);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
 }
 
 
@@ -2708,7 +2708,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
