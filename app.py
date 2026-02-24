@@ -462,7 +462,7 @@ st.markdown("""
   margin: 0 0 4px 0;
   padding: 0;
   font-family: 'Cinzel', serif;
-  font-weight: 700;
+  font-weight: 900;
   text-transform: uppercase;
   color: #8C1D2C;
   text-shadow: 0 1px 10px rgba(0,0,0,.35);
@@ -477,7 +477,7 @@ st.markdown("""
   position:absolute;
   right:-18px;
   top:-6px;
-  font-size:.72em;
+  font-size:.7em;
   color: rgba(232,226,226,0.55);
   text-shadow: 0 0 14px rgba(140,29,44,.24);
 }
@@ -2737,6 +2737,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
