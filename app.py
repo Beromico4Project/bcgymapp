@@ -657,23 +657,6 @@ p{ margin-bottom: .35rem !important; }
 .bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
 .bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
-
-.bc-serie-badge{
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: .32rem .70rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(120, 20, 35, .18);
-  color: #f3f4f6;
-  font-size: 1.0rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: .2px;
-  margin: .15rem 0 .35rem 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
-}
 .bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
 .bc-final-summary{ margin: .5rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
 .bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
@@ -2260,7 +2243,7 @@ Dor articular pontiaguda = troca variação no dia.
                         kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
-                            st.markdown(f'<div class="bc-serie-badge">Série {s+1}/{total_series}</div>', unsafe_allow_html=True)
+                            st.markdown(f"### Série {s+1}/{total_series}")
                             default_peso = float(peso_sug) if peso_sug > 0 else 0.0
                             if pending_sets:
                                 try:
