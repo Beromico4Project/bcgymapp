@@ -539,6 +539,8 @@ PROFILES_BACKUP_PATH = "offline_profiles.csv"
 
 
 BACKUP_PATH = "offline_backup.csv"
+DATA_CACHE_SECONDS = 45
+PROFILES_CACHE_SECONDS = 300
 
 def _service_account_email():
     try:
@@ -594,8 +596,21 @@ def _conn_update_worksheet(df: pd.DataFrame, worksheet: str):
     """Tenta atualizar uma worksheet específica. Se a lib não suportar worksheet=, levanta."""
     return _retry(lambda: conn.update(data=df, worksheet=worksheet), tries=2)
 
-def get_profiles_df():
-    """Perfis ficam na worksheet 'Perfis'. Se não existir / sem permissão, faz fallback."""
+def get_profiles_df(force_refresh: bool = False):
+    """Perfis ficam na worksheet 'Perfis'. Se não existir / sem permissão, faz fallback.
+    Usa cache em sessão para evitar bater no limite de reads no mobile (timer faz muitos reruns).
+    """
+    try:
+        if not force_refresh:
+            _pf = st.session_state.get("_profiles_cache_df")
+            _pf_ts = float(st.session_state.get("_profiles_cache_ts", 0.0) or 0.0)
+            _ok = st.session_state.get("_profiles_cache_ok")
+            _err = st.session_state.get("_profiles_cache_err", "")
+            if isinstance(_pf, pd.DataFrame) and (time.time() - _pf_ts) < PROFILES_CACHE_SECONDS:
+                return _pf.copy(), bool(_ok), str(_err or "")
+    except Exception:
+        pass
+
     try:
         dfp = _conn_read_worksheet(PROFILES_WORKSHEET)
         if dfp is None or dfp.empty:
@@ -609,10 +624,24 @@ def get_profiles_df():
         dfp = dfp[dfp["Perfil"] != ""]
         dfp = dfp.drop_duplicates(subset=["Perfil"], keep="last")
         _save_offline_profiles(dfp)
+        try:
+            st.session_state["_profiles_cache_df"] = dfp.copy()
+            st.session_state["_profiles_cache_ts"] = time.time()
+            st.session_state["_profiles_cache_ok"] = True
+            st.session_state["_profiles_cache_err"] = ""
+        except Exception:
+            pass
         return dfp, True, ""
     except Exception as e:
         # fallback offline
         dfp_off = _load_offline_profiles()
+        try:
+            st.session_state["_profiles_cache_df"] = dfp_off.copy()
+            st.session_state["_profiles_cache_ts"] = time.time()
+            st.session_state["_profiles_cache_ok"] = False
+            st.session_state["_profiles_cache_err"] = f"{e}"
+        except Exception:
+            pass
         if dfp_off is not None and not dfp_off.empty:
             return dfp_off, False, f"{e}"
         return pd.DataFrame(columns=PROFILES_COLUMNS), False, f"{e}"
@@ -621,9 +650,23 @@ def save_profiles_df(dfp: pd.DataFrame):
     try:
         _conn_update_worksheet(dfp[PROFILES_COLUMNS], PROFILES_WORKSHEET)
         _save_offline_profiles(dfp[PROFILES_COLUMNS])
+        try:
+            st.session_state["_profiles_cache_df"] = dfp[PROFILES_COLUMNS].copy()
+            st.session_state["_profiles_cache_ts"] = time.time()
+            st.session_state["_profiles_cache_ok"] = True
+            st.session_state["_profiles_cache_err"] = ""
+        except Exception:
+            pass
         return True, ""
     except Exception as e:
         _save_offline_profiles(dfp[PROFILES_COLUMNS])
+        try:
+            st.session_state["_profiles_cache_df"] = dfp[PROFILES_COLUMNS].copy()
+            st.session_state["_profiles_cache_ts"] = time.time()
+            st.session_state["_profiles_cache_ok"] = False
+            st.session_state["_profiles_cache_err"] = str(e)
+        except Exception:
+            pass
         return False, str(e)
 
 def get_plan_id_for_profile(perfil: str, dfp: pd.DataFrame):
@@ -918,7 +961,7 @@ def get_data(force_refresh: bool = False):
         if not force_refresh:
             _dfc = st.session_state.get("_df_cache_data")
             _ts = float(st.session_state.get("_df_cache_ts", 0.0) or 0.0)
-            if isinstance(_dfc, pd.DataFrame) and (time.time() - _ts) < 12:
+            if isinstance(_dfc, pd.DataFrame) and (time.time() - _ts) < DATA_CACHE_SECONDS:
                 return _dfc.copy()
     except Exception:
         pass
@@ -1211,7 +1254,13 @@ def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa
 
     today = datetime.date.today()
     data_str = today.strftime('%d/%m/%Y')
-    df_now = get_data()  # usa cache curta (menos quota)
+    # NÃO forçar leitura da Google Sheet no momento do save (evita 429 durante o treino em mobile)
+    df_now = st.session_state.get("_df_cache_data")
+    if not isinstance(df_now, pd.DataFrame):
+        try:
+            df_now = _load_offline_backup()
+        except Exception:
+            df_now = pd.DataFrame(columns=SCHEMA_COLUMNS)
     streak = _compute_streak_if_add_today(df_now, str(perfil), today)
 
     pesos = [float(s.get('peso', 0) or 0) for s in lista_sets]
@@ -1254,12 +1303,17 @@ def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa
 
     if ok:
         st.session_state['last_save_status'] = 'ok'
+        st.session_state['last_save_error_msg'] = ''
         return True
     else:
         st.session_state['last_save_status'] = 'error'
+        st.session_state['last_save_error_msg'] = str(err or '')
         if err:
             # mensagem curta; evita stacktrace no mobile
-            st.warning('Falha ao gravar na Google Sheet. Ficou em backup local e podes sincronizar depois.')
+            msg = 'Falha ao gravar na Google Sheet. Ficou em backup local e podes sincronizar depois.'
+            if '429' in str(err) or 'RATE_LIMIT' in str(err):
+                msg += ' (Quota de leituras do Google Sheets excedida. Espera ~1 min.)'
+            st.warning(msg)
         return False
 
 
@@ -1908,7 +1962,11 @@ Dor articular pontiaguda = troca variação no dia.
     justificativa = str(st.session_state.get("chk_justif", "") or "")
     _save_status = st.session_state.get("last_save_status")
     if _save_status == "error":
-        st.warning("Último exercício não foi para a Google Sheet (ficou em backup local).")
+        _save_err_msg = str(st.session_state.get("last_save_error_msg", "") or "")
+        msg = "Último exercício não foi para a Google Sheet (ficou em backup local)."
+        if ("429" in _save_err_msg) or ("RATE_LIMIT" in _save_err_msg):
+            msg += " Quota do Google Sheets excedida (espera ~1 min)."
+        st.warning(msg)
     elif _save_status == "ok":
         st.caption("✅ Último exercício guardado na Google Sheet.")
     elif _save_status == "warn_duplicate":
