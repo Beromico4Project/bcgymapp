@@ -1155,6 +1155,311 @@ def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_
     return True
 
 
+
+def _round_load_to_gym_step(v: float, step: float = 0.5) -> float:
+    try:
+        vv = float(v)
+        ss = float(step)
+        if ss <= 0:
+            ss = 0.5
+        return round(vv / ss) * ss
+    except Exception:
+        return 0.0
+
+
+def _progression_step_kg(ex_name: str, item_tipo: str = '', peso_ref: float = 0.0) -> float:
+    ex = str(ex_name or '').lower()
+    tipo = str(item_tipo or '').lower()
+    # Compostos de lower sobem mais; isoladores e cabos sobem menos.
+    if _is_lower_exercise(ex):
+        if any(k in ex for k in ['panturrilha', 'gémeo', 'gemeo', 'abdu', 'abdutora', 'tibial']):
+            return 2.0
+        return 5.0 if ('composto' in tipo or 'deadlift' in ex or 'leg press' in ex or 'prensa' in ex or 'hip thrust' in ex) else 2.0
+    if any(k in ex for k in ['elevação lateral', 'elevacao lateral', 'face pull', 'facepull', 'rotadores', 'external rotation', 'crossover', 'tríceps corda', 'triceps corda', 'rosca', 'bíceps', 'biceps']):
+        return 1.0
+    if 'isolado' in tipo:
+        return 1.0 if float(peso_ref or 0) <= 20 else 2.0
+    return 2.0
+
+
+def _rep_prescription_info(rep_str: str, series_n: int = 0) -> dict:
+    s = str(rep_str or '').strip()
+    s_low = s.lower()
+    nums = []
+    try:
+        nums = [int(float(x.replace(',', '.'))) for x in re.findall(r"\d+(?:[\.,]\d+)?", s)]
+    except Exception:
+        nums = []
+    info = {
+        'raw': s,
+        'kind': 'unknown',
+        'special': False,
+        'low': 0,
+        'high': 0,
+        'targets': [],
+    }
+    if not s:
+        return info
+    if ('drop' in s_low) or (' m' in s_low) or ('m+' in s_low) or ('+ m' in s_low) or ('*' in s_low):
+        info['special'] = True
+    n_series = max(1, int(series_n or 1))
+
+    if '-' in s and len(nums) >= 2 and '/' not in s:
+        lo, hi = int(nums[0]), int(nums[1])
+        if hi < lo:
+            lo, hi = hi, lo
+        info.update(kind='range', low=lo, high=hi, targets=[lo] * n_series)
+        return info
+
+    if '/' in s and len(nums) >= 2:
+        seq = [int(x) for x in nums]
+        t = []
+        for i in range(n_series):
+            t.append(seq[i] if i < len(seq) else seq[-1])
+        info.update(kind='sequence', low=min(seq), high=max(seq), targets=t)
+        return info
+
+    if '+' in s and len(nums) >= 2:
+        # Ex.: 10+10+10 (cluster/lfl) → trata como especial/fixo mínimo pelo 1º valor
+        info.update(kind='cluster', special=True, low=int(nums[0]), high=int(nums[0]), targets=[int(nums[0])] * n_series)
+        return info
+
+    if len(nums) == 1:
+        v = int(nums[0])
+        info.update(kind='fixed', low=v, high=v, targets=[v] * n_series)
+        return info
+
+    return info
+
+
+def _recent_exercise_rows(df: pd.DataFrame, perfil: str, ex: str, n: int = 3):
+    try:
+        if df is None or df.empty:
+            return pd.DataFrame()
+        d = df.copy()
+        d = d[(d['Perfil'].astype(str) == str(perfil)) & (d['Exercício'].astype(str) == str(ex))]
+        if d.empty:
+            return pd.DataFrame()
+        d['_dt'] = pd.to_datetime(d['Data'], dayfirst=True, errors='coerce')
+        d = d.sort_values('_dt', ascending=False, na_position='last')
+        return d.head(max(1, int(n))).copy()
+    except Exception:
+        return pd.DataFrame()
+
+
+def _row_avg_metrics(row) -> tuple:
+    try:
+        pesos = _parse_num_list(row.get('Peso'))
+        reps = _parse_num_list(row.get('Reps'))
+        rirs = _parse_num_list(row.get('RIR'))
+        pw = float(sum(pesos) / len(pesos)) if pesos else 0.0
+        pr = float(sum(reps) / len(reps)) if reps else 0.0
+        rr = float(sum(rirs) / len(rirs)) if rirs else None
+        return pw, pr, rr
+    except Exception:
+        return 0.0, 0.0, None
+
+
+def smart_progression_coach(df_all: pd.DataFrame, perfil: str, ex_name: str, item: dict, df_last: pd.DataFrame, peso_medio: float,
+                           rir_medio: float, rir_alvo_num: float, week: int, plano_id: str, bloco: str):
+    """Sugestão de carga mais inteligente (reps + RIR + deload + tendência)."""
+    out = {
+        'peso_sug': 0.0,
+        'acao': 'Sem dados',
+        'delta_kg': 0.0,
+        'delta_pct': 0.0,
+        'coach': 'Sem histórico ainda — usa carga conservadora e ajusta pelo RIR.',
+        'motivos': [],
+        'status': 'info',
+    }
+
+    try:
+        p0 = float(peso_medio or 0)
+    except Exception:
+        p0 = 0.0
+    if p0 <= 0:
+        return out
+
+    item = item or {}
+    reps_txt = str(item.get('reps', ''))
+    series_n = int(item.get('series', 0) or 0)
+    item_tipo = str(item.get('tipo', ''))
+    step_kg = float(_progression_step_kg(ex_name, item_tipo, p0))
+    repi = _rep_prescription_info(reps_txt, series_n)
+
+    # métricas do último treino (linha mais recente do histórico)
+    reps_vals = []
+    rirs_vals = []
+    try:
+        if isinstance(df_last, pd.DataFrame) and not df_last.empty:
+            reps_vals = [float(x) for x in pd.to_numeric(df_last.get('Reps'), errors='coerce').dropna().tolist()]
+            rirs_vals = [float(x) for x in pd.to_numeric(df_last.get('RIR'), errors='coerce').dropna().tolist()]
+    except Exception:
+        reps_vals, rirs_vals = [], []
+
+    avg_rir = float(rir_medio) if rir_medio is not None else (float(sum(rirs_vals)/len(rirs_vals)) if rirs_vals else float(rir_alvo_num or 2))
+    target_rir = float(rir_alvo_num or 2)
+    rir_gap = avg_rir - target_rir
+
+    # Deload domina a lógica
+    if is_deload_for_plan(int(week or 1), str(plano_id or 'Base')):
+        pct = 0.12
+        sug = _round_load_to_gym_step(p0 * (1.0 - pct), 0.5)
+        out.update(
+            peso_sug=max(0.0, sug), acao=f"DELOAD (~-{int(pct*100)}%)", delta_pct=-pct,
+            coach="Semana de deload: baixa ~10–15% e mantém técnica limpa (RIR 3–4).",
+            motivos=["deload"], status='warn'
+        )
+        return out
+
+    # Avaliação de reps (range/seq/fixed)
+    rep_fail = False
+    rep_top = False
+    rep_ok = True
+    rep_miss_margin = 0.0
+    incomplete = (series_n > 0 and len(reps_vals) < series_n)
+
+    if reps_vals and repi['kind'] == 'range':
+        lo, hi = int(repi['low'] or 0), int(repi['high'] or 0)
+        rep_fail = any(r < lo for r in reps_vals[:series_n or len(reps_vals)])
+        rep_top = (not incomplete) and all(r >= hi for r in reps_vals[:series_n]) if (series_n and hi > 0) else False
+        rep_ok = not rep_fail
+        if lo > 0:
+            misses = [max(0.0, lo - r) for r in reps_vals[:series_n or len(reps_vals)]]
+            rep_miss_margin = float(sum(misses))
+    elif reps_vals and repi['kind'] in ['fixed', 'sequence', 'cluster']:
+        tg = list(repi.get('targets') or [])
+        if tg:
+            ncheck = min(len(reps_vals), len(tg))
+            diffs = [float(reps_vals[i]) - float(tg[i]) for i in range(ncheck)]
+            rep_fail = any(d < 0 for d in diffs)
+            rep_top = (not incomplete) and all(d >= 0 for d in diffs[:series_n or ncheck])
+            rep_ok = not rep_fail
+            rep_miss_margin = float(sum(abs(d) for d in diffs if d < 0))
+    elif reps_vals:
+        # Prescrição especial (drop/M+M): usa RIR e consistência apenas
+        rep_ok = True
+
+    # Tendência vs sessão anterior (se existir)
+    trend_bias = 0  # +1 favorece subir, -1 favorece baixar
+    trend_note = ""
+    try:
+        recent = _recent_exercise_rows(df_all, perfil, ex_name, n=3)
+        if recent is not None and len(recent) >= 2:
+            cur = recent.iloc[0]
+            prev = recent.iloc[1]
+            w_cur, reps_cur, rir_cur = _row_avg_metrics(cur)
+            w_prev, reps_prev, rir_prev = _row_avg_metrics(prev)
+            same_load = (w_cur > 0 and w_prev > 0 and abs(w_cur - w_prev) <= max(0.75, step_kg * 0.6))
+            if same_load:
+                if (reps_cur >= reps_prev + 1.0) or ((rir_cur is not None and rir_prev is not None) and (rir_cur >= rir_prev + 0.5)):
+                    trend_bias = 1
+                    trend_note = "Melhoraste vs sessão anterior."
+                elif (reps_cur <= reps_prev - 1.0) and ((rir_cur is None or rir_prev is None) or (rir_cur <= rir_prev)):
+                    trend_bias = -1
+                    trend_note = "Piorou vs sessão anterior."
+    except Exception:
+        pass
+
+    # Decisão principal
+    delta_kg = 0.0
+    status = 'info'
+    motivos = []
+
+    # 1) Falhou reps e esforço já estava alto -> baixa
+    if rep_fail and (rir_gap <= -0.5 or rep_miss_margin >= 2.0):
+        delta_kg = -step_kg
+        status = 'warn'
+        motivos.append('falhou_reps')
+        if rir_gap <= -0.75:
+            motivos.append('rir_baixo')
+    # 2) RIR muito baixo mesmo batendo reps -> baixa ou mantém
+    elif rir_gap <= -1.0:
+        delta_kg = -step_kg
+        status = 'warn'
+        motivos.append('rir_muito_baixo')
+    # 3) Bateu topo/target em tudo + RIR controlado -> sobe (progressão dupla)
+    elif rep_top and (rir_gap >= -0.25):
+        delta_kg = step_kg
+        status = 'good'
+        motivos.append('topo_da_faixa')
+    # 4) RIR alto e reps ok -> sobe
+    elif rep_ok and (rir_gap >= 0.75):
+        delta_kg = step_kg
+        status = 'good'
+        motivos.append('rir_alto')
+    # 5) Incompleto -> manter
+    elif incomplete:
+        delta_kg = 0.0
+        status = 'info'
+        motivos.append('incompleto')
+    # 6) Caso intermédio -> mantém
+    else:
+        delta_kg = 0.0
+        status = 'info'
+        motivos.append('manter')
+
+    # Ajuste por tendência (sem exagerar)
+    if trend_bias == 1 and delta_kg == 0.0 and rep_ok and rir_gap >= -0.25:
+        delta_kg = step_kg
+        status = 'good'
+        motivos.append('trend_up')
+    elif trend_bias == -1 and delta_kg == 0.0 and (rep_fail or rir_gap < 0):
+        delta_kg = -step_kg
+        status = 'warn'
+        motivos.append('trend_down')
+
+    # Reduzir agressividade em isoladores sensíveis
+    if 'isolado' in item_tipo.lower() and abs(delta_kg) > 2.0:
+        delta_kg = 2.0 if delta_kg > 0 else -2.0
+
+    p_sug = _round_load_to_gym_step(p0 + delta_kg, 0.5)
+    if p_sug < 0:
+        p_sug = 0.0
+
+    # Texto de ação
+    if abs(delta_kg) < 0.001:
+        acao = 'Mantém carga'
+    elif delta_kg > 0:
+        delta_txt = f"{int(delta_kg)}" if abs(delta_kg - int(delta_kg)) < 1e-6 else str(delta_kg).replace('.', ',')
+        acao = f"+{delta_txt}kg"
+    else:
+        d = abs(delta_kg)
+        delta_txt = f"{int(d)}" if abs(d - int(d)) < 1e-6 else str(d).replace('.', ',')
+        acao = f"Baixa {delta_txt}kg"
+
+    # Explicação curta de coach
+    reps_part = ''
+    if repi['kind'] == 'range':
+        reps_part = f"faixa {repi['low']}-{repi['high']}"
+    elif repi['kind'] in ['fixed', 'sequence'] and repi.get('raw'):
+        reps_part = f"meta {repi['raw']}"
+    elif repi.get('raw'):
+        reps_part = f"meta {repi['raw']}"
+
+    notes = []
+    if reps_part:
+        notes.append(reps_part)
+    if rirs_vals:
+        notes.append(f"RIR médio {avg_rir:.1f} (alvo {target_rir:.1f})")
+    if incomplete:
+        notes.append("séries incompletas")
+    elif rep_fail:
+        notes.append("falhou reps alvo")
+    elif rep_top and repi['kind'] in ['range', 'fixed', 'sequence']:
+        notes.append("bateu objetivo em todas as séries")
+    if trend_note:
+        notes.append(trend_note)
+
+    coach = " • ".join(notes) if notes else "Usa técnica limpa e ajusta pelo RIR real."
+
+    out.update(
+        peso_sug=float(p_sug), acao=acao, delta_kg=float(delta_kg), coach=coach,
+        motivos=motivos, status=status
+    )
+    return out
+
+
 def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num):
     series_n = int(item.get("series", 0))
     pesos = []
@@ -2710,8 +3015,11 @@ Dor articular pontiaguda = troca variação no dia.
 
             df_last, peso_medio, rir_medio, data_ultima = get_historico_detalhado(df_now, perfil_sel, ex)
 
-            passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
-            peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
+            coach_prog = smart_progression_coach(
+                df_now, perfil_sel, ex, item, df_last, peso_medio, rir_medio, rir_target_num,
+                semana, st.session_state.get("plano_id_sel", "Base"), bloco
+            )
+            peso_sug = float(coach_prog.get("peso_sug", 0.0) or 0.0)
 
             reps_low = _rep_low_from_text(item.get("reps", "")) or 8
 
@@ -2757,14 +3065,30 @@ Dor articular pontiaguda = troca variação no dia.
                 else:
                     st.caption("Sem registos anteriores para este exercício (neste perfil).")
 
+                # Coach de progressão (reps + RIR + deload + tendência)
+                coach_status = str(coach_prog.get("status", "info"))
+                coach_txt = str(coach_prog.get("coach", "") or "")
+                coach_acao = str(coach_prog.get("acao", "Mantém carga") or "Mantém carga")
+                if coach_status == "good":
+                    st.success(f"🎯 Coach: **{coach_acao}**")
+                elif coach_status == "warn":
+                    st.warning(f"🎯 Coach: **{coach_acao}**")
+                else:
+                    st.info(f"🎯 Coach: **{coach_acao}**")
+                if coach_txt:
+                    st.caption(coach_txt)
+
                 if _double_progression_ready(df_last, item['reps'], rir_target_num):
-                    inc = 5 if _is_lower_exercise(ex) else 2
+                    inc = int(_progression_step_kg(ex, item.get('tipo',''), peso_medio))
                     st.success(f"✅ Progressão dupla: bateste o topo da faixa. Próxima sessão: tenta **+{inc} kg** (ou mínimo disponível).")
 
                 if peso_sug > 0:
                     with st.popover("🎯 Sugestão de carga"):
-                        st.markdown(f"**Carga sugerida (média):** {peso_sug} kg")
-                        st.caption("Se o RIR fugir do alvo, ajusta na hora. Técnica primeiro.")
+                        st.markdown(f"**Recomendação:** {coach_acao}")
+                        st.markdown(f"**Carga sugerida:** {peso_sug} kg")
+                        if coach_txt:
+                            st.caption(coach_txt)
+                        st.caption("Ajusta na hora se o RIR real sair do alvo. Técnica primeiro.")
 
                 pre1, pre2 = st.columns(2)
                 if pre1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
