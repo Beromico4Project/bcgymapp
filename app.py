@@ -2272,7 +2272,7 @@ def _default_treino_index_for_today(options):
     return 0
 
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>♣️Grimório de:</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3>👤 Perfil</h3>", unsafe_allow_html=True)
 
 df_profiles, profiles_ok, profiles_err = get_profiles_df()
 
@@ -2290,6 +2290,7 @@ if not perfis:
     perfis = ["Principal"]
 
 perfil_sel = st.sidebar.selectbox(
+    "Perfil",
     perfis,
     index=0,
     key="perfil_sel",
@@ -2329,6 +2330,7 @@ if not is_ineix:
             _wk_state = 1
         st.sidebar.markdown("<h3>🧭 Periodização (12 semanas)</h3>", unsafe_allow_html=True)
         semana_sel = st.sidebar.radio(
+            "Semana do ciclo:",
             list(range(1,13)),
             format_func=semana_label_gui,
             index=min(max(_wk_state-1,0),11),
@@ -2341,6 +2343,7 @@ if not is_ineix:
             _wk_state = 1
         st.sidebar.markdown("<h3>🧭 Periodização (8 semanas)</h3>", unsafe_allow_html=True)
         semana_sel = st.sidebar.radio(
+            "Semana do ciclo:",
             list(range(1,9)),
             format_func=semana_label,
             index=min(max(_wk_state-1,0),7),
@@ -3212,7 +3215,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
