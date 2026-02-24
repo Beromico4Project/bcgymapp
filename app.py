@@ -22,7 +22,7 @@ BANNER_BLUR_PX = 5.5
 BANNER_BRIGHTNESS = 0.46
 CLOVER_OPACITY = 0.06
 
-st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
 # --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
 def get_base64(bin_file):
@@ -146,6 +146,75 @@ def scroll_to_dom_id(dom_id: str, behavior: str = "smooth"):
                 target.scrollIntoView({{ behavior: '{beh}', block: 'start' }});
               }} catch (e) {{}}
             }})();
+            </script>
+            """,
+            height=0,
+            width=0,
+        )
+    except Exception:
+        pass
+
+
+
+def _enforce_mobile_ui_behaviour():
+    """Melhora UX mobile: sidebar aberta por defeito, bloqueia scroll horizontal e evita digitação em selectboxes."""
+    try:
+        components.html(
+            """
+            <script>
+            (function () {
+              try {
+                const d = parent.document || document;
+                const w = parent.window || window;
+
+                function applyUiLocks(){
+                  try {
+                    // Bloqueio de scroll horizontal (mantém scroll vertical)
+                    [d.documentElement, d.body].forEach((el) => {
+                      if (!el) return;
+                      el.style.overflowX = 'hidden';
+                      el.style.touchAction = 'pan-y';
+                      el.style.overscrollBehaviorX = 'none';
+                    });
+                    d.querySelectorAll('[data-testid="stAppViewContainer"], .stApp, .main, [data-testid="stVerticalBlock"]').forEach((el) => {
+                      try {
+                        el.style.overflowX = 'hidden';
+                        el.style.touchAction = 'pan-y';
+                      } catch (e) {}
+                    });
+
+                    // Selects sem digitação (abre dropdown normal, mas sem teclado / pesquisa por texto)
+                    d.querySelectorAll('[data-baseweb="select"] input').forEach((inp) => {
+                      try {
+                        inp.readOnly = true;
+                        inp.setAttribute('readonly', 'readonly');
+                        inp.setAttribute('inputmode', 'none');
+                        inp.setAttribute('autocomplete', 'off');
+                        inp.style.caretColor = 'transparent';
+                        inp.style.userSelect = 'none';
+                        inp.addEventListener('keydown', (ev) => ev.preventDefault(), { passive:false });
+                        inp.addEventListener('beforeinput', (ev) => ev.preventDefault(), { passive:false });
+                        inp.addEventListener('paste', (ev) => ev.preventDefault(), { passive:false });
+                      } catch (e) {}
+                    });
+
+                    // Sidebar aberta por defeito (faz só uma vez)
+                    if (!w.__bc_sidebar_auto_opened_once) {
+                      const collapsedBtn = d.querySelector('[data-testid="collapsedControl"] button');
+                      if (collapsedBtn) {
+                        collapsedBtn.click();
+                      }
+                      w.__bc_sidebar_auto_opened_once = true;
+                    }
+                  } catch (e) {}
+                }
+
+                applyUiLocks();
+                if (!w.__bc_ui_locks_interval) {
+                  w.__bc_ui_locks_interval = w.setInterval(applyUiLocks, 1200);
+                }
+              } catch (e) {}
+            })();
             </script>
             """,
             height=0,
@@ -373,6 +442,22 @@ div[data-testid="stTabs"]{ margin-top: 0.1rem !important; }
     font-size: 0.82rem;
   }
 }
+
+/* UX mobile: evitar scroll lateral e teclado nas selectboxes */
+html, body, .stApp, [data-testid="stAppViewContainer"]{
+  overflow-x: hidden !important;
+  overscroll-behavior-x: none !important;
+}
+[data-baseweb="select"] input{
+  caret-color: transparent !important;
+}
+@media (max-width: 768px){
+  html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stVerticalBlock"]{
+    touch-action: pan-y !important;
+    overflow-x: hidden !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -466,6 +551,9 @@ st.markdown("""
 }
 [data-testid='stNumberInput'] button{ min-width: 34px !important; }
 [data-testid='stProgressBar'] > div > div{ border-radius: 999px !important; }
+.bc-rest-track{ width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); overflow:hidden; margin-top:6px; }
+.bc-rest-fill{ height:100%; border-radius:999px; background:linear-gradient(90deg, rgba(140,29,44,.9), rgba(180,60,82,.95)); }
+.bc-rest-caption{ font-size:.78rem; color:#E8E2E2; opacity:.95; margin-top:4px; }
 @media (max-width: 768px){
   .bc-hero{ padding: 10px; }
   .bc-chip{ font-size: .74rem; }
@@ -483,7 +571,7 @@ st.markdown("""
   text-transform: uppercase;
   color: #8C1D2C;
   text-shadow: 0 1px 10px rgba(0,0,0,.35);
-  font-size: clamp(1.95rem, 5.6vw, 2.7rem);
+  font-size: clamp(1.72rem, 5.1vw, 2.35rem);
   line-height: 1.05;
   letter-spacing: .02em;
   background: transparent !important;
@@ -512,9 +600,10 @@ st.markdown("""
 .bc-progress-wrap::before{ top:2px; right:4px; font-size:.82rem; }
 
 @media (max-width: 768px){
-  .bc-main-title{ font-size: 1.85rem; }
+  .bc-main-title{ font-size: 1.62rem; }
 }
 
+section[data-testid="stSidebar"] hr{ display:none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2097,12 +2186,7 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
     return {"bloco": bloco, "sessao": cfg["sessao"], "protocolos": cfg["protocolos"], "exercicios": treino_final}
 
 # --- 6. INTERFACE SIDEBAR ---
-st.sidebar.markdown("""
-<div class="sidebar-seal">
-  <h2 class="sidebar-seal-title">♣ GRIMÓRIO</h2>
-  <p class="sidebar-seal-sub">Disciplina • Força • Hipertrofia</p>
-</div>
-""", unsafe_allow_html=True)
+# topo decorativo da sidebar removido (UI mais limpa)
 
 df_all = get_data()
 
@@ -2201,7 +2285,6 @@ elif str(perfil_sel).strip().lower() == "gui":
 if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
-st.sidebar.caption(f"Plano ativo: **{plano_id_sel}**")
 # UI móvel limpa: esconder utilitários de plano/perfis/Google Sheets (funcionam em background)
 _ok_conn, _err_conn = True, ""
 try:
@@ -2363,7 +2446,11 @@ with tab_treino:
         if ctm4.button("⏹️ Parar", key="rest_stop", width='stretch', disabled=(rem <= 0)):
             st.session_state["rest_auto_run"] = False
             st.rerun()
-        st.progress(min(1.0, elapsed / max(1, total_rest)), text=f"{elapsed}s / {total_rest}s")
+        _rest_pct = min(1.0, elapsed / max(1, total_rest))
+        st.markdown(
+            f"<div class='bc-rest-track'><div class='bc-rest-fill' style='width:{_rest_pct*100:.1f}%'></div></div><div class='bc-rest-caption'>{elapsed}s / {total_rest}s</div>",
+            unsafe_allow_html=True
+        )
 
         if rem <= 0:
             st.success("Descanso concluído ✅")
@@ -2490,19 +2577,12 @@ Dor articular pontiaguda = troca variação no dia.
         if nav1.button("← Anterior", key=f"pt_prev_{dia}", width='stretch', disabled=(pure_idx <= 0)):
             _set_pure_idx(pure_idx - 1)
             st.rerun()
-        _picked = nav2.selectbox(
-            "Exercício atual",
-            list(range(len(ex_names))),
-            index=int(st.session_state.get(_pick_key, pure_idx)),
-            format_func=lambda ix: f"{ix+1}/{len(ex_names)} • {ex_names[ix]}",
-            key=_pick_key,
-            label_visibility="collapsed"
+        # Sem selectbox com digitação: centro fica apenas informativo (navegação pelos botões)
+        nav2.markdown(
+            f"<div class='bc-float-bar' style='position:static; transform:none; width:100%; margin:0; font-size:12px; padding:8px 10px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'><b>{pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])}</div>",
+            unsafe_allow_html=True
         )
-        try:
-            pure_idx = int(_picked)
-        except Exception:
-            pure_idx = int(st.session_state.get(pure_nav_key, 0))
-        pure_idx = max(0, min(max_idx, pure_idx))
+        pure_idx = max(0, min(max_idx, int(st.session_state.get(pure_nav_key, pure_idx))))
         st.session_state[pure_nav_key] = pure_idx
         if nav3.button("Seguinte →", key=f"pt_next_{dia}", width='stretch', disabled=(pure_idx >= max_idx)):
             _set_pure_idx(pure_idx + 1)
