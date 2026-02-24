@@ -3020,19 +3020,22 @@ Dor articular pontiaguda = troca variação no dia.
                 if isinstance(yami, dict) and yami:
                     _y_action = str(yami.get('acao', 'Mantém carga'))
                     _y_resumo = str(yami.get('resumo', '') or '')
-                    st.markdown(
-                        f"<div class='bc-yami-chip'>🧠 <b>Yami</b> — {_y_action}<br><span class='muted'>{_y_resumo}</span></div>",
-                        unsafe_allow_html=True
-                    )
-                    with st.popover("🧠 Yami explica"):
-                        st.markdown(f"**Sugestão do Yami:** {_y_action}")
-                        _py = float(yami.get('peso_sugerido', 0) or 0)
-                        if _py > 0:
-                            st.caption(f"Carga sugerida: {_py:.1f} kg · Confiança: {yami.get('confianca', 'média')}")
-                        else:
-                            st.caption(f"Confiança: {yami.get('confianca', 'média')}")
-                        for _r in list(yami.get('razoes', []) or []):
-                            st.markdown(f"- {_r}")
+                    ycol1, ycol2 = st.columns([4.8, 1.7], gap="small")
+                    with ycol1:
+                        st.markdown(
+                            f"<div class='bc-yami-chip'>🧠 <b>Yami</b> — {_y_action}<br><span class='muted'>{_y_resumo}</span></div>",
+                            unsafe_allow_html=True
+                        )
+                    with ycol2:
+                        with st.popover("🧠 Explica", width="stretch"):
+                            st.markdown(f"**Sugestão do Yami:** {_y_action}")
+                            _py = float(yami.get('peso_sugerido', 0) or 0)
+                            if _py > 0:
+                                st.caption(f"Carga sugerida: {_py:.1f} kg · Confiança: {yami.get('confianca', 'média')}")
+                            else:
+                                st.caption(f"Confiança: {yami.get('confianca', 'média')}")
+                            for _r in list(yami.get('razoes', []) or []):
+                                st.markdown(f"- {_r}")
 
                 _last_chip = _latest_set_summary_from_df_last(df_last)
                 if _last_chip:
