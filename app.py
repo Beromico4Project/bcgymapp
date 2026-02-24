@@ -8,12 +8,18 @@ import base64
 import os
 import hashlib
 import html
+import urllib.parse
 
 # =========================================================
 # ♣ BLACK CLOVER WORKOUT — RIR Edition (8 semanas + perfis)
 # =========================================================
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
+# --- UI theme knobs (ajusta facilmente) ---
+BANNER_BLUR_PX = 5.5
+BANNER_BRIGHTNESS = 0.46
+CLOVER_OPACITY = 0.10
+
 st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="collapsed")
 
 # --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
@@ -25,10 +31,27 @@ def get_base64(bin_file):
     except Exception:
         return None
 
+def _clover_pattern_data_uri():
+    """Gera um padrão SVG discreto com trevos para usar como watermark no fundo."""
+    try:
+        svg = f"""
+        <svg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'>
+          <g fill='rgba(232,226,226,{CLOVER_OPACITY})' font-family='serif'>
+            <text x='16' y='54' font-size='34'>♣</text>
+            <text x='138' y='110' font-size='46'>♣</text>
+            <text x='56' y='186' font-size='28'>♣</text>
+          </g>
+        </svg>
+        """.strip()
+        return "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
+    except Exception:
+        return ""
+
 def set_background(png_file):
     bin_str = get_base64(png_file)
     if not bin_str:
         return
+    clover_uri = _clover_pattern_data_uri()
     st.markdown(f"""
     <style>
     .stApp {{
@@ -42,15 +65,20 @@ def set_background(png_file):
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        filter: blur(4px) brightness(0.5);
+        filter: blur({BANNER_BLUR_PX}px) brightness({BANNER_BRIGHTNESS});
         z-index: -1;
     }}
     .stApp::after {{
         content: "";
         position: fixed;
         top: 0; left: 0; width: 100vw; height: 100vh;
-        background-color: rgba(20, 20, 20, 0.85);
+        background-color: rgba(18, 18, 20, 0.86);
+        background-image: url("{clover_uri}");
+        background-repeat: repeat;
+        background-size: 180px 180px;
+        background-position: 0 0;
         z-index: -1;
+        pointer-events: none;
     }}
     header {{ background: transparent !important; }}
     </style>
@@ -174,6 +202,14 @@ def render_progress_compact(done_n: int, total_n: int):
 
 
 # --- 3. CSS DA INTERFACE ---
+st.markdown(f"""
+<style>
+/* Theme knobs to CSS */
+.bc-main-title::after{{ color: rgba(232,226,226,{max(0.35, min(1.0, CLOVER_OPACITY*4))}); }}
+.bc-hero::before, .bc-ex-meta::before, .bc-progress-wrap::before{{ color: rgba(232,226,226,{CLOVER_OPACITY}); }}
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;500;600;700&display=swap');
@@ -421,6 +457,8 @@ st.markdown("""
 }
 
 .bc-main-title{
+  position: relative;
+  display: inline-block;
   margin: 0 0 4px 0;
   padding: 0;
   font-family: 'Cinzel', serif;
@@ -433,6 +471,29 @@ st.markdown("""
   letter-spacing: .02em;
   background: transparent !important;
 }
+
+.bc-main-title::after{
+  content:"♣";
+  position:absolute;
+  right:-18px;
+  top:-6px;
+  font-size:.72em;
+  color: rgba(232,226,226,0.55);
+  text-shadow: 0 0 14px rgba(140,29,44,.24);
+}
+.bc-hero, .bc-ex-meta, .bc-progress-wrap{ position: relative; overflow: hidden; }
+.bc-hero::before, .bc-ex-meta::before, .bc-progress-wrap::before{
+  content:"♣";
+  position:absolute;
+  right:8px;
+  top:6px;
+  font-size:.95rem;
+  color: rgba(232,226,226,0.14);
+  pointer-events:none;
+}
+.bc-ex-meta::before{ top:7px; right:10px; font-size:.9rem; }
+.bc-progress-wrap::before{ top:2px; right:4px; font-size:.82rem; }
+
 @media (max-width: 768px){
   .bc-main-title{ font-size: 1.85rem; }
 }
@@ -2182,6 +2243,11 @@ Dor articular pontiaguda = troca variação no dia.
                     done_series = len(pending_sets)
                     total_series = int(item["series"])
                     done_series = max(0, min(total_series, done_series))
+                    st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
+                    if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
+                        st.session_state[series_key] = []
+                        st.session_state[done_key] = 0
+                        st.rerun()
 
                 art = sugestao_articular(ex)
                 if art:
@@ -2209,48 +2275,12 @@ Dor articular pontiaguda = troca variação no dia.
                         st.markdown(f"**Carga sugerida (média):** {peso_sug} kg")
                         st.caption("Se o RIR fugir do alvo, ajusta na hora. Técnica primeiro.")
 
-                if pure_workout_mode and pure_nav_key is not None:
-
-
-                    pre1, pre2, pre3 = st.columns(3)
-
-
-                else:
-
-
-                    pre1, pre2 = st.columns(2)
-
-
-                    pre3 = None
-
-
+                pre1, pre2 = st.columns(2)
                 if pre1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
-
-
                     _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
-
-
                     st.rerun()
-
-
                 if pre2.button("🎯 Usar sugestão", key=f"pref_sug_{i}", width='stretch'):
-
-
                     _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
-
-
-                    st.rerun()
-
-
-                if pre3 is not None and pre3.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
-
-
-                    st.session_state[f"pt_sets::{perfil_sel}::{dia}::{i}"] = []
-
-
-                    st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = 0
-
-
                     st.rerun()
 
                 if pure_workout_mode and pure_nav_key is not None:
@@ -2275,7 +2305,6 @@ Dor articular pontiaguda = troca variação no dia.
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
-                            st.progress((s) / max(1, total_series))
                             default_peso = float(peso_sug) if peso_sug > 0 else 0.0
                             if pending_sets:
                                 try:
