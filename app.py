@@ -22,7 +22,7 @@ BANNER_BLUR_PX = 5.5
 BANNER_BRIGHTNESS = 0.46
 CLOVER_OPACITY = 0.06
 
-st.set_page_config(page_title="Black Clover Workout", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Black Clover Workout ", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
 # --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
 def get_base64(bin_file):
@@ -798,18 +798,18 @@ st.markdown("""
 /* Compact mode (visual only) */
 .rune-divider{display:none !important;}
 .block-container{
-  padding-top: 0.45rem !important;
-  padding-bottom: 0.7rem !important;
+  padding-top: 0.55rem !important;
+  padding-bottom: 0.9rem !important;
 }
 @media (max-width: 768px){
   .block-container{
-    padding-top: 0.4rem !important;
-    padding-left: 0.55rem !important;
-    padding-right: 0.55rem !important;
-    padding-bottom: 0.75rem !important;
+    padding-top: 0.5rem !important;
+    padding-left: 0.65rem !important;
+    padding-right: 0.65rem !important;
+    padding-bottom: 0.95rem !important;
   }
 }
-div[data-testid="stVerticalBlock"]{ gap: .35rem !important; }
+div[data-testid="stVerticalBlock"]{ gap: .48rem !important; }
 div[data-testid="stTabs"] [data-baseweb="tab-list"]{
   padding: 6px !important;
   gap: 6px !important;
@@ -820,12 +820,12 @@ div[data-testid="stTabs"] [data-baseweb="tab-list"]{
   min-height: 42px !important;
 }
 div[data-testid="stTabs"] div[role="tabpanel"]{
-  padding-top: .2rem !important;
+  padding-top: .3rem !important;
 }
-div[data-testid="stExpander"]{ margin: 0 0 6px 0 !important; }
-.streamlit-expanderHeader{ min-height: 42px !important; padding-top: 6px !important; padding-bottom: 6px !important; }
-.streamlit-expanderContent{ padding-top: 4px !important; }
-[data-testid="stMetric"]{ padding: 6px 8px !important; }
+div[data-testid="stExpander"]{ margin: 0 0 9px 0 !important; }
+.streamlit-expanderHeader{ min-height: 46px !important; padding-top: 7px !important; padding-bottom: 7px !important; }
+.streamlit-expanderContent{ padding-top: 6px !important; }
+[data-testid="stMetric"]{ padding: 8px 10px !important; }
 section[data-testid="stSidebar"] > div{ padding-top: 6px !important; }
 .sidebar-seal{
   margin: 6px 8px 8px 8px !important;
@@ -848,15 +848,15 @@ p{ margin-bottom: .35rem !important; }
 .app-bottom-safe{ height: 98px !important; }
 
 /* treino progress + chips */
-.bc-progress-wrap{ margin: .55rem 0 .5rem 0; }
+.bc-progress-wrap{ margin: .8rem 0 .75rem 0; }
 .bc-progress-label{ font-size:.92rem; color:#EAE6E6; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
 .bc-progress-label span{ color:#B9B1B1; font-size:.80rem; }
 .bc-progress-track{ width:100%; height:8px; border-radius:999px; background:rgba(255,255,255,.10); overflow:hidden; border:1px solid rgba(255,255,255,.06); }
 .bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
 .bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
-.bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
-.bc-final-summary{ margin: .5rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
+.bc-last-chip{ margin: 0 0 1.15rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-final-summary{ margin: .65rem 0 .6rem 0; padding: .75rem .85rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
 .bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
 .bc-final-summary .sub{ color:#CFC9C9; font-size:.88rem; }
 </style>
@@ -2294,8 +2294,7 @@ perfil_sel = st.sidebar.selectbox(
     perfis,
     index=0,
     key="perfil_sel",
-    on_change=_reset_daily_state,
-    label_visibility="collapsed",
+    on_change=_reset_daily_state
 )
 
 # plano do perfil (preparado para ter planos diferentes no futuro)
@@ -2337,7 +2336,6 @@ if not is_ineix:
             index=min(max(_wk_state-1,0),11),
             key="semana_sel",
             on_change=_reset_daily_state,
-            label_visibility="collapsed",
         )
     else:
         if _wk_state < 1 or _wk_state > 8:
@@ -2351,7 +2349,6 @@ if not is_ineix:
             index=min(max(_wk_state-1,0),7),
             key="semana_sel",
             on_change=_reset_daily_state,
-            label_visibility="collapsed",
         )
     semana = int(semana_sel)
     pass  # sidebar divider removido
@@ -2380,8 +2377,7 @@ if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not i
     except Exception:
         pass
 
-st.sidebar.markdown("<h3>Treino</h3>", unsafe_allow_html=True)
-dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
+dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state)
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
@@ -3220,3 +3216,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
+
+
