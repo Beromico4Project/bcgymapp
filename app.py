@@ -1817,7 +1817,7 @@ def sugestao_articular(ex):
 
 # --- 7. CABEÇALHO ---
 st.markdown("<div class='bc-main-title'>♣️Black Clover Training♣️</div>", unsafe_allow_html=True)
-st.caption("A minha magia é não desistir 🗡️🖤 · otimizado para telemóvel")
+st.caption("A minha magia é não desistir 🗡️🖤")
 
 try:
     _pl = st.session_state.get("plano_id_sel", "Base")
@@ -1986,8 +1986,6 @@ Dor articular pontiaguda = troca variação no dia.
         if nav3.button("Seguinte →", key=f"pt_next_{dia}", width='stretch', disabled=(pure_idx >= max_idx)):
             _set_pure_idx(pure_idx + 1)
             st.rerun()
-
-        st.caption("1 exercício + 1 série de cada vez. Só grava na Sheet na última série do exercício; depois avança automaticamente.")
         try:
             _pt_pending = st.session_state.get(f"pt_sets::{perfil_sel}::{dia}::{pure_idx}", [])
             if not isinstance(_pt_pending, list):
@@ -2544,3 +2542,4 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
