@@ -657,7 +657,7 @@ p{ margin-bottom: .35rem !important; }
 .bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
 .bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
-.bc-last-chip{ margin: 0 0 .35rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-last-chip{ margin: .55rem 0 .85rem 0; padding: .42rem .65rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
 .bc-final-summary{ margin: .3rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
 .bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
 .bc-final-summary .sub{ color:#CFC9C9; font-size:.88rem; }
@@ -2250,18 +2250,45 @@ Dor articular pontiaguda = troca variação no dia.
                                     default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
                                 except Exception:
                                     pass
-                            peso = st.number_input(
-                                f"Kg • S{s+1}", min_value=0.0,
-                                value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
-                            )
-                            rcol1, rcol2 = st.columns(2)
-                            reps = rcol1.number_input(
-                                f"Reps • S{s+1}", min_value=0, value=int(reps_low), step=1, key=f"reps_{i}_{s}"
-                            )
-                            rir = rcol2.number_input(
-                                f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
-                                value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}"
-                            )
+
+                            peso_key = f"peso_{i}_{s}"
+                            reps_key = f"reps_{i}_{s}"
+                            rir_key = f"rir_{i}_{s}"
+                            if peso_key not in st.session_state:
+                                st.session_state[peso_key] = float(default_peso)
+                            if reps_key not in st.session_state:
+                                st.session_state[reps_key] = int(reps_low)
+                            if rir_key not in st.session_state:
+                                st.session_state[rir_key] = float(rir_target_num)
+
+                            st.caption("Toque rápido")
+                            kgc1, kgc2, kgc3 = st.columns([2.4, 1.0, 1.0], vertical_alignment="bottom")
+                            with kgc1:
+                                peso = st.number_input(
+                                    f"Kg • S{s+1}", min_value=0.0,
+                                    value=float(st.session_state.get(peso_key, default_peso)),
+                                    step=float(kg_step), key=peso_key
+                                )
+                            with kgc2:
+                                tap_kg2 = st.form_submit_button("+2kg", width='stretch', help="Somar 2 kg")
+                            with kgc3:
+                                tap_kg25 = st.form_submit_button("+2.5", width='stretch', help="Somar 2.5 kg")
+
+                            rc1, rc2, rc3 = st.columns([1.45, 1.0, 1.25], vertical_alignment="bottom")
+                            with rc1:
+                                reps = st.number_input(
+                                    f"Reps • S{s+1}", min_value=0,
+                                    value=int(st.session_state.get(reps_key, reps_low)),
+                                    step=1, key=reps_key
+                                )
+                            with rc2:
+                                tap_rep1 = st.form_submit_button("+1 rep", width='stretch', help="Somar 1 repetição")
+                            with rc3:
+                                rir = st.number_input(
+                                    f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
+                                    value=float(st.session_state.get(rir_key, rir_target_num)),
+                                    step=0.5, key=rir_key
+                                )
 
                             is_last = (s == total_series - 1)
                             is_last_ex = (i == len(cfg["exercicios"]) - 1)
@@ -2272,8 +2299,24 @@ Dor articular pontiaguda = troca variação no dia.
                             else:
                                 btn_label = "Guardar série + descanso"
                             submitted = st.form_submit_button(btn_label, width='stretch')
+
+                            if tap_kg2 or tap_kg25 or tap_rep1:
+                                try:
+                                    if tap_kg2:
+                                        st.session_state[peso_key] = round(float(st.session_state.get(peso_key, 0.0)) + 2.0, 2)
+                                    if tap_kg25:
+                                        st.session_state[peso_key] = round(float(st.session_state.get(peso_key, 0.0)) + 2.5, 2)
+                                    if tap_rep1:
+                                        st.session_state[reps_key] = int(st.session_state.get(reps_key, 0)) + 1
+                                except Exception:
+                                    pass
+                                st.rerun()
+
                             if submitted:
-                                novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
+                                peso_val = float(st.session_state.get(peso_key, peso))
+                                reps_val = int(float(st.session_state.get(reps_key, reps)))
+                                rir_val = float(st.session_state.get(rir_key, rir))
+                                novos_sets = list(pending_sets) + [{"peso": peso_val, "reps": reps_val, "rir": rir_val}]
                                 st.session_state[series_key] = novos_sets
                                 st.session_state[f"rest_{i}"] = int(item["descanso_s"])
 
@@ -2676,4 +2719,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
