@@ -657,8 +657,8 @@ p{ margin-bottom: .35rem !important; }
 .bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
 .bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
-.bc-last-chip{ margin: 0 0 .70rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
-.bc-final-summary{ margin: .3rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
+.bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-final-summary{ margin: .5rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
 .bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
 .bc-final-summary .sub{ color:#CFC9C9; font-size:.88rem; }
 </style>
@@ -2676,5 +2676,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
