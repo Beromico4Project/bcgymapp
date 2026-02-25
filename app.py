@@ -527,7 +527,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{
 }
 
 
-.stAlert{ margin: .55rem 0 .75rem 0 !important; border-radius: 12px !important; }
+.stAlert{ margin: .85rem 0 1.10rem 0 !important; border-radius: 12px !important; }
+div[data-testid="stToast"]{ margin-top:.45rem !important; }
 [data-testid="stToast"]{ margin-bottom: 1.0rem !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -912,7 +913,7 @@ p{ margin-bottom: .35rem !important; }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
 .bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
 
-.bc-yami-chip{ margin: .15rem 0 .95rem 0; padding:.45rem .60rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.25; }
+.bc-yami-chip{ margin: .15rem 0 1.35rem 0; padding:.48rem .62rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.28; }
 .bc-yami-chip b{ color:#F2EEEE; font-weight:700; }
 .bc-yami-chip .muted{ color:#BEB6B6; }
 .bc-yami-chip.y-up{ border-color: rgba(52,211,153,.28); background: rgba(16,185,129,.12); }
@@ -1747,7 +1748,7 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
 
 
 def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict, bloco: str, semana: int, plano_id: str) -> dict:
-    """Coach de progressão ('Yami'): sugere carga e explica o porquê."""
+    """Coach de progressão ('Yami'): sugere carga e explica o porquê, com heurística mais robusta."""
     series_alvo = int(item.get('series', 0) or 0)
     rep_info = _parse_rep_scheme(item.get('reps', ''), series_alvo)
     rir_alvo_num_ = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
@@ -1755,19 +1756,19 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     hist = _historico_resumos_exercicio(df_hist, perfil, ex)
     latest = hist[0] if hist else None
     prev = hist[1] if len(hist) > 1 else None
+    prev2 = hist[2] if len(hist) > 2 else None
 
-    # increments mais realistas por tipo de exercício
     is_lower = _is_lower_exercise(ex)
     is_comp = str(item.get('tipo', '')).lower() == 'composto'
     if is_lower and is_comp:
-        inc_up = 5.0
-        inc_down = 5.0
+        inc_up = inc_down = 5.0
     elif is_comp:
-        inc_up = 2.0
-        inc_down = 2.0
+        inc_up = inc_down = 2.0
     else:
-        inc_up = 1.0
-        inc_down = 1.0
+        inc_up = inc_down = 1.0
+
+    def _fmt_inc(v: float) -> str:
+        return str(int(v)) if float(v).is_integer() else str(v)
 
     if not latest or float(latest.get('peso_medio', 0) or 0) <= 0:
         return {
@@ -1775,30 +1776,53 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             'peso_sugerido': 0.0,
             'delta': 0.0,
             'confianca': 'baixa',
-            'resumo': 'Ainda sem histórico deste exercício neste perfil.',
+            'resumo': 'Primeiro regista uma sessão limpa. Depois eu afino isto como deve ser.',
             'razoes': [
-                'Faz uma sessão base com técnica limpa e RIR no alvo.',
-                'Depois eu (Yami) ajusto a carga com mais precisão.'
+                'Sem histórico suficiente neste exercício para inferir tendência real.',
+                f'Alvo atual: {item.get("series", "?")} séries • {item.get("reps", "?")} reps • RIR {rir_alvo_num_:.1f}.',
+                'Faz a sessão com técnica estável e RIR honesto para eu ler o teu padrão.'
             ]
         }
 
     p_atual = float(latest.get('peso_medio', 0) or 0)
     reps_list = list(latest.get('reps', []) or [])
-    rirs_list = list(latest.get('rirs', []) or [])
+    rirs_list = [float(x) for x in list(latest.get('rirs', []) or []) if x is not None]
     reps_media = float(latest.get('reps_media', 0) or 0)
     rir_media = None if latest.get('rirs_media') is None else float(latest.get('rirs_media'))
 
-    # sinais de performance
     low = int(rep_info.get('low') or 0)
     high = int(rep_info.get('high') or 0)
-    hit_low_all = bool(reps_list) and (low > 0) and all(r >= low for r in reps_list)
-    hit_top_all = bool(reps_list) and (high > 0) and all(r >= high for r in reps_list)
-    falhou_min = bool(reps_list) and (low > 0) and any(r < low for r in reps_list)
+    rep_kind = str(rep_info.get('kind') or '')
+    hit_low_all = bool(reps_list) and (low > 0) and all(int(r) >= low for r in reps_list)
+    hit_top_all = bool(reps_list) and (high > 0) and all(int(r) >= high for r in reps_list)
+    falhou_min = bool(reps_list) and (low > 0) and any(int(r) < low for r in reps_list)
     sessao_incompleta = series_alvo > 0 and int(latest.get('n_sets', 0) or 0) < series_alvo
+    sets_ratio = (int(latest.get('n_sets', 0) or 0) / max(1, series_alvo)) if series_alvo else 1.0
 
-    # tendência vs sessão anterior
-    trend_txt = None
-    trend_score = 0
+    deload_now = bool(is_deload_for_plan(semana, plano_id))
+
+    reasons = []
+    reasons.append(
+        f"Último treino ({latest.get('data','—')}): {latest.get('n_sets',0)}/{series_alvo or latest.get('n_sets',0)} séries · média {p_atual:.1f} kg · {reps_media:.1f} reps"
+        + (f" · RIR {rir_media:.1f}" if rir_media is not None else "")
+    )
+    if low and high and rep_kind in ('range', 'fixed', 'fixed_seq'):
+        reasons.append(f"Alvo técnico: {low if low==high else f'{low}–{high}'} reps por série com RIR ~{rir_alvo_num_:.1f}.")
+    elif rep_info.get('raw'):
+        reasons.append(f"Esquema do exercício: {rep_info.get('raw')} (peso maior no RIR/tendência).")
+
+    # tendência e consistência (até 3 sessões)
+    trend_score = 0.0
+    trend_bits = []
+    same_load_streak = []
+    for h in [latest, prev, prev2]:
+        if not h:
+            continue
+        same_load_streak.append(float(h.get('peso_medio', 0) or 0))
+    stable_load = False
+    if len(same_load_streak) >= 2:
+        stable_load = (max(same_load_streak[:2]) - min(same_load_streak[:2])) <= max(0.5, p_atual * 0.01)
+
     if prev and float(prev.get('peso_medio', 0) or 0) > 0:
         p_prev = float(prev.get('peso_medio', 0) or 0)
         reps_prev = float(prev.get('reps_media', 0) or 0)
@@ -1806,124 +1830,184 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         same_load = abs(p_atual - p_prev) <= max(0.5, p_prev * 0.01)
         if same_load:
             d_reps = reps_media - reps_prev
-            d_rir = (rir_media - float(rir_prev)) if (rir_media is not None and rir_prev is not None) else 0.0
-            if d_reps >= 0.75 or d_rir >= 0.5:
-                trend_score += 1
-                trend_txt = f"melhoraste vs sessão anterior na mesma carga ({d_reps:+.1f} reps médias, RIR {d_rir:+.1f})"
-            elif d_reps <= -0.75 and d_rir <= -0.25:
-                trend_score -= 1
-                trend_txt = f"pioraste vs sessão anterior na mesma carga ({d_reps:+.1f} reps médias, RIR {d_rir:+.1f})"
+            d_rir = (float(rir_media) - float(rir_prev)) if (rir_media is not None and rir_prev is not None) else 0.0
+            if d_reps >= 0.75:
+                trend_score += 1.0
+                trend_bits.append(f"mais reps na mesma carga ({d_reps:+.1f})")
+            elif d_reps <= -0.75:
+                trend_score -= 1.0
+                trend_bits.append(f"menos reps na mesma carga ({d_reps:+.1f})")
+            if d_rir >= 0.5:
+                trend_score += 0.5
+                trend_bits.append(f"RIR subiu ({d_rir:+.1f})")
+            elif d_rir <= -0.5:
+                trend_score -= 0.5
+                trend_bits.append(f"RIR caiu ({d_rir:+.1f})")
         else:
-            # Se subiste carga e seguraste reps/RIR, é bom sinal
             if p_atual > p_prev and reps_media >= reps_prev - 0.5:
-                trend_score += 1
-                trend_txt = "seguraste bem a progressão da sessão anterior"
+                trend_score += 1.0
+                trend_bits.append('seguraste reps mesmo após subir carga')
+            elif p_atual > p_prev and rir_media is not None and prev.get('rirs_media') is not None and float(rir_media) < float(prev.get('rirs_media')) - 1.0:
+                trend_score -= 0.5
+                trend_bits.append('a subida de carga cobrou demasiado no RIR')
 
-    deload_now = bool(is_deload_for_plan(semana, plano_id))
+    # estagnação / sobrecarga persistente
+    stall_flag = False
+    overload_flag = False
+    if len(hist) >= 3:
+        trio = hist[:3]
+        pesos_trio = [float(h.get('peso_medio', 0) or 0) for h in trio]
+        same_load_3 = (max(pesos_trio) - min(pesos_trio)) <= max(0.5, p_atual * 0.01)
+        if same_load_3:
+            reps_trio = [float(h.get('reps_media', 0) or 0) for h in trio]
+            # sem evolução real nas reps e RIR a cair -> sinal de carga alta/fadiga
+            if max(reps_trio) - min(reps_trio) < 0.75:
+                stall_flag = True
+                if all((h.get('rirs_media') is not None and float(h.get('rirs_media')) <= max(0.5, rir_alvo_num_ - 0.5)) for h in trio if h.get('rirs_media') is not None):
+                    overload_flag = True
 
-    # score da decisão
-    score = 0
-    reasons = []
-    reasons.append(f"Último treino ({latest.get('data','—')}): {latest.get('n_sets',0)} séries, média {p_atual:.1f} kg / {reps_media:.1f} reps" + (f" / RIR {rir_media:.1f}" if rir_media is not None else ""))
-
-    if low and high and rep_info.get('kind') in ('range', 'fixed', 'fixed_seq'):
-        if low == high:
-            reasons.append(f"Alvo de reps: {low} por série.")
-        else:
-            reasons.append(f"Faixa alvo: {low}–{high} reps.")
-    elif rep_info.get('raw'):
-        reasons.append(f"Esquema alvo: {rep_info.get('raw')}.")
+    score = 0.0
 
     if deload_now:
         p_sug = max(0.0, _round_to_nearest(p_atual * 0.88, 0.5))
         delta = p_sug - p_atual
-        reasons.append("Semana de deload: prioridade é baixar fadiga e manter técnica.")
-        reasons.append("Redução automática ~10–15% na carga e sem forçar falha.")
-        conf = 'alta'
-        resumo = 'Deload ativo: baixa a carga para recuperar e manter qualidade.'
-        return {'acao': 'DELOAD (~-12%)', 'peso_sugerido': p_sug, 'delta': delta, 'confianca': conf, 'resumo': resumo, 'razoes': reasons}
+        reasons += [
+            'Semana de deload detetada neste plano.',
+            'Baixar ~10–15% mantém técnica e deixa fadiga/tendões assentar.'
+        ]
+        return {
+            'acao': 'DELOAD (~-12%)',
+            'peso_sugerido': p_sug,
+            'delta': delta,
+            'confianca': 'alta',
+            'resumo': 'Hoje não é para provar força. É para afiar técnica e sair melhor do que entraste.',
+            'razoes': reasons[:7],
+            'score': -3.0,
+            'peso_atual': p_atual,
+        }
 
     if sessao_incompleta:
-        reasons.append("Sessão anterior ficou incompleta; não vou subir/baixar agressivamente sem mais dados.")
+        score -= 0.25
+        reasons.append('Sessão anterior incompleta: leitura parcial (vou ser conservador).')
+        if sets_ratio < 0.67:
+            score -= 0.5
+            reasons.append('Menos de 2/3 das séries registadas: confiança baixa para mexer na carga.')
 
-    # Sinal por reps
-    if not sessao_incompleta:
+    # Reps vs alvo
+    if rep_kind in ('range', 'fixed', 'fixed_seq') and low > 0:
         if falhou_min:
-            score -= 2
-            reasons.append("Falhaste o mínimo de reps em pelo menos uma série.")
+            score -= 2.0
+            reasons.append('Ficaste abaixo do mínimo de reps em pelo menos uma série.')
         elif hit_top_all and high > 0:
-            score += 2
-            reasons.append("Bateste o topo da faixa em todas as séries.")
-        elif hit_low_all and low > 0:
-            score += 1
-            reasons.append("Cumpriste o mínimo da faixa em todas as séries.")
-        else:
-            # sinal neutro quando o esquema é especial
-            if rep_info.get('kind') == 'special':
-                reasons.append("Esquema especial (clusters/drop): vou pesar mais o RIR e a tendência.")
+            score += 2.0
+            reasons.append('Bateste o topo da faixa em todas as séries.')
+        elif hit_low_all:
+            score += 0.75
+            reasons.append('Cumpriste o mínimo da faixa em todas as séries.')
+    else:
+        reasons.append('Esquema especial: a decisão vai apoiar-se mais no RIR e na tendência recente.')
 
-    # Sinal por RIR
+    # RIR vs alvo
     if rir_media is not None:
-        desvio = rir_media - rir_alvo_num_
-        if desvio >= 1.0:
-            score += 1
-            reasons.append(f"RIR médio ficou acima do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}) → há margem para subir.")
-        elif desvio <= -1.0:
-            score -= 2
-            reasons.append(f"RIR médio ficou muito abaixo do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}) → carga pesada demais.")
-        elif desvio <= -0.5:
-            score -= 1
-            reasons.append(f"RIR ficou ligeiramente abaixo do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}).")
+        desvio = float(rir_media) - float(rir_alvo_num_)
+        if desvio >= 1.25:
+            score += 1.25
+            reasons.append(f'RIR ficou bem acima do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}) → sobra margem real.')
         elif desvio >= 0.5:
             score += 0.5
-            reasons.append(f"RIR ficou um pouco acima do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}).")
-
-        if rir_media <= 0.5:
-            score -= 1
-            reasons.append("Foste demasiado perto da falha; prefiro proteger técnica e recuperação.")
-
-    if trend_txt:
-        reasons.append(f"Tendência: {trend_txt}.")
-    score += trend_score
-
-    # evitar agressividade em esquemas especiais
-    if rep_info.get('kind') == 'special':
-        if score >= 2:
-            score = 1.5
-        if score <= -2:
-            score = -1.5
-
-    # decisão final
-    if sessao_incompleta and score > 0.5:
-        score = 0.5
-    if sessao_incompleta and score < -1.5:
-        score = -1.0
-
-    if score >= 2:
-        acao = f"+{int(inc_up) if float(inc_up).is_integer() else inc_up}kg"
-        p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
-        resumo = "Sinal forte para progressão (reps + RIR + tendência)."
-    elif score <= -2:
-        acao = f"Baixa {int(inc_down) if float(inc_down).is_integer() else inc_down}kg"
-        p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
-        resumo = "Carga atual está acima do ideal para o alvo de reps/RIR."
+            reasons.append(f'RIR ficou ligeiramente acima do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}).')
+        elif desvio <= -1.25:
+            score -= 2.0
+            reasons.append(f'RIR muito abaixo do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}) → pesado demais.')
+        elif desvio <= -0.5:
+            score -= 0.75
+            reasons.append(f'RIR abaixo do alvo ({rir_media:.1f} vs {rir_alvo_num_:.1f}).')
+        if float(rir_media) <= 0.5:
+            score -= 0.75
+            reasons.append('Chegaste demasiado perto da falha; prefiro proteger técnica e recuperação.')
     else:
-        acao = "Mantém carga"
+        reasons.append('Sem RIR registado: eu consigo sugerir, mas com menos precisão.')
+        score -= 0.25
+
+    # Consistência intra-sessão (dispersão de reps)
+    if len(reps_list) >= 3 and rep_kind in ('range', 'fixed', 'fixed_seq'):
+        amp = max(reps_list) - min(reps_list)
+        if amp <= 1:
+            score += 0.5
+            reasons.append('Reps consistentes entre séries (bom sinal de controlo).')
+        elif amp >= 4:
+            score -= 0.5
+            reasons.append('Queda grande de reps entre séries (fadiga alta / carga agressiva).')
+
+    score += trend_score
+    if trend_bits:
+        reasons.append('Tendência: ' + '; '.join(trend_bits) + '.')
+
+    if stall_flag:
+        score -= 0.5
+        reasons.append('Estagnação recente (2–3 sessões) detectada na mesma carga.')
+    if overload_flag:
+        score -= 0.75
+        reasons.append('Estagnação + RIR baixo recorrente: sinal de fadiga/carga alta.')
+
+    # Proteções para esquemas especiais e sessões incompletas
+    if rep_kind == 'special':
+        score = max(-1.75, min(1.75, score))
+    if sessao_incompleta:
+        score = max(-1.25, min(1.0, score))
+
+    # Decisão final (mais granular)
+    if score >= 2.25:
+        acao = f"+{_fmt_inc(inc_up)}kg"
+        p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
+        resumo = 'Boa execução. Vamos subir — sem pressa, mas sem medo.'
+    elif score >= 1.0:
+        # progressão leve só se reps/rir sustentam; senão manter
+        acao = f"+{_fmt_inc(inc_up)}kg"
+        p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
+        resumo = 'Tens margem. Sobe um passo e mantém a técnica limpa.'
+    elif score <= -2.25:
+        acao = f"Baixa {_fmt_inc(inc_down)}kg"
+        p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
+        resumo = 'Isto está pesado para o alvo de hoje. Regride um passo e volta a construir.'
+    elif score <= -1.0:
+        # micro-regressão em isoladores, ou manter se composto ficou "quase" no alvo
+        if is_comp:
+            acao = 'Mantém carga'
+            p_sug = _round_to_nearest(p_atual, 0.5)
+            resumo = 'Mantém e limpa a execução. Primeiro estabiliza, depois sobes.'
+        else:
+            acao = f"Baixa {_fmt_inc(inc_down)}kg"
+            p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
+            resumo = 'No isolador compensa aliviar e voltar ao alvo certo de reps/RIR.'
+    else:
+        acao = 'Mantém carga'
         p_sug = _round_to_nearest(p_atual, 0.5)
-        resumo = "Ainda não há sinal claro para subir/baixar; consolidar técnica e consistência."
+        resumo = 'Consolida. Ainda não há sinal limpo para mexer na carga.'
+
+    # personalidade Yami (sem perder explicação)
+    if 'DELOAD' in acao:
+        pass
+    elif acao.startswith('+'):
+        resumo = 'Ultrapassa o teu limite, mas com cabeça. ' + resumo
+    elif 'Baixa' in acao:
+        resumo = 'Controla o ego. ' + resumo
+    else:
+        resumo = 'Mantém a lâmina afiada. ' + resumo
 
     # confiança
-    if sessao_incompleta or (latest.get('n_sets', 0) or 0) < max(1, series_alvo):
+    if sessao_incompleta or sets_ratio < 0.75 or latest.get('n_sets', 0) < max(1, min(series_alvo, 2)):
         conf = 'baixa'
-    elif abs(score) >= 2 and prev is not None:
+    elif abs(score) >= 2 and (prev is not None):
         conf = 'alta'
     else:
         conf = 'média'
 
-    # reduzir ruído das razões (máx 5-6 linhas)
+    # reduzir ruído
     reasons = [r for r in reasons if r]
-    if len(reasons) > 6:
-        reasons = reasons[:6]
+    max_reasons = 7 if conf == 'alta' else 6
+    if len(reasons) > max_reasons:
+        reasons = reasons[:max_reasons]
 
     return {
         'acao': acao,
@@ -3102,7 +3186,7 @@ Dor articular pontiaguda = troca variação no dia.
                             unsafe_allow_html=True
                         )
                     with ycol2:
-                        with st.popover("🧠 Explica", width="stretch"):
+                        with st.popover("🧠 Yami explica", width="stretch"):
                             st.markdown(f"**Sugestão do Yami:** {_y_action}")
                             _py = float(yami.get('peso_sugerido', 0) or 0)
                             if _py > 0:
@@ -3140,13 +3224,15 @@ Dor articular pontiaguda = troca variação no dia.
                 ui_compact = bool(st.session_state.get("ui_compact_mode", True))
                 ui_show_last_table = bool(st.session_state.get("ui_show_last_table", False))
 
-                if df_last is not None:
-                    st.markdown(f"📜 **Último registo ({data_ultima})**")
-                    st.caption(f"Último: peso médio ~ {peso_medio:.1f} kg | RIR médio ~ {rir_medio:.1f}")
-                    if (not ui_compact) or ui_show_last_table:
-                        st.dataframe(df_last, hide_index=True, width='stretch')
-                else:
-                    st.caption("Sem registos anteriores para este exercício (neste perfil).")
+                def _render_ultimo_registo_block():
+                    if df_last is not None:
+                        st.markdown(f"📜 **Último registo ({data_ultima})**")
+                        _peso_lbl = "kg/lado" if _is_per_side_exercise(ex) else "kg"
+                        st.caption(f"Último: peso médio ~ {peso_medio:.1f} {_peso_lbl} | RIR médio ~ {rir_medio:.1f}")
+                        if (not ui_compact) or ui_show_last_table:
+                            st.dataframe(df_last, hide_index=True, width='stretch')
+                    else:
+                        st.caption("Sem registos anteriores para este exercício (neste perfil).")
 
                 if _double_progression_ready(df_last, item['reps'], rir_target_num):
                     inc = 5 if _is_lower_exercise(ex) else 2
@@ -3189,7 +3275,7 @@ Dor articular pontiaguda = troca variação no dia.
                                 except Exception:
                                     pass
                             peso = st.number_input(
-                                f"Kg • S{s+1}", min_value=0.0,
+                                _peso_label_para_ex(ex, s), min_value=0.0,
                                 value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
                             )
                             rcol1, rcol2 = st.columns(2)
@@ -3228,7 +3314,6 @@ Dor articular pontiaguda = troca variação no dia.
                                             st.success("Último exercício guardado. Treino pronto ✅")
                                         else:
                                             _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                            _queue_auto_rest(int(item["descanso_s"]), ex)
                                             st.success("Exercício guardado. A seguir…")
                                         time.sleep(0.35)
                                         st.rerun()
@@ -3251,17 +3336,19 @@ Dor articular pontiaguda = troca variação no dia.
                                     st.success("Último exercício guardado. Treino pronto ✅")
                                 else:
                                     _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                    _queue_auto_rest(int(item["descanso_s"]), ex)
                                     st.success("Exercício guardado. A seguir…")
                                 time.sleep(0.35)
                                 st.rerun()
+
+                    st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
+                    _render_ultimo_registo_block()
                 else:
                     lista_sets = []
                     with st.form(key=f"form_{i}"):
                         kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
                         for s in range(item["series"]):
                             st.markdown(f"### Série {s+1}")
-                            peso = st.number_input(f"Kg • S{s+1}", min_value=0.0,
+                            peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
                                                    value=float(peso_sug) if peso_sug>0 else 0.0,
                                                    step=float(kg_step), key=f"peso_{i}_{s}")
                             rcol1, rcol2 = st.columns(2)
@@ -3283,6 +3370,9 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.success("Exercício gravado!")
                                 time.sleep(0.4)
                                 st.rerun()
+
+                    st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
+                    _render_ultimo_registo_block()
 
         pass  # divider removed
 
@@ -3614,10 +3704,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
