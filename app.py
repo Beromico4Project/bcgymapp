@@ -24,6 +24,23 @@ CLOVER_OPACITY = 0.06
 
 st.set_page_config(page_title="Black Clover Training APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
+# Keep screen awake on mobile (when supported)
+st.components.v1.html("""
+<script>
+(async function(){
+  try {
+    if (!('wakeLock' in navigator)) return;
+    let lock = null;
+    async function acquire(){
+      try { lock = await navigator.wakeLock.request('screen'); } catch(e) {}
+    }
+    await acquire();
+    document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible') await acquire(); });
+  } catch(e) {}
+})();
+</script>
+""", height=0)
+
 # --- 2. FUNÇÕES VISUAIS (Fundo e CSS) ---
 def get_base64(bin_file):
     try:
@@ -173,14 +190,19 @@ def _enforce_mobile_ui_behaviour():
                     [d.documentElement, d.body].forEach((el) => {
                       if (!el) return;
                       el.style.overflowX = 'hidden';
-                      el.style.touchAction = 'pan-y';
                       el.style.overscrollBehaviorX = 'none';
+                      el.style.touchAction = 'manipulation';
                     });
-                    d.querySelectorAll('[data-testid="stAppViewContainer"], .stApp, .main, [data-testid="stVerticalBlock"]').forEach((el) => {
+                    d.querySelectorAll('[data-testid="stAppViewContainer"], .stApp, .main').forEach((el) => {
                       try {
                         el.style.overflowX = 'hidden';
-                        el.style.touchAction = 'pan-y';
+                        el.style.overscrollBehaviorX = 'none';
+                        el.style.touchAction = 'manipulation';
                       } catch (e) {}
+                    });
+                    // Não mexer no touchAction dos blocos internos (pode bloquear scroll em mobile)
+                    d.querySelectorAll('[data-testid="stVerticalBlock"]').forEach((el) => {
+                      try { el.style.overflowX = 'hidden'; } catch (e) {}
                     });
 
                     // Selects sem digitação (abre dropdown normal, mas sem teclado / pesquisa por texto)
@@ -227,8 +249,10 @@ def _enforce_mobile_ui_behaviour():
                 }
 
                 applyUiLocks();
-                if (!w.__bc_ui_locks_interval) {
-                  w.__bc_ui_locks_interval = w.setInterval(applyUiLocks, 1200);
+                // Reaplica poucas vezes após o render para evitar "lock" de scroll por loop contínuo
+                if (!w.__bc_ui_locks_once_seq) {
+                  w.__bc_ui_locks_once_seq = true;
+                  [300, 900, 1800].forEach(ms => setTimeout(applyUiLocks, ms));
                 }
               } catch (e) {}
             })();
@@ -287,6 +311,27 @@ def render_progress_compact(done_n: int, total_n: int):
         """,
         unsafe_allow_html=True,
     )
+
+
+def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
+    try:
+        nome = str(item.get("nome", "Exercício"))
+        sers = int(item.get("series", 0) or 0)
+    except Exception:
+        nome, sers = "Exercício", 0
+    reps = str(item.get("reps", "") or "").strip()
+    rir = str(item.get("rir", "") or "").strip()
+    meta_parts = []
+    if sers > 0:
+        meta_parts.append(f"{sers}s")
+    if reps:
+        meta_parts.append(reps)
+    if rir:
+        meta_parts.append(f"RIR {rir}")
+    meta = " • ".join(meta_parts)
+    if meta:
+        return f"{ix+1}/{total} • {nome} — {meta}"
+    return f"{ix+1}/{total} • {nome}"
 
 
 # --- 3. CSS DA INTERFACE ---
@@ -469,12 +514,21 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{
   caret-color: transparent !important;
 }
 @media (max-width: 768px){
-  html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stVerticalBlock"]{
-    touch-action: pan-y !important;
+  html, body, .stApp, [data-testid="stAppViewContainer"]{
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: manipulation !important;
+  }
+  /* Não forçar touch-action em blocos internos para evitar lock do scroll */
+  [data-testid="stVerticalBlock"]{
     overflow-x: hidden !important;
   }
 }
 
+
+.stAlert{ margin: .55rem 0 .75rem 0 !important; border-radius: 12px !important; }
+[data-testid="stToast"]{ margin-bottom: 1.0rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -858,7 +912,7 @@ p{ margin-bottom: .35rem !important; }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
 .bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
 
-.bc-yami-chip{ margin: .15rem 0 .55rem 0; padding:.45rem .60rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.25; }
+.bc-yami-chip{ margin: .15rem 0 .95rem 0; padding:.45rem .60rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.25; }
 .bc-yami-chip b{ color:#F2EEEE; font-weight:700; }
 .bc-yami-chip .muted{ color:#BEB6B6; }
 .bc-yami-chip.y-up{ border-color: rgba(52,211,153,.28); background: rgba(16,185,129,.12); }
@@ -2146,7 +2200,7 @@ treinos_base = {
         "exercicios": [
             {"ex":"Supino com pausa (1s no peito)", "series":4, "reps":"4-5", "tipo":"composto"},
             {"ex":"Barra fixa com peso (pegada neutra)", "series":4, "reps":"4-6", "tipo":"composto"},
-            {"ex":"Remada apoiada / chest-supported", "series":3, "reps":"5-6", "tipo":"composto"},
+            {"ex":"Remada unilateral com halteres", "series":3, "reps":"5-6", "tipo":"composto"},
             {"ex":"DB OHP neutro (sentado, encosto)", "series":3, "reps":"6", "tipo":"composto"},
             {"ex":"Elevação lateral (polia unilateral)", "series":3, "reps":"12-15", "tipo":"isolado"},
             {"ex":"Face pull", "series":2, "reps":"15-20", "tipo":"isolado"},
@@ -2157,9 +2211,9 @@ treinos_base = {
         "sessao": "75–95 min",
         "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
         "exercicios": [
-            {"ex":"Trap Bar Deadlift (ou Deadlift)", "series":4, "reps":"3-5", "tipo":"composto"},
+            {"ex":"Deadlift", "series":4, "reps":"3-5", "tipo":"composto"},
             {"ex":"Bulgarian Split Squat (passo longo)", "series":3, "reps":"5-6", "tipo":"composto"},
-            {"ex":"Hip Thrust (barra)", "series":4, "reps":"5", "tipo":"composto"},
+            {"ex":"Hip Thrust (máquina)", "series":4, "reps":"5", "tipo":"composto"},
             {"ex":"Nordic (amplitude controlada)", "series":3, "reps":"5-6", "tipo":"isolado"},
             {"ex":"Panturrilha em pé (pesado)", "series":3, "reps":"6-8", "tipo":"isolado"},
         ]
@@ -2189,7 +2243,7 @@ treinos_base = {
         "sessao": "90–110 min",
         "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
         "exercicios": [
-            {"ex":"Hip Thrust", "series":4, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Hip Thrust (barra)", "series":4, "reps":"8-10", "tipo":"composto"},
             {"ex":"Leg Press (pés altos e abertos)", "series":3, "reps":"10-12", "tipo":"composto"},
             {"ex":"RDL (halter/barra até neutro perfeito)", "series":3, "reps":"8-10", "tipo":"composto"},
             {"ex":"Back extension 45° (glúteo bias)", "series":3, "reps":"12-15", "tipo":"isolado"},
@@ -2205,7 +2259,7 @@ treinos_base = {
             {"ex":"Supino inclinado (halter)", "series":4, "reps":"8-10", "tipo":"composto"},
             {"ex":"Máquina convergente de peito", "series":3, "reps":"10-12", "tipo":"composto"},
             {"ex":"Crossover na polia (alto → baixo)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Elevação lateral (myo-reps opcional)", "series":3, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Elevação lateral com halteres (myo-reps)", "series":3, "reps":"15-20", "tipo":"isolado"},
             {"ex":"Rear delt (cabo/máquina)", "series":3, "reps":"15-20", "tipo":"isolado"},
             {"ex":"Remada leve apoiada (saúde escapular)", "series":2, "reps":"12", "tipo":"isolado"},
             {"ex":"Bíceps (cabo)", "series":2, "reps":"12-15", "tipo":"isolado"},
@@ -2910,7 +2964,7 @@ Dor articular pontiaguda = troca variação no dia.
             options=_opt_ix,
             index=int(max(0, min(max_idx, pure_idx))),
             key=_pick_key,
-            format_func=lambda _x: f"{int(_x)+1}/{len(ex_names)} • {ex_names[int(_x)]}",
+            format_func=lambda _x: _format_ex_select_label(cfg['exercicios'][int(_x)], int(_x), len(ex_names)),
             label_visibility="collapsed",
         )
         try:
