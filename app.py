@@ -3234,17 +3234,18 @@ Dor articular pontiaguda = troca variação no dia.
                     else:
                         st.caption("Sem registos anteriores para este exercício (neste perfil).")
 
+                def _render_prefill_buttons_block():
+                    p1, p2 = st.columns(2)
+                    if p1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
+                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
+                        st.rerun()
+                    if p2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
+                        _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
+                        st.rerun()
+
                 if _double_progression_ready(df_last, item['reps'], rir_target_num):
                     inc = 5 if _is_lower_exercise(ex) else 2
                     st.success(f"✅ Progressão dupla: bateste o topo da faixa. Próxima sessão: tenta **+{inc} kg** (ou mínimo disponível).")
-
-                pre1, pre2 = st.columns(2)
-                if pre1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
-                    _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
-                    st.rerun()
-                if pre2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
-                    _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
-                    st.rerun()
 
                 if pure_workout_mode and pure_nav_key is not None:
                     series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
@@ -3341,6 +3342,8 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.rerun()
 
                     st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
+                    _render_prefill_buttons_block()
+                    st.markdown("<div style='margin-top:.2rem'></div>", unsafe_allow_html=True)
                     _render_ultimo_registo_block()
                 else:
                     lista_sets = []
@@ -3372,6 +3375,8 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.rerun()
 
                     st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
+                    _render_prefill_buttons_block()
+                    st.markdown("<div style='margin-top:.2rem'></div>", unsafe_allow_html=True)
                     _render_ultimo_registo_block()
 
         pass  # divider removed
