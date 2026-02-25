@@ -346,17 +346,8 @@ def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
     except Exception:
         ex = ""
 
-    # Heurística conservadora para não marcar barra/máquina como por lado.
-    is_per_side = any(k in ex for k in [
-        "halter", "haltere", "dumbbell", "db ", " db",
-        "unilateral", "alternado", "alternada",
-        "simultaneo", "simultâneo",
-    ])
-    # Exceções comuns: barra, máquina, polia, smith, multipower, cabo.
-    if any(k in ex for k in [
-        "barra", "maquina", "máquina", "polia", "cabo", "smith", "multipower", "landmine"
-    ]):
-        is_per_side = False
+    # Heurística partilhada com o bloco de histórico.
+    is_per_side = _is_per_side_exercise(ex)
 
     base = "Kg/lado" if is_per_side else "Kg"
     if serie_idx is None:
@@ -365,6 +356,24 @@ def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
         return f"{base} • S{int(serie_idx)+1}"
     except Exception:
         return base
+
+
+def _is_per_side_exercise(ex_name: str) -> bool:
+    """Heurística para saber se o peso costuma ser por lado (halteres/unilateral)."""
+    try:
+        ex = str(ex_name or "").lower()
+    except Exception:
+        ex = ""
+    is_per_side = any(k in ex for k in [
+        "halter", "haltere", "dumbbell", "db ", " db",
+        "unilateral", "alternado", "alternada",
+        "simultaneo", "simultâneo",
+    ])
+    if any(k in ex for k in [
+        "barra", "maquina", "máquina", "polia", "cabo", "smith", "multipower", "landmine"
+    ]):
+        is_per_side = False
+    return is_per_side
 
 
 # --- 3. CSS DA INTERFACE ---
