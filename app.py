@@ -338,8 +338,8 @@ def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
     """Devolve a label do peso ajustada ao tipo de exercício.
 
     Usa 'Kg/lado' para exercícios com halteres/unilateral/alternado/simultâneo,
-    e 'Kg' para barra/máquina/polia. O serie_idx é opcional e só entra no sufixo
-    visual (S1, S2, ...).
+    e 'Kg' para máquina/polia/cabo. Em exercícios com barra carregada assume
+    'Kg/lado'. O serie_idx é opcional e só entra no sufixo visual (S1, S2, ...).
     """
     try:
         ex = str(ex_name or "").lower()
@@ -359,20 +359,28 @@ def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
 
 
 def _is_per_side_exercise(ex_name: str) -> bool:
-    """Heurística para saber se o peso costuma ser por lado (halteres/unilateral)."""
+    """Heurística para saber se o peso costuma ser por lado (halteres/unilateral/barra carregada)."""
     try:
         ex = str(ex_name or "").lower()
     except Exception:
         ex = ""
+
+    # Por lado: halteres, unilateral/alternado/simultâneo e exercícios de barra carregada.
     is_per_side = any(k in ex for k in [
         "halter", "haltere", "dumbbell", "db ", " db",
         "unilateral", "alternado", "alternada",
         "simultaneo", "simultâneo",
+        " barra", "barra ", "barra-", "barra_", "(barra)",
     ])
+
+    # Exceções: barra fixa e máquinas/polias costumam ser carga total da stack/máquina.
+    if "barra fixa" in ex:
+        is_per_side = False
     if any(k in ex for k in [
-        "barra", "maquina", "máquina", "polia", "cabo", "smith", "multipower", "landmine"
+        "maquina", "máquina", "polia", "cabo", "landmine"
     ]):
         is_per_side = False
+    # Smith / multipower normalmente é barra + discos (o utilizador pediu por lado).
     return is_per_side
 
 
@@ -3252,10 +3260,6 @@ Dor articular pontiaguda = troca variação no dia.
                     total_series = int(item["series"])
                     done_series = max(0, min(total_series, done_series))
                     st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
-                    if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
-                        st.session_state[series_key] = []
-                        st.session_state[done_key] = 0
-                        st.rerun()
 
                 art = sugestao_articular(ex)
                 if art:
@@ -3284,10 +3288,13 @@ Dor articular pontiaguda = troca variação no dia.
                     if p2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
                         _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
                         st.rerun()
-
-                if _double_progression_ready(df_last, item['reps'], rir_target_num):
-                    inc = 5 if _is_lower_exercise(ex) else 2
-                    st.success(f"✅ Progressão dupla: bateste o topo da faixa. Próxima sessão: tenta **+{inc} kg** (ou mínimo disponível).")
+                    if pure_workout_mode and pure_nav_key is not None:
+                        series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                        done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
+                        if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
+                            st.session_state[series_key] = []
+                            st.session_state[done_key] = 0
+                            st.rerun()
 
                 if pure_workout_mode and pure_nav_key is not None:
                     series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
