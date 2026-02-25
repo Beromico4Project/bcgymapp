@@ -861,6 +861,18 @@ p{ margin-bottom: .35rem !important; }
 .bc-yami-chip{ margin: .15rem 0 .55rem 0; padding:.45rem .60rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.25; }
 .bc-yami-chip b{ color:#F2EEEE; font-weight:700; }
 .bc-yami-chip .muted{ color:#BEB6B6; }
+.bc-yami-chip.y-up{ border-color: rgba(52,211,153,.28); background: rgba(16,185,129,.12); }
+.bc-yami-chip.y-up b{ color:#C8F7E8; }
+.bc-yami-chip.y-up .muted{ color:#A7EAD6; }
+.bc-yami-chip.y-hold{ border-color: rgba(148,163,184,.22); background: rgba(148,163,184,.08); }
+.bc-yami-chip.y-hold b{ color:#E8EEF5; }
+.bc-yami-chip.y-hold .muted{ color:#C9D2DD; }
+.bc-yami-chip.y-down{ border-color: rgba(251,146,60,.28); background: rgba(249,115,22,.12); }
+.bc-yami-chip.y-down b{ color:#FFE3C2; }
+.bc-yami-chip.y-down .muted{ color:#FFD4A6; }
+.bc-yami-chip.y-deload{ border-color: rgba(244,114,182,.26); background: rgba(190,24,93,.12); }
+.bc-yami-chip.y-deload b{ color:#FFD3E8; }
+.bc-yami-chip.y-deload .muted{ color:#F8C4DF; }
 .bc-final-summary{ margin: .5rem 0 .45rem 0; padding: .65rem .75rem; border-radius: 14px; border:1px solid rgba(140,29,44,.35); background:linear-gradient(180deg, rgba(140,29,44,.12), rgba(255,255,255,.02)); }
 .bc-final-summary .ttl{ font-weight:700; color:#F0ECEC; margin-bottom:3px; }
 .bc-final-summary .sub{ color:#CFC9C9; font-size:.88rem; }
@@ -3020,10 +3032,19 @@ Dor articular pontiaguda = troca variação no dia.
                 if isinstance(yami, dict) and yami:
                     _y_action = str(yami.get('acao', 'Mantém carga'))
                     _y_resumo = str(yami.get('resumo', '') or '')
+                    _ya = _y_action.lower()
+                    if "deload" in _ya:
+                        _y_cls = "y-deload"
+                    elif ("+" in _ya) or ("sobe" in _ya):
+                        _y_cls = "y-up"
+                    elif ("baixa" in _ya) or ("reduz" in _ya):
+                        _y_cls = "y-down"
+                    else:
+                        _y_cls = "y-hold"
                     ycol1, ycol2 = st.columns([4.8, 1.7], gap="small")
                     with ycol1:
                         st.markdown(
-                            f"<div class='bc-yami-chip'>🧠 <b>Yami</b> — {_y_action}<br><span class='muted'>{_y_resumo}</span></div>",
+                            f"<div class='bc-yami-chip {_y_cls}'>🧠 <b>Yami</b> — {_y_action}<br><span class='muted'>{_y_resumo}</span></div>",
                             unsafe_allow_html=True
                         )
                     with ycol2:
