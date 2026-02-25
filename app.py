@@ -323,15 +323,18 @@ def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
     rir = str(item.get("rir", "") or "").strip()
     meta_parts = []
     if sers > 0:
-        meta_parts.append(f"{sers}s")
-    if reps:
+        if reps:
+            meta_parts.append(f"{sers}x{reps}")
+        else:
+            meta_parts.append(f"{sers}s")
+    elif reps:
         meta_parts.append(reps)
     if rir:
         meta_parts.append(f"RIR {rir}")
     meta = " • ".join(meta_parts)
     if meta:
-        return f"{ix+1}/{total} • {nome} — {meta}"
-    return f"{ix+1}/{total} • {nome}"
+        return f"{ix+1} • {nome} • {meta}"
+    return f"{ix+1} • {nome}"
 
 
 def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
@@ -1277,6 +1280,12 @@ def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_
 
 
 def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num):
+    """Preenche valores via payload pendente.
+
+    Importante: não escrever diretamente em keys de widgets depois de eles já existirem no
+    mesmo rerun (StreamlitAPIException). Em vez disso, guardamos um payload e aplicamos
+    no rerun seguinte, antes dos widgets serem criados.
+    """
     series_n = int(item.get("series", 0))
     pesos = []
     reps_list = []
@@ -1285,19 +1294,52 @@ def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num
         pesos = pd.to_numeric(df_last.get("Peso (kg)"), errors="coerce").tolist() if "Peso (kg)" in df_last.columns else []
         reps_list = pd.to_numeric(df_last.get("Reps"), errors="coerce").tolist() if "Reps" in df_last.columns else []
         rirs = pd.to_numeric(df_last.get("RIR"), errors="coerce").tolist() if "RIR" in df_last.columns else []
+
+    payload = {"peso": [], "reps": [], "rir": []}
     for s in range(series_n):
         if s < len(pesos) and pd.notna(pesos[s]):
-            st.session_state[f"peso_{i}_{s}"] = float(pesos[s])
+            payload["peso"].append(float(pesos[s]))
         elif peso_sug > 0:
-            st.session_state[f"peso_{i}_{s}"] = float(peso_sug)
+            payload["peso"].append(float(peso_sug))
+        else:
+            payload["peso"].append(0.0)
+
         if s < len(reps_list) and pd.notna(reps_list[s]):
-            st.session_state[f"reps_{i}_{s}"] = int(reps_list[s])
+            payload["reps"].append(int(reps_list[s]))
         else:
-            st.session_state[f"reps_{i}_{s}"] = int(reps_low)
+            payload["reps"].append(int(reps_low))
+
         if s < len(rirs) and pd.notna(rirs[s]):
-            st.session_state[f"rir_{i}_{s}"] = float(rirs[s])
+            payload["rir"].append(float(rirs[s]))
         else:
-            st.session_state[f"rir_{i}_{s}"] = float(rir_target_num)
+            payload["rir"].append(float(rir_target_num))
+
+    st.session_state[f"prefill_payload_{i}"] = payload
+
+
+def _apply_prefill_payload_if_any(i: int):
+    key = f"prefill_payload_{i}"
+    payload = st.session_state.get(key)
+    if not isinstance(payload, dict):
+        return
+    pesos = payload.get("peso", []) or []
+    reps_list = payload.get("reps", []) or []
+    rirs = payload.get("rir", []) or []
+    n = max(len(pesos), len(reps_list), len(rirs))
+    for s in range(n):
+        try:
+            if s < len(pesos):
+                st.session_state[f"peso_{i}_{s}"] = float(pesos[s])
+            if s < len(reps_list):
+                st.session_state[f"reps_{i}_{s}"] = int(reps_list[s])
+            if s < len(rirs):
+                st.session_state[f"rir_{i}_{s}"] = float(rirs[s])
+        except Exception:
+            pass
+    try:
+        del st.session_state[key]
+    except Exception:
+        pass
 
 
 def safe_append_rows(df_rows: pd.DataFrame):
@@ -3314,6 +3356,7 @@ Dor articular pontiaguda = troca variação no dia.
                             pass
 
                     if current_s < total_series:
+                        _apply_prefill_payload_if_any(i)
                         kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
@@ -3396,6 +3439,7 @@ Dor articular pontiaguda = troca variação no dia.
                     _render_ultimo_registo_block()
                 else:
                     lista_sets = []
+                    _apply_prefill_payload_if_any(i)
                     with st.form(key=f"form_{i}"):
                         kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
                         for s in range(item["series"]):
