@@ -315,12 +315,12 @@ def render_progress_compact(done_n: int, total_n: int):
 
 def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
     try:
-        nome = str(item.get("nome", "Exercício"))
+        nome = str(item.get("ex") or item.get("nome") or "Exercício")
         sers = int(item.get("series", 0) or 0)
     except Exception:
         nome, sers = "Exercício", 0
     reps = str(item.get("reps", "") or "").strip()
-    rir = str(item.get("rir", "") or "").strip()
+    rir = str(item.get("rir_alvo") or item.get("rir") or "").strip()
     meta_parts = []
     if sers > 0:
         if reps:
@@ -337,12 +337,13 @@ def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
     return f"{ix+1} • {nome}"
 
 
+
 def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
     """Devolve a label do peso ajustada ao tipo de exercício.
 
-    Usa 'Kg/lado' para exercícios com halteres/unilateral/alternado/simultâneo,
+    Usa 'Kg / Lado' para exercícios com halteres/unilateral/alternado/simultâneo,
     e 'Kg' para máquina/polia/cabo. Em exercícios com barra carregada assume
-    'Kg/lado'. O serie_idx é opcional e só entra no sufixo visual (S1, S2, ...).
+    'Kg / Lado'. O serie_idx é opcional e só entra no sufixo visual (S1, S2, ...).
     """
     try:
         ex = str(ex_name or "").lower()
@@ -352,7 +353,7 @@ def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
     # Heurística partilhada com o bloco de histórico.
     is_per_side = _is_per_side_exercise(ex)
 
-    base = "Kg/lado" if is_per_side else "Kg"
+    base = "Kg / Lado" if is_per_side else "Kg"
     if serie_idx is None:
         return base
     try:
@@ -2112,6 +2113,146 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'peso_atual': float(p_atual),
     }
 
+
+def _yami_adjust_for_current_series(yami: dict, df_last: pd.DataFrame | None, item: dict, ex: str, bloco: str, semana: int,
+                                    serie_idx: int | None = None, pending_sets: list | None = None) -> dict:
+    """Ajusta a sugestão do Yami à série atual (e ao que já aconteceu nesta sessão)."""
+    if not isinstance(yami, dict) or serie_idx is None or int(serie_idx) < 0:
+        return yami
+    out = dict(yami)
+    pending_sets = pending_sets if isinstance(pending_sets, list) else []
+    series_alvo = int(item.get('series', 0) or 0)
+    sidx = min(int(serie_idx), max(0, series_alvo - 1)) if series_alvo > 0 else int(serie_idx)
+
+    # Ler alvo da série atual
+    rep_info = _parse_rep_scheme(item.get('reps', ''), series_alvo)
+    exp = list(rep_info.get('expected') or [])
+    low = int(rep_info.get('low') or 0)
+    high = int(rep_info.get('high') or 0)
+    kind = str(rep_info.get('kind') or '')
+    if kind == 'fixed_seq' and sidx < len(exp):
+        s_low = s_high = int(exp[sidx])
+    elif kind == 'fixed' and low > 0:
+        s_low = s_high = low
+    elif kind == 'range' and low > 0:
+        s_low, s_high = low, high
+    elif kind == 'special' and exp:
+        # 4(5/4/3/2/1) -> usar a sequência disponível como referência
+        j = min(sidx, len(exp)-1)
+        s_low = s_high = int(exp[j])
+    else:
+        s_low = low
+        s_high = high
+    rir_target = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
+
+    # Incremento coerente com o tipo do exercício
+    is_lower = _is_lower_exercise(ex)
+    is_comp = str(item.get('tipo', '')).lower() == 'composto'
+    if is_lower and is_comp:
+        inc = 5.0
+    elif is_comp:
+        inc = 2.0
+    else:
+        inc = 1.0
+
+    def _fmt_inc(v: float) -> str:
+        return str(int(v)) if float(v).is_integer() else str(v)
+
+    # Base da série (último registo da mesma série, se existir)
+    set_last_w = None
+    set_last_reps = None
+    set_last_rir = None
+    if df_last is not None and not getattr(df_last, 'empty', True):
+        try:
+            if 'Peso (kg)' in df_last.columns and sidx < len(df_last):
+                wv = pd.to_numeric(df_last['Peso (kg)'], errors='coerce').iloc[sidx]
+                if pd.notna(wv):
+                    set_last_w = float(wv)
+            if 'Reps' in df_last.columns and sidx < len(df_last):
+                rv = pd.to_numeric(df_last['Reps'], errors='coerce').iloc[sidx]
+                if pd.notna(rv):
+                    set_last_reps = int(rv)
+            if 'RIR' in df_last.columns and sidx < len(df_last):
+                rr = pd.to_numeric(df_last['RIR'], errors='coerce').iloc[sidx]
+                if pd.notna(rr):
+                    set_last_rir = float(rr)
+        except Exception:
+            pass
+
+    # Delta global do Yami aplicado à série equivalente
+    p_sug_global = float(out.get('peso_sugerido', 0.0) or 0.0)
+    p_atual_global = float(out.get('peso_atual', 0.0) or 0.0)
+    delta_global = float(out.get('delta', p_sug_global - p_atual_global) or 0.0)
+    p_sug = float(p_sug_global)
+
+    if set_last_w is not None and set_last_w > 0:
+        p_sug = _round_to_nearest(set_last_w + delta_global, 0.5)
+        out.setdefault('razoes', [])
+        out['razoes'].insert(1 if out['razoes'] else 0, f"Ajuste da série S{sidx+1}: parto da tua última S{sidx+1} ({set_last_w:.1f} kg), não da média do exercício.")
+        if set_last_reps is not None:
+            if s_low and s_high and s_low != s_high:
+                out['razoes'].insert(2 if len(out['razoes']) > 1 else 1, f"Na S{sidx+1} fizeste {set_last_reps} reps (alvo {s_low}–{s_high}).")
+            elif s_low:
+                out['razoes'].insert(2 if len(out['razoes']) > 1 else 1, f"Na S{sidx+1} fizeste {set_last_reps} reps (alvo {s_low}).")
+        if set_last_rir is not None:
+            out['razoes'].insert(3 if len(out['razoes']) > 2 else len(out['razoes']), f"RIR da S{sidx+1}: {set_last_rir:.1f} (alvo ~{rir_target:.1f}).")
+
+    # Ajuste intra-sessão (com base na série anterior desta sessão)
+    if pending_sets and sidx > 0:
+        try:
+            prev_live = pending_sets[-1]
+            prev_rir = float(prev_live.get('rir')) if prev_live.get('rir') is not None else None
+            prev_reps = int(prev_live.get('reps')) if prev_live.get('reps') is not None else None
+            # alvo de reps da série anterior
+            if kind == 'fixed_seq' and (sidx-1) < len(exp):
+                prev_low = prev_high = int(exp[sidx-1])
+            elif kind == 'range':
+                prev_low, prev_high = s_low, s_high
+            elif kind in ('fixed', 'special') and s_low:
+                prev_low = prev_high = s_low
+            else:
+                prev_low = prev_high = None
+
+            if prev_rir is not None:
+                # Muito pesado na série anterior -> aliviar a próxima
+                if prev_rir <= (rir_target - 1.0):
+                    adj = 2.0 if (is_lower and is_comp) else max(0.5, inc / 2)
+                    p_sug = _round_to_nearest(max(0.0, p_sug - adj), 0.5)
+                    out.setdefault('razoes', []).insert(0, f"Nesta sessão a série anterior veio pesada (RIR {prev_rir:.1f}) — ajustei a S{sidx+1} para manter técnica.")
+                # Muito folgado e reps cumpridas -> pequeno empurrão (sem exagero)
+                elif prev_rir >= (rir_target + 1.0) and prev_reps is not None and (prev_low is None or prev_reps >= prev_low):
+                    adj = 1.0 if (is_lower and is_comp) else 0.5
+                    p_sug = _round_to_nearest(p_sug + adj, 0.5)
+                    out.setdefault('razoes', []).insert(0, f"Nesta sessão a série anterior ficou folgada (RIR {prev_rir:.1f}) — subi ligeiro para a S{sidx+1}.")
+        except Exception:
+            pass
+
+    # Recalcular ação/cores para a série atual
+    p_ref = set_last_w if (set_last_w is not None and set_last_w > 0) else p_atual_global
+    if p_ref > 0:
+        delta = float(_round_to_nearest(p_sug - p_ref, 0.5))
+    else:
+        delta = float(_round_to_nearest(p_sug, 0.5))
+    out['peso_sugerido'] = float(max(0.0, p_sug))
+    out['delta'] = delta
+    out['peso_atual'] = float(p_ref if p_ref > 0 else p_atual_global)
+
+    if is_deload_for_plan(int(semana), str(st.session_state.get('plano_id_sel', 'Base'))):
+        out['acao'] = 'DELOAD (~-12%)'
+    else:
+        if delta >= 0.5:
+            out['acao'] = f"+{_fmt_inc(abs(delta))}kg"
+        elif delta <= -0.5:
+            out['acao'] = f"Baixa {_fmt_inc(abs(delta))}kg"
+        else:
+            out['acao'] = 'Mantém carga'
+
+    # Resumo com referência explícita à série
+    base_resumo = str(out.get('resumo', '') or '')
+    out['resumo'] = f"S{sidx+1}: " + base_resumo
+    return out
+
+
 def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa=""):
     """Grava um exercício (várias séries agregadas numa linha). Retorna True/False."""
     lista_sets = list(lista_sets or [])
@@ -3246,7 +3387,19 @@ Dor articular pontiaguda = troca variação no dia.
 
             passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
             plano_atual_id = str(st.session_state.get('plano_id_sel', 'Base'))
+            _yami_series_idx = None
+            _yami_pending_sets = []
+            if pure_workout_mode and pure_nav_key is not None:
+                try:
+                    _y_series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                    _tmp_pending = st.session_state.get(_y_series_key, [])
+                    if isinstance(_tmp_pending, list):
+                        _yami_pending_sets = _tmp_pending
+                    _yami_series_idx = min(len(_yami_pending_sets), max(0, int(item.get("series", 1)) - 1))
+                except Exception:
+                    _yami_series_idx = None
             yami = yami_coach_sugestao(df_now, perfil_sel, ex, item, bloco, semana, plano_atual_id)
+            yami = _yami_adjust_for_current_series(yami, df_last, item, ex, bloco, semana, _yami_series_idx, _yami_pending_sets)
             peso_sug = float(yami.get('peso_sugerido', 0.0) or 0.0)
             if peso_sug <= 0:
                 peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
@@ -3315,7 +3468,7 @@ Dor articular pontiaguda = troca variação no dia.
                 def _render_ultimo_registo_block():
                     if df_last is not None:
                         st.markdown(f"📜 **Último registo ({data_ultima})**")
-                        _peso_lbl = "kg/lado" if _is_per_side_exercise(ex) else "kg"
+                        _peso_lbl = "kg / lado" if _is_per_side_exercise(ex) else "kg"
                         st.caption(f"Último: peso médio ~ {peso_medio:.1f} {_peso_lbl} | RIR médio ~ {rir_medio:.1f}")
                         if (not ui_compact) or ui_show_last_table:
                             st.dataframe(df_last, hide_index=True, width='stretch')
