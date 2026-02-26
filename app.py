@@ -324,13 +324,27 @@ def render_progress_compact(done_n: int, total_n: int):
 
 
 def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
+    # Nome do exercício: tenta várias chaves (planos diferentes)
+    nome = ""
+    for k in ("ex", "exercicio", "exercício", "Exercício", "name", "nome", "titulo", "título"):
+        try:
+            v = item.get(k, "")
+        except Exception:
+            v = ""
+        if v is not None and str(v).strip():
+            nome = str(v).strip()
+            break
+    if not nome:
+        nome = "Exercício"
+
     try:
-        nome = str(item.get("nome", "Exercício"))
         sers = int(item.get("series", 0) or 0)
     except Exception:
-        nome, sers = "Exercício", 0
+        sers = 0
+
     reps = str(item.get("reps", "") or "").strip()
     rir = str(item.get("rir", "") or "").strip()
+
     meta_parts = []
     if sers > 0:
         if reps:
@@ -341,11 +355,11 @@ def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
         meta_parts.append(reps)
     if rir:
         meta_parts.append(f"RIR {rir}")
+
     meta = " • ".join(meta_parts)
     if meta:
         return f"{ix+1} • {nome} • {meta}"
     return f"{ix+1} • {nome}"
-
 
 def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
     """Devolve a label do peso ajustada ao tipo de exercício.
