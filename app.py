@@ -1304,7 +1304,167 @@ def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_
     return True
 
 
-def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num):
+def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
+    """Incrementos típicos (subir/descer) para ajustes intra-sessão."""
+    try:
+        is_lower = _is_lower_exercise(ex)
+    except Exception:
+        is_lower = False
+    try:
+        is_comp = str(item.get("tipo", "")).lower() == "composto"
+    except Exception:
+        is_comp = True
+    if is_lower and is_comp:
+        return 5.0, 5.0
+    if is_comp:
+        return 2.0, 2.0
+    return 1.0, 1.0
+
+
+def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last: pd.DataFrame | None = None) -> list[float]:
+    """Gera um perfil de peso por série.
+
+    - Se houver último treino com pesos por série, reaproveita as proporções (p.ex. 15/12/10/8 tende a subir).
+    - Se for sequência fixa (15/12/10/8) sem histórico por série, estima uma progressão leve.
+    - Caso contrário, mantém constante (o ajuste fino fica para a regra intra-sessão).
+    """
+    try:
+        series_n = int(item.get("series", 0) or 0)
+    except Exception:
+        series_n = 0
+    if series_n <= 0:
+        return []
+
+    try:
+        base = float(peso_base or 0)
+    except Exception:
+        base = 0.0
+    if base <= 0:
+        return [0.0 for _ in range(series_n)]
+
+    rep_info = _parse_rep_scheme(str(item.get("reps", "")), series_n)
+    kind = str(rep_info.get("kind") or "")
+
+    # 1) Se houver df_last com pesos por série, mantém o padrão (rampa) relativo ao top set.
+    #    O 'base' aqui representa o peso de trabalho sugerido (top set). As séries anteriores ficam como rampa.
+    try:
+        if df_last is not None and (not df_last.empty) and ("Peso (kg)" in df_last.columns):
+            last_w = pd.to_numeric(df_last["Peso (kg)"], errors="coerce").tolist()
+            last_w = [float(x) for x in last_w[:series_n] if pd.notna(x)]
+            if last_w:
+                w_max = float(max(last_w))
+                if w_max > 0:
+                    padded = list(last_w) + [w_max] * max(0, series_n - len(last_w))
+                    ratios = [max(0.20, min(1.05, float(w) / w_max)) for w in padded[:series_n]]
+                    out = [float(_round_to_nearest(base * ratios[s], 0.5)) for s in range(series_n)]
+                    # monotonia não-decrescente (rampa)
+                    for j in range(1, len(out)):
+                        if out[j] < out[j-1]:
+                            out[j] = out[j-1]
+                    return out
+    except Exception:
+        pass
+
+    # 2) Sequência fixa/descendente (15/12/10/8): progressão leve estimada
+    if kind == "fixed_seq":
+        seq = list(rep_info.get("expected") or [])
+        if len(seq) >= series_n:
+            try:
+                r0 = float(seq[0]) if float(seq[0]) > 0 else float(max(seq))
+            except Exception:
+                r0 = float(max(seq))
+            mults = []
+            for r in seq[:series_n]:
+                rr = max(1.0, float(r))
+                mults.append((r0 / rr) ** 0.35)
+
+            # ajusta para o "base" representar a MÉDIA do bloco (mais robusto quando o base vem de histórico médio)
+            try:
+                mean_mult = float(sum(mults) / max(1, len(mults)))
+            except Exception:
+                mean_mult = 1.0
+            base_adj = (base / mean_mult) if mean_mult > 0 else base
+
+            out = [float(_round_to_nearest(base_adj * m, 0.5)) for m in mults]
+            return out
+
+    # 3) Default: constante (o ajuste série-a-série vem da performance real)
+    return [float(_round_to_nearest(base, 0.5)) for _ in range(series_n)]
+
+
+def _yami_suggest_weight_for_series(
+    ex: str,
+    item: dict,
+    peso_base: float,
+    df_last: pd.DataFrame | None,
+    pending_sets: list,
+    series_index: int,
+    rir_target_num: float,
+) -> float:
+    """Sugere peso PARA A SÉRIE ATUAL (serie_index), ajustando com base na série anterior.
+
+    Isto resolve o problema de "mesmo peso em todas as séries":
+    - em 15/12/10/8, gera um perfil com pesos a subir ao longo das séries
+    - em range (3–5, 8–12), ajusta a série seguinte com base no RIR/reps reais
+    """
+    try:
+        s_idx = int(series_index)
+    except Exception:
+        s_idx = 0
+
+    profile = _yami_weight_profile_for_item(ex, item, peso_base, df_last)
+    base = float(profile[s_idx]) if (profile and 0 <= s_idx < len(profile)) else float(peso_base or 0)
+
+    # sem dados intra-sessão -> usa perfil/base
+    if not pending_sets:
+        return float(base)
+
+    # ajusta a partir da série anterior (última registada)
+    last = pending_sets[-1] if isinstance(pending_sets, list) and pending_sets else {}
+    try:
+        last_w = float(last.get("peso", base) or base)
+    except Exception:
+        last_w = float(base)
+    try:
+        last_rir = float(last.get("rir", rir_target_num) or rir_target_num)
+    except Exception:
+        last_rir = float(rir_target_num)
+    try:
+        last_reps = int(float(last.get("reps", 0) or 0))
+    except Exception:
+        last_reps = 0
+
+    rep_info = _parse_rep_scheme(str(item.get("reps", "")), int(item.get("series", 0) or 0))
+    kind = str(rep_info.get("kind") or "")
+    reps_low = int(rep_info.get("low") or 0) if kind in ("range", "fixed", "fixed_seq") else 0
+    reps_high = int(rep_info.get("high") or 0) if kind in ("range", "fixed", "fixed_seq") else 0
+
+    inc_up, inc_down = _yami_inc_steps(ex, item)
+
+    # baseline: usa o perfil previsto para esta série (rampa) quando disponível; caso contrário, parte do último peso usado
+    sug = float(base) if base > 0 else float(last_w)
+# ajuste: lê a performance da série anterior e corrige a PRÓXIMA série
+    delta_rir = float(last_rir) - float(rir_target_num)
+
+    # Se a série anterior foi "aquecimento disfarçado" (muitas reps acima do alvo), sobe um passo
+    if reps_high > 0 and last_reps > (reps_high + 1) and last_rir >= float(rir_target_num):
+        sug = float(sug) + float(inc_up)
+
+    # pesado: RIR muito abaixo do alvo ou falhou reps mínimas -> desce (pode descer 2 passos)
+    if (reps_low > 0 and last_reps > 0 and last_reps < reps_low) or (delta_rir <= -2.0):
+        sug = max(0.0, float(sug) - (2.0 * float(inc_down)))
+    elif delta_rir <= -1.0:
+        sug = max(0.0, float(sug) - float(inc_down))
+
+    # folgado: RIR muito acima do alvo e reps ok -> sobe (pode subir 2 passos)
+    elif (reps_high <= 0 or last_reps >= reps_high) and (delta_rir >= 2.0):
+        sug = float(sug) + (2.0 * float(inc_up))
+    elif (reps_high <= 0 or last_reps >= reps_high) and (delta_rir >= 1.0):
+        sug = float(sug) + float(inc_up)
+
+    return float(_round_to_nearest(sug, 0.5))
+
+def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact: bool = True):
     """Preenche valores via payload pendente.
 
     Importante: não escrever diretamente em keys de widgets depois de eles já existirem no
@@ -1320,21 +1480,33 @@ def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num
         reps_list = pd.to_numeric(df_last.get("Reps"), errors="coerce").tolist() if "Reps" in df_last.columns else []
         rirs = pd.to_numeric(df_last.get("RIR"), errors="coerce").tolist() if "RIR" in df_last.columns else []
 
+
+ex_name = str(item.get("ex", "") or "")
+try:
+    peso_profile = _yami_weight_profile_for_item(ex_name, item, float(peso_sug or 0), df_last if (df_last is not None and not df_last.empty) else None)
+except Exception:
+    peso_profile = []
+if not peso_profile:
+    try:
+        peso_profile = [float(peso_sug or 0) for _ in range(series_n)]
+    except Exception:
+        peso_profile = [0.0 for _ in range(series_n)]
+
     payload = {"peso": [], "reps": [], "rir": []}
     for s in range(series_n):
-        if s < len(pesos) and pd.notna(pesos[s]):
+        if use_df_exact and s < len(pesos) and pd.notna(pesos[s]):
             payload["peso"].append(float(pesos[s]))
         elif peso_sug > 0:
-            payload["peso"].append(float(peso_sug))
+            payload["peso"].append(float(peso_profile[s] if s < len(peso_profile) else peso_sug))
         else:
             payload["peso"].append(0.0)
 
-        if s < len(reps_list) and pd.notna(reps_list[s]):
+        if use_df_exact and s < len(reps_list) and pd.notna(reps_list[s]):
             payload["reps"].append(int(reps_list[s]))
         else:
             payload["reps"].append(int(reps_low))
 
-        if s < len(rirs) and pd.notna(rirs[s]):
+        if use_df_exact and s < len(rirs) and pd.notna(rirs[s]):
             payload["rir"].append(float(rirs[s]))
         else:
             payload["rir"].append(float(rir_target_num))
@@ -2163,6 +2335,23 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     if len(reasons) > max_reasons:
         reasons = reasons[:max_reasons]
 
+
+    # peso de trabalho (top set) para ramp por série (especialmente em compostos com aquecimento/rampa registados)
+    try:
+        _w_list = list(latest.get('pesos', []) or [])
+        w_work_last = float(max(_w_list)) if _w_list else float(p_atual)
+    except Exception:
+        w_work_last = float(p_atual)
+
+    if deload_now:
+        w_work_sug = float(_round_to_nearest(w_work_last * 0.88, 0.5))
+    elif acao.startswith('+'):
+        w_work_sug = float(_round_to_nearest(w_work_last + inc_up, 0.5))
+    elif 'Baixa' in acao:
+        w_work_sug = float(_round_to_nearest(max(0.0, w_work_last - inc_down), 0.5))
+    else:
+        w_work_sug = float(_round_to_nearest(w_work_last, 0.5))
+
     return {
         'acao': acao,
         'peso_sugerido': float(p_sug),
@@ -2172,6 +2361,8 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'razoes': reasons,
         'score': float(score),
         'peso_atual': float(p_atual),
+        'peso_work_last': float(w_work_last),
+        'peso_work_sugerido': float(w_work_sug),
     }
 
 
@@ -3377,7 +3568,7 @@ Dor articular pontiaguda = troca variação no dia.
             passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
             plano_atual_id = str(st.session_state.get('plano_id_sel', 'Base'))
             yami = yami_coach_sugestao(df_now, perfil_sel, ex, item, bloco, semana, plano_atual_id)
-            peso_sug = float(yami.get('peso_sugerido', 0.0) or 0.0)
+            peso_sug = float(yami.get('peso_work_sugerido', yami.get('peso_sugerido', 0.0)) or 0.0)
             if peso_sug <= 0:
                 peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
 
@@ -3413,6 +3604,13 @@ Dor articular pontiaguda = troca variação no dia.
                             _py = float(yami.get('peso_sugerido', 0) or 0)
                             if _py > 0:
                                 st.caption(f"Carga sugerida: {_py:.1f} kg · Confiança: {yami.get('confianca', 'média')}")
+                                try:
+                                    _prof = _yami_weight_profile_for_item(ex, item, float(_py), df_last)
+                                except Exception:
+                                    _prof = []
+                                if _prof:
+                                    _prof_txt = ' · '.join([f"S{ix+1}:{float(w):.1f}" for ix,w in enumerate(_prof)])
+                                    st.caption(f"Por série: {_prof_txt}")
                             else:
                                 st.caption(f"Confiança: {yami.get('confianca', 'média')}")
                             for _r in list(yami.get('razoes', []) or []):
@@ -3455,10 +3653,10 @@ Dor articular pontiaguda = troca variação no dia.
                 def _render_prefill_buttons_block():
                     p1, p2 = st.columns(2)
                     if p1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
-                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num)
+                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact=True)
                         st.rerun()
                     if p2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
-                        _prefill_sets_from_last(i, item, None, peso_sug, reps_low, rir_target_num)
+                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact=False)
                         st.rerun()
                     if pure_workout_mode and pure_nav_key is not None:
                         series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
@@ -3491,8 +3689,8 @@ Dor articular pontiaguda = troca variação no dia.
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
-                            default_peso = float(peso_sug) if peso_sug > 0 else 0.0
-                            if pending_sets:
+                            default_peso = _yami_suggest_weight_for_series(ex, item, float(peso_sug), df_last, pending_sets, s, float(rir_target_num))
+                            if default_peso <= 0 and pending_sets:
                                 try:
                                     default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
                                 except Exception:
