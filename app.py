@@ -10,6 +10,7 @@ import hashlib
 import html
 import urllib.parse
 import re
+import random
 from zoneinfo import ZoneInfo
 
 # =========================================================
@@ -315,12 +316,12 @@ def render_progress_compact(done_n: int, total_n: int):
 
 def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
     try:
-        nome = str(item.get("ex") or item.get("nome") or "Exercício")
+        nome = str(item.get("nome", "Exercício"))
         sers = int(item.get("series", 0) or 0)
     except Exception:
         nome, sers = "Exercício", 0
     reps = str(item.get("reps", "") or "").strip()
-    rir = str(item.get("rir_alvo") or item.get("rir") or "").strip()
+    rir = str(item.get("rir", "") or "").strip()
     meta_parts = []
     if sers > 0:
         if reps:
@@ -335,7 +336,6 @@ def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
     if meta:
         return f"{ix+1} • {nome} • {meta}"
     return f"{ix+1} • {nome}"
-
 
 
 def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
@@ -1842,6 +1842,8 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
 
 def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict, bloco: str, semana: int, plano_id: str) -> dict:
     """Coach de progressão ('Yami'): sugere carga e explica o porquê, com heurística mais robusta."""
+    yami_mode = str(st.session_state.get('yami_mode', 'Brutal'))
+
     series_alvo = int(item.get('series', 0) or 0)
     rep_info = _parse_rep_scheme(item.get('reps', ''), series_alvo)
     rir_alvo_num_ = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
@@ -2078,15 +2080,50 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         p_sug = _round_to_nearest(p_atual, 0.5)
         resumo = 'Consolida. Ainda não há sinal limpo para mexer na carga.'
 
-    # personalidade Yami (sem perder explicação)
+    # personalidade Yami (estilo Black Clover, sem perder explicação)
+    # (frases curtas e variáveis para não ficar repetitivo)
+    try:
+        seed = int(hashlib.sha1(f"{perfil}|{ex}|{latest.get('data','')}".encode('utf-8')).hexdigest()[:8], 16)
+    except Exception:
+        seed = 1234
+    rnd = random.Random(seed)
+    up_lines = [
+        "Ultrapassa os limites — com técnica.",
+        "Não te percas: sobe com controlo.",
+        "Se está leve, faz justiça: mais ferro."
+    ]
+    hold_lines = [
+        "Mantém. O progresso é consistente, não teatral.",
+        "Fica. Técnica limpa primeiro.",
+        "Consolida. Ainda não há sinal limpo para subir."
+    ]
+    down_lines = [
+        "Controla o ego. Recuar hoje é avançar amanhã.",
+        "Baixa. Quero reps sólidas, não sofrimento inútil.",
+        "Regride um passo e volta a construir."
+    ]
+    deload_lines = [
+        "Deload. Afia a técnica e sai inteiro.",
+        "Hoje é disciplina: menos carga, mais controlo.",
+        "Recupera. Amanhã voltas a cortar o mundo."
+    ]
+
     if 'DELOAD' in acao:
-        pass
+        prefix = rnd.choice(deload_lines)
     elif acao.startswith('+'):
-        resumo = 'Ultrapassa o teu limite, mas com cabeça. ' + resumo
+        prefix = rnd.choice(up_lines)
     elif 'Baixa' in acao:
-        resumo = 'Controla o ego. ' + resumo
+        prefix = rnd.choice(down_lines)
     else:
-        resumo = 'Mantém a lâmina afiada. ' + resumo
+        prefix = rnd.choice(hold_lines)
+
+    # modos (leve diferença de tom)
+    if yami_mode.lower().startswith('frio'):
+        resumo = prefix + " " + resumo
+    elif yami_mode.lower().startswith('deload'):
+        resumo = prefix + " " + resumo
+    else:  # Brutal/Normal
+        resumo = prefix + " " + resumo
 
     # confiança
     if sessao_incompleta or sets_ratio < 0.75 or latest.get('n_sets', 0) < max(1, min(series_alvo, 2)):
@@ -2114,143 +2151,70 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     }
 
 
-def _yami_adjust_for_current_series(yami: dict, df_last: pd.DataFrame | None, item: dict, ex: str, bloco: str, semana: int,
-                                    serie_idx: int | None = None, pending_sets: list | None = None) -> dict:
-    """Ajusta a sugestão do Yami à série atual (e ao que já aconteceu nesta sessão)."""
-    if not isinstance(yami, dict) or serie_idx is None or int(serie_idx) < 0:
-        return yami
-    out = dict(yami)
-    pending_sets = pending_sets if isinstance(pending_sets, list) else []
-    series_alvo = int(item.get('series', 0) or 0)
-    sidx = min(int(serie_idx), max(0, series_alvo - 1)) if series_alvo > 0 else int(serie_idx)
+def yami_definir_descanso_s(base_s: int, rir_obtido: float | None, rir_alvo: float, reps_obtidas: int | None,
+                            reps_low: int | None = None, reps_high: int | None = None,
+                            reps_prev: int | None = None, is_composto: bool = True) -> int:
+    """Define o descanso (em segundos) para a PRÓXIMA série, em estilo coach.
 
-    # Ler alvo da série atual
-    rep_info = _parse_rep_scheme(item.get('reps', ''), series_alvo)
-    exp = list(rep_info.get('expected') or [])
-    low = int(rep_info.get('low') or 0)
-    high = int(rep_info.get('high') or 0)
-    kind = str(rep_info.get('kind') or '')
-    if kind == 'fixed_seq' and sidx < len(exp):
-        s_low = s_high = int(exp[sidx])
-    elif kind == 'fixed' and low > 0:
-        s_low = s_high = low
-    elif kind == 'range' and low > 0:
-        s_low, s_high = low, high
-    elif kind == 'special' and exp:
-        # 4(5/4/3/2/1) -> usar a sequência disponível como referência
-        j = min(sidx, len(exp)-1)
-        s_low = s_high = int(exp[j])
+    A ideia é simples:
+    - se a série saiu pesada (RIR baixo / queda grande de reps) -> mais descanso
+    - se saiu folgada -> menos descanso (mas sem exageros)
+    """
+    try:
+        base = int(base_s)
+    except Exception:
+        base = 75
+    base = max(45, min(240, base))
+
+    # Defaults seguros
+    try:
+        rir = float(rir_obtido) if rir_obtido is not None else None
+    except Exception:
+        rir = None
+    try:
+        reps = int(reps_obtidas) if reps_obtidas is not None else None
+    except Exception:
+        reps = None
+    try:
+        prev = int(reps_prev) if reps_prev is not None else None
+    except Exception:
+        prev = None
+
+    add = 0
+    # pesado demais
+    if rir is not None and rir <= max(0.0, rir_alvo - 1.0):
+        add += 20 if is_composto else 15
+    # muito perto da falha
+    if rir is not None and rir <= 0.5:
+        add += 15
+
+    # queda de reps intra-sessão
+    if reps is not None and prev is not None:
+        drop = prev - reps
+        if drop >= 3:
+            add += 20
+        elif drop == 2:
+            add += 10
+
+    # falhou reps mínimas
+    if reps_low is not None and reps is not None and int(reps_low) > 0 and reps < int(reps_low):
+        add += 15
+
+    # folgado demais -> pode reduzir um pouco
+    sub = 0
+    if rir is not None and rir >= (rir_alvo + 1.25):
+        sub += 10
+    if reps_high is not None and reps is not None and int(reps_high) > 0 and reps >= int(reps_high) and (rir is None or rir >= rir_alvo):
+        sub += 5
+
+    rest = base + add - sub
+
+    # limites práticos
+    if is_composto:
+        rest = max(60, min(240, rest))
     else:
-        s_low = low
-        s_high = high
-    rir_target = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
-
-    # Incremento coerente com o tipo do exercício
-    is_lower = _is_lower_exercise(ex)
-    is_comp = str(item.get('tipo', '')).lower() == 'composto'
-    if is_lower and is_comp:
-        inc = 5.0
-    elif is_comp:
-        inc = 2.0
-    else:
-        inc = 1.0
-
-    def _fmt_inc(v: float) -> str:
-        return str(int(v)) if float(v).is_integer() else str(v)
-
-    # Base da série (último registo da mesma série, se existir)
-    set_last_w = None
-    set_last_reps = None
-    set_last_rir = None
-    if df_last is not None and not getattr(df_last, 'empty', True):
-        try:
-            if 'Peso (kg)' in df_last.columns and sidx < len(df_last):
-                wv = pd.to_numeric(df_last['Peso (kg)'], errors='coerce').iloc[sidx]
-                if pd.notna(wv):
-                    set_last_w = float(wv)
-            if 'Reps' in df_last.columns and sidx < len(df_last):
-                rv = pd.to_numeric(df_last['Reps'], errors='coerce').iloc[sidx]
-                if pd.notna(rv):
-                    set_last_reps = int(rv)
-            if 'RIR' in df_last.columns and sidx < len(df_last):
-                rr = pd.to_numeric(df_last['RIR'], errors='coerce').iloc[sidx]
-                if pd.notna(rr):
-                    set_last_rir = float(rr)
-        except Exception:
-            pass
-
-    # Delta global do Yami aplicado à série equivalente
-    p_sug_global = float(out.get('peso_sugerido', 0.0) or 0.0)
-    p_atual_global = float(out.get('peso_atual', 0.0) or 0.0)
-    delta_global = float(out.get('delta', p_sug_global - p_atual_global) or 0.0)
-    p_sug = float(p_sug_global)
-
-    if set_last_w is not None and set_last_w > 0:
-        p_sug = _round_to_nearest(set_last_w + delta_global, 0.5)
-        out.setdefault('razoes', [])
-        out['razoes'].insert(1 if out['razoes'] else 0, f"Ajuste da série S{sidx+1}: parto da tua última S{sidx+1} ({set_last_w:.1f} kg), não da média do exercício.")
-        if set_last_reps is not None:
-            if s_low and s_high and s_low != s_high:
-                out['razoes'].insert(2 if len(out['razoes']) > 1 else 1, f"Na S{sidx+1} fizeste {set_last_reps} reps (alvo {s_low}–{s_high}).")
-            elif s_low:
-                out['razoes'].insert(2 if len(out['razoes']) > 1 else 1, f"Na S{sidx+1} fizeste {set_last_reps} reps (alvo {s_low}).")
-        if set_last_rir is not None:
-            out['razoes'].insert(3 if len(out['razoes']) > 2 else len(out['razoes']), f"RIR da S{sidx+1}: {set_last_rir:.1f} (alvo ~{rir_target:.1f}).")
-
-    # Ajuste intra-sessão (com base na série anterior desta sessão)
-    if pending_sets and sidx > 0:
-        try:
-            prev_live = pending_sets[-1]
-            prev_rir = float(prev_live.get('rir')) if prev_live.get('rir') is not None else None
-            prev_reps = int(prev_live.get('reps')) if prev_live.get('reps') is not None else None
-            # alvo de reps da série anterior
-            if kind == 'fixed_seq' and (sidx-1) < len(exp):
-                prev_low = prev_high = int(exp[sidx-1])
-            elif kind == 'range':
-                prev_low, prev_high = s_low, s_high
-            elif kind in ('fixed', 'special') and s_low:
-                prev_low = prev_high = s_low
-            else:
-                prev_low = prev_high = None
-
-            if prev_rir is not None:
-                # Muito pesado na série anterior -> aliviar a próxima
-                if prev_rir <= (rir_target - 1.0):
-                    adj = 2.0 if (is_lower and is_comp) else max(0.5, inc / 2)
-                    p_sug = _round_to_nearest(max(0.0, p_sug - adj), 0.5)
-                    out.setdefault('razoes', []).insert(0, f"Nesta sessão a série anterior veio pesada (RIR {prev_rir:.1f}) — ajustei a S{sidx+1} para manter técnica.")
-                # Muito folgado e reps cumpridas -> pequeno empurrão (sem exagero)
-                elif prev_rir >= (rir_target + 1.0) and prev_reps is not None and (prev_low is None or prev_reps >= prev_low):
-                    adj = 1.0 if (is_lower and is_comp) else 0.5
-                    p_sug = _round_to_nearest(p_sug + adj, 0.5)
-                    out.setdefault('razoes', []).insert(0, f"Nesta sessão a série anterior ficou folgada (RIR {prev_rir:.1f}) — subi ligeiro para a S{sidx+1}.")
-        except Exception:
-            pass
-
-    # Recalcular ação/cores para a série atual
-    p_ref = set_last_w if (set_last_w is not None and set_last_w > 0) else p_atual_global
-    if p_ref > 0:
-        delta = float(_round_to_nearest(p_sug - p_ref, 0.5))
-    else:
-        delta = float(_round_to_nearest(p_sug, 0.5))
-    out['peso_sugerido'] = float(max(0.0, p_sug))
-    out['delta'] = delta
-    out['peso_atual'] = float(p_ref if p_ref > 0 else p_atual_global)
-
-    if is_deload_for_plan(int(semana), str(st.session_state.get('plano_id_sel', 'Base'))):
-        out['acao'] = 'DELOAD (~-12%)'
-    else:
-        if delta >= 0.5:
-            out['acao'] = f"+{_fmt_inc(abs(delta))}kg"
-        elif delta <= -0.5:
-            out['acao'] = f"Baixa {_fmt_inc(abs(delta))}kg"
-        else:
-            out['acao'] = 'Mantém carga'
-
-    # Resumo com referência explícita à série
-    base_resumo = str(out.get('resumo', '') or '')
-    out['resumo'] = f"S{sidx+1}: " + base_resumo
-    return out
+        rest = max(45, min(180, rest))
+    return int(round(rest))
 
 
 def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa=""):
@@ -3121,6 +3085,7 @@ with tab_treino:
         st.session_state["rest_auto_run"] = True
         st.session_state["rest_auto_notified"] = False
         st.session_state["scroll_to_rest_timer"] = True
+        st.session_state["yami_last_rest_s"] = secs
 
     if st.session_state.get("rest_auto_run", False):
         st.markdown("<div id='rest-timer-anchor'></div>", unsafe_allow_html=True)
@@ -3132,7 +3097,7 @@ with tab_treino:
         rem = max(0, rem)
         elapsed = max(0, total_rest - rem)
 
-        label = f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso"
+        label = (f"⏱️ Descanso • {ex_rest}" if ex_rest else "⏱️ Descanso") + f"  ·  Yami: {total_rest}s"
         st.info(label)
         if bool(st.session_state.pop("scroll_to_rest_timer", False)):
             scroll_to_dom_id("rest-timer-anchor")
@@ -3150,7 +3115,7 @@ with tab_treino:
             st.rerun()
         _rest_pct = min(1.0, elapsed / max(1, total_rest))
         st.markdown(
-            f"<div class='bc-rest-track'><div class='bc-rest-fill' style='width:{_rest_pct*100:.1f}%'></div></div><div class='bc-rest-caption'>{elapsed}s / {total_rest}s</div>",
+            f"<div class='bc-rest-track'><div class='bc-rest-fill' style='width:{_rest_pct*100:.1f}%'></div></div>",
             unsafe_allow_html=True
         )
 
@@ -3387,19 +3352,7 @@ Dor articular pontiaguda = troca variação no dia.
 
             passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
             plano_atual_id = str(st.session_state.get('plano_id_sel', 'Base'))
-            _yami_series_idx = None
-            _yami_pending_sets = []
-            if pure_workout_mode and pure_nav_key is not None:
-                try:
-                    _y_series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
-                    _tmp_pending = st.session_state.get(_y_series_key, [])
-                    if isinstance(_tmp_pending, list):
-                        _yami_pending_sets = _tmp_pending
-                    _yami_series_idx = min(len(_yami_pending_sets), max(0, int(item.get("series", 1)) - 1))
-                except Exception:
-                    _yami_series_idx = None
             yami = yami_coach_sugestao(df_now, perfil_sel, ex, item, bloco, semana, plano_atual_id)
-            yami = _yami_adjust_for_current_series(yami, df_last, item, ex, bloco, semana, _yami_series_idx, _yami_pending_sets)
             peso_sug = float(yami.get('peso_sugerido', 0.0) or 0.0)
             if peso_sug <= 0:
                 peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
@@ -3468,7 +3421,7 @@ Dor articular pontiaguda = troca variação no dia.
                 def _render_ultimo_registo_block():
                     if df_last is not None:
                         st.markdown(f"📜 **Último registo ({data_ultima})**")
-                        _peso_lbl = "kg / lado" if _is_per_side_exercise(ex) else "kg"
+                        _peso_lbl = "kg/lado" if _is_per_side_exercise(ex) else "kg"
                         st.caption(f"Último: peso médio ~ {peso_medio:.1f} {_peso_lbl} | RIR médio ~ {rir_medio:.1f}")
                         if (not ui_compact) or ui_show_last_table:
                             st.dataframe(df_last, hide_index=True, width='stretch')
@@ -3564,7 +3517,31 @@ Dor articular pontiaguda = troca variação no dia.
                                         time.sleep(0.35)
                                         st.rerun()
                                 else:
-                                    _queue_auto_rest(int(item["descanso_s"]), ex)
+                                    # descanso definido pelo Yami para a PRÓXIMA série
+                                    try:
+                                        _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
+                                    except Exception:
+                                        _prev_reps = None
+                                    _rest_yami = yami_definir_descanso_s(
+                                        int(item.get('descanso_s', 75)),
+                                        float(rir), float(rir_target_num),
+                                        int(reps), reps_low, (lambda _ri: int(_ri.get('high') or 0) if str(_ri.get('kind') or '') in ('range','fixed','fixed_seq') else None)(_parse_rep_scheme(item.get('reps',''), int(item.get('series',0) or 0))),
+                                        _prev_reps,
+                                        is_composto=(str(item.get('tipo','')).lower()=='composto')
+                                    )
+                                    _queue_auto_rest(int(_rest_yami), ex)
+                                    try:
+                                        # comentário curto "ao vivo" (Yami)
+                                        if float(rir) <= max(0.5, float(rir_target_num) - 1.0):
+                                            st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Isso foi pesado — limpa a próxima.")
+                                        elif float(rir) >= float(rir_target_num) + 1.0:
+                                            st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Estava folgado — prepara-te para subir.")
+                                        else:
+                                            st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Mantém a lâmina afiada.")
+                                    except Exception:
+                                        pass
+
+
                                     st.rerun()
                     else:
                         st.success("Exercício concluído.")
