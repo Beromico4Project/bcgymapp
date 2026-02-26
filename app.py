@@ -653,6 +653,46 @@ st.markdown("""
   padding: 8px 10px;
   margin-bottom: 8px;
 }
+.bc-meta-card{
+  background: linear-gradient(180deg, rgba(140,29,44,.20), rgba(20,20,20,.50));
+  border: 1px solid rgba(140,29,44,.42);
+  border-left: 6px solid rgba(140,29,44,.95);
+  border-radius: 14px;
+  padding: 12px 12px 11px 12px;
+  margin: 6px 0 10px 0;
+  box-shadow: 0 12px 26px rgba(140,29,44,.16), 0 12px 26px rgba(0,0,0,.22);
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+.bc-meta-card::before{
+  content:"♣";
+  position:absolute;
+  right: 10px;
+  top: 8px;
+  font-size: 1.05rem;
+  color: rgba(232,226,226,.22);
+  text-shadow: 0 0 18px rgba(140,29,44,.18);
+  pointer-events:none;
+}
+.bc-meta-top{
+  font-size: 1.02rem;
+  font-weight: 900;
+  color: #F2F2F2;
+  line-height: 1.25;
+  letter-spacing: .01em;
+}
+.bc-meta-sub{
+  margin-top: 6px;
+  font-size: 0.90rem;
+  font-weight: 750;
+  color: rgba(232,226,226,.92);
+  opacity: .98;
+}
+@media (max-width: 768px){
+  .bc-meta-top{ font-size: 0.98rem; }
+  .bc-meta-sub{ font-size: 0.86rem; }
+}
 .bc-ex-name{ font-weight:700; color:#fff; margin-bottom:6px; line-height:1.2; }
 .bc-ex-pills{ display:flex; flex-wrap:wrap; gap:6px; }
 .bc-pill{
@@ -3729,7 +3769,7 @@ st.markdown("""
 st.markdown("""
 <div class='bc-header-center'>
   <div class='bc-main-title'>Black Clover Training</div>
-  <div class='bc-subtitle'>🖤 A minha magia é não desistir! 🗡️</div>
+  <div class='bc-subtitle'>A minha magia é não desistir 🗡️🖤</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -4043,8 +4083,18 @@ Dor articular pontiaguda = troca variação no dia.
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
                     st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
-                st.markdown(f"**Meta:** {item['series']}×{item['reps']}   •  **RIR alvo:** {rir_target_str}")
-                st.caption(f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s")
+                series_txt = str(item.get('series',''))
+                reps_txt = str(item.get('reps',''))
+                meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR alvo: {rir_target_str}"
+                sub_line = f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s"
+                st.markdown(
+                    f"""<div class='bc-meta-card'>
+  <div class='bc-meta-top'>{html.escape(meta_line)}</div>
+  <div class='bc-meta-sub'>{html.escape(sub_line)}</div>
+</div>""",
+                    unsafe_allow_html=True
+                )
+
 
                 if isinstance(yami, dict) and yami:
                     _y_action = str(yami.get('acao', 'Mantém carga'))
@@ -4732,7 +4782,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
