@@ -323,7 +323,7 @@ def render_progress_compact(done_n: int, total_n: int):
     )
 
 
-def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
+def _format_ex_select_label(item: dict, ix: int, total: int, bloco: str | None = None, semana: int | None = None) -> str:
     # Nome do exercício: tenta várias chaves (planos diferentes)
     nome = ""
     for k in ("ex", "exercicio", "exercício", "Exercício", "name", "nome", "titulo", "título"):
@@ -343,18 +343,36 @@ def _format_ex_select_label(item: dict, ix: int, total: int) -> str:
         sers = 0
 
     reps = str(item.get("reps", "") or "").strip()
-    rir = str(item.get("rir", "") or "").strip()
 
-    meta_parts = []
+    # RIR alvo: preferir campo do item; senão calcula pelo bloco/semana
+    rir_txt = ""
+    for k in ("rir_alvo", "rir", "rir_target", "RIR"):
+        try:
+            v = item.get(k, "")
+        except Exception:
+            v = ""
+        if v is not None and str(v).strip():
+            rir_txt = str(v).strip()
+            break
+    if not rir_txt and bloco and semana is not None:
+        try:
+            rir_txt = str(rir_alvo(str(item.get("tipo", "") or ""), str(bloco), int(semana)) or "").strip()
+        except Exception:
+            rir_txt = ""
+
+    # normalizar para formato com hífen
+    rir_txt = rir_txt.replace("–", "-").replace("—", "").strip()
+
+    meta_parts: list[str] = []
     if sers > 0:
         if reps:
             meta_parts.append(f"{sers}x{reps}")
         else:
-            meta_parts.append(f"{sers}s")
+            meta_parts.append(f"{sers} séries")
     elif reps:
         meta_parts.append(reps)
-    if rir:
-        meta_parts.append(f"RIR {rir}")
+    if rir_txt:
+        meta_parts.append(f"RIR {rir_txt}")
 
     meta = " • ".join(meta_parts)
     if meta:
@@ -3252,7 +3270,7 @@ Dor articular pontiaguda = troca variação no dia.
             options=_opt_ix,
             index=int(max(0, min(max_idx, pure_idx))),
             key=_pick_key,
-            format_func=lambda _x: _format_ex_select_label(cfg['exercicios'][int(_x)], int(_x), len(ex_names)),
+            format_func=lambda _x: _format_ex_select_label(cfg['exercicios'][int(_x)], int(_x), len(ex_names), bloco=str(bloco), semana=int(semana)),
             label_visibility="collapsed",
         )
         try:
@@ -3938,7 +3956,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
