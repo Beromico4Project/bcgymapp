@@ -20,8 +20,8 @@ from zoneinfo import ZoneInfo
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 # --- UI theme knobs (ajusta facilmente) ---
-BANNER_BLUR_PX = 1.5
-BANNER_BRIGHTNESS = 0.7
+BANNER_BLUR_PX = 1
+BANNER_BRIGHTNESS = 1
 CLOVER_OPACITY = 0.06
 
 st.set_page_config(page_title="Black Clover Training APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
@@ -4722,6 +4722,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
