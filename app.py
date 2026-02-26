@@ -510,18 +510,22 @@ st.markdown("""
 /* Destaque: botão principal (ex.: Próxima série) */
 button[kind="primary"],
 div.stButton > button[kind="primary"]{
-    background: linear-gradient(180deg, #16a34a 0%, #0b3b1a 100%) !important;
-    border: 1px solid #16a34a !important;
+    background: linear-gradient(180deg, #B21D33 0%, #1A090D 100%) !important;
+    border: 1px solid #D12B3E !important;
     color: #FFFFFF !important;
     font-weight: 900 !important;
-    box-shadow: 0 8px 22px rgba(22,163,74,0.22) !important;
+    font-size: 1.02rem !important;
+    letter-spacing: .02em !important;
+    padding: .82rem 1.15rem !important;
+    border-radius: 14px !important;
+    box-shadow: 0 10px 28px rgba(140, 29, 44, 0.55) !important;
     transform: none !important;
 }
 button[kind="primary"]:hover,
 div.stButton > button[kind="primary"]:hover{
-    background: linear-gradient(180deg, #22c55e 0%, #0b3b1a 100%) !important;
-    border-color: #22c55e !important;
-    box-shadow: 0 10px 26px rgba(34,197,94,0.26) !important;
+    background: linear-gradient(180deg, #C62841 0%, #1A090D 100%) !important;
+    border-color: #E23B55 !important;
+    box-shadow: 0 14px 36px rgba(140, 29, 44, 0.65) !important;
 }
 
 /* Destaque: cartão de meta (Meta/RIR/Tempo/Descanso) */
