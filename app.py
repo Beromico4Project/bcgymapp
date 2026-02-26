@@ -989,7 +989,10 @@ p{ margin-bottom: .35rem !important; }
 .bc-progress-fill{ height:100%; border-radius:999px; transition:width .18s ease; background:linear-gradient(90deg, rgba(70,130,255,.75), rgba(70,130,255,.95)); }
 .bc-progress-fill.mid{ background:linear-gradient(90deg, rgba(141,29,44,.70), rgba(141,29,44,.95)); }
 .bc-progress-fill.end{ background:linear-gradient(90deg, rgba(173,28,48,.82), rgba(204,52,73,.98)); box-shadow:0 0 10px rgba(173,28,48,.25); }
-.bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:inline-flex; align-items:center; gap:6px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
+.bc-last-chip .bc-lastset{ opacity: .96; }
+.bc-last-chip .bc-tempo{ font-weight: 850; letter-spacing: .02em; border:1px solid rgba(140,29,44,.40); background: rgba(140,29,44,.18); padding: 2px 8px; border-radius: 999px; }
+@media (max-width: 768px){ .bc-last-chip .bc-tempo{ font-size:.90rem; } }
 
 .bc-yami-chip{ margin: .15rem 0 1.35rem 0; padding:.48rem .62rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.28; }
 .bc-yami-chip b{ color:#F2EEEE; font-weight:700; }
@@ -1441,28 +1444,93 @@ def _yami_suggest_weight_for_series(
 
     inc_up, inc_down = _yami_inc_steps(ex, item)
 
-    # baseline: usa o perfil previsto para esta série (rampa) quando disponível; caso contrário, parte do último peso usado
+
+    # baseline: usa o perfil previsto (rampa) quando disponível; caso contrário, parte do último peso usado
     sug = float(base) if base > 0 else float(last_w)
-# ajuste: lê a performance da série anterior e corrige a PRÓXIMA série
+
+    # --- Autoregulação RIR: estimar e1RM pelo set anterior e ajustar para a série atual ---
+    # Aproximação simples (Epley) usando "reps até à falha" ≈ reps + RIR.
+    # (serve bem para ajustar de forma sensível; não é para "medir" 1RM absoluto).
+    target_reps = 0
+    try:
+        if kind == "fixed_seq":
+            seq = list(rep_info.get("expected") or [])
+            if 0 <= s_idx < len(seq):
+                target_reps = int(float(seq[s_idx]) or 0)
+        if target_reps <= 0 and reps_low > 0 and reps_high > 0:
+            target_reps = int(round((float(reps_low) + float(reps_high)) / 2.0))
+        if target_reps <= 0 and reps_low > 0:
+            target_reps = int(reps_low)
+        if target_reps <= 0:
+            target_reps = max(1, int(last_reps) if last_reps > 0 else 1)
+    except Exception:
+        target_reps = max(1, int(last_reps) if last_reps > 0 else 1)
+
+    def _epley_1rm(w: float, reps_to_fail: float) -> float:
+        try:
+            w = float(w)
+            reps_to_fail = float(reps_to_fail)
+        except Exception:
+            return 0.0
+        if w <= 0 or reps_to_fail <= 0:
+            return 0.0
+        r = min(15.0, reps_to_fail)  # cap para evitar exageros com reps altas
+        return float(w) * (1.0 + (r / 30.0))
+
+    def _weight_from_epley(est_1rm: float, reps_to_fail: float) -> float:
+        try:
+            est_1rm = float(est_1rm)
+            reps_to_fail = float(reps_to_fail)
+        except Exception:
+            return 0.0
+        if est_1rm <= 0 or reps_to_fail <= 0:
+            return 0.0
+        r = min(15.0, reps_to_fail)
+        return float(est_1rm) / (1.0 + (r / 30.0))
+
+    epley_w = 0.0
+    if last_w > 0 and last_reps > 0:
+        reps_to_fail_last = max(1.0, float(last_reps) + float(last_rir))
+        est1rm = _epley_1rm(float(last_w), reps_to_fail_last)
+        reps_to_fail_target = max(1.0, float(target_reps) + float(rir_target_num))
+        epley_w = _weight_from_epley(est1rm, reps_to_fail_target)
+
+    if epley_w > 0:
+        # mistura com o perfil (rampa) para não perder o "desenho" do bloco
+        sug = (0.65 * float(epley_w)) + (0.35 * float(sug))
+
+    # ajuste fino por desvio de RIR
     delta_rir = float(last_rir) - float(rir_target_num)
 
-    # Se a série anterior foi "aquecimento disfarçado" (muitas reps acima do alvo), sobe um passo
+    # micro-steps (mais sensível)
+    try:
+        inc_micro = max(0.5, float(inc_up) / 2.0)
+    except Exception:
+        inc_micro = 0.5
+
+    # "aquecimento disfarçado" (muitas reps acima do alvo) -> sobe micro
     if reps_high > 0 and last_reps > (reps_high + 1) and last_rir >= float(rir_target_num):
-        sug = float(sug) + float(inc_up)
+        sug = float(sug) + float(inc_micro)
 
-    # pesado: RIR muito abaixo do alvo ou falhou reps mínimas -> desce (pode descer 2 passos)
-    if (reps_low > 0 and last_reps > 0 and last_reps < reps_low) or (delta_rir <= -2.0):
-        sug = max(0.0, float(sug) - (2.0 * float(inc_down)))
-    elif delta_rir <= -1.0:
-        sug = max(0.0, float(sug) - float(inc_down))
+    # pesado: abaixo das reps mínimas ou RIR abaixo do alvo
+    if (reps_low > 0 and last_reps > 0 and last_reps < reps_low) or (delta_rir <= -1.0):
+        steps = 2 if delta_rir <= -1.75 else 1
+        sug = max(0.0, float(sug) - (steps * float(inc_micro)))
+    # folgado: acima do alvo com reps ok
+    elif (reps_high <= 0 or last_reps >= max(1, reps_high)) and (delta_rir >= 0.75):
+        steps = 2 if delta_rir >= 1.75 else 1
+        sug = float(sug) + (steps * float(inc_micro))
 
-    # folgado: RIR muito acima do alvo e reps ok -> sobe (pode subir 2 passos)
-    elif (reps_high <= 0 or last_reps >= reps_high) and (delta_rir >= 2.0):
-        sug = float(sug) + (2.0 * float(inc_up))
-    elif (reps_high <= 0 or last_reps >= reps_high) and (delta_rir >= 1.0):
-        sug = float(sug) + float(inc_up)
+    # limites práticos: evita saltos muito grandes série-a-série
+    try:
+        max_up = max(float(inc_up) * 2.0, float(last_w) * 0.08)
+        max_down = max(float(inc_down) * 2.0, float(last_w) * 0.08)
+        sug = min(float(last_w) + max_up, max(float(last_w) - max_down, float(sug)))
+    except Exception:
+        pass
 
     return float(_round_to_nearest(sug, 0.5))
+
 
 def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact: bool = True):
     """Preenche valores via payload pendente.
@@ -2253,30 +2321,35 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     if sessao_incompleta:
         score = max(-1.25, min(1.0, score))
 
-    # Decisão final (mais granular)
+    # Decisão final (mais granular + micro-ajustes)
+    # Ideia: quando o sinal é "pequeno mas real", mexer pouco (microloading) em vez de só 0/+inc_up.
+    try:
+        inc_micro = max(0.5, float(inc_up) / 2.0)
+    except Exception:
+        inc_micro = 0.5
+
     if score >= 2.25:
         acao = f"+{_fmt_inc(inc_up)}kg"
         p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
         resumo = 'Boa execução. Vamos subir — sem pressa, mas sem medo.'
-    elif score >= 1.0:
-        # progressão leve só se reps/rir sustentam; senão manter
-        acao = f"+{_fmt_inc(inc_up)}kg"
-        p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
-        resumo = 'Tens margem. Sobe um passo e mantém a técnica limpa.'
+    elif score >= 0.6:
+        acao = f"+{_fmt_inc(inc_micro)}kg"
+        p_sug = _round_to_nearest(p_atual + inc_micro, 0.5)
+        resumo = 'Margem pequena, mas real. Sobe micro e mantém a técnica limpa.'
     elif score <= -2.25:
         acao = f"Baixa {_fmt_inc(inc_down)}kg"
         p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
         resumo = 'Isto está pesado para o alvo de hoje. Regride um passo e volta a construir.'
-    elif score <= -1.0:
-        # micro-regressão em isoladores, ou manter se composto ficou "quase" no alvo
-        if is_comp:
+    elif score <= -0.6:
+        # micro-regressão (mais frequente em isoladores; em compostos tende a "manter" antes de baixar)
+        if is_comp and score > -1.0:
             acao = 'Mantém carga'
             p_sug = _round_to_nearest(p_atual, 0.5)
-            resumo = 'Mantém e limpa a execução. Primeiro estabiliza, depois sobes.'
+            resumo = 'Está a apertar. Mantém e garante reps limpas.'
         else:
-            acao = f"Baixa {_fmt_inc(inc_down)}kg"
-            p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
-            resumo = 'No isolador compensa aliviar e voltar ao alvo certo de reps/RIR.'
+            acao = f"Baixa {_fmt_inc(inc_micro)}kg"
+            p_sug = max(0.0, _round_to_nearest(p_atual - inc_micro, 0.5))
+            resumo = 'Baixa micro para bater reps/RIR com técnica.'
     else:
         acao = 'Mantém carga'
         p_sug = _round_to_nearest(p_atual, 0.5)
@@ -3624,7 +3697,20 @@ Dor articular pontiaguda = troca variação no dia.
 
                 _last_chip = _latest_set_summary_from_df_last(df_last)
                 if _last_chip:
-                    st.markdown(f"<div class='bc-last-chip'>⏮️ {_last_chip}</div>", unsafe_allow_html=True)
+                    _tempo = str(item.get("tempo", "") or "").strip()
+                    if _tempo:
+                        st.markdown(
+                            f"<div class='bc-last-chip'>"
+                            f"<span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span>"
+                            f"<span class='bc-tempo'>⏱️ Tempo {html.escape(_tempo)}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown(
+                            f"<div class='bc-last-chip'><span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span></div>",
+                            unsafe_allow_html=True,
+                        )
 
                 if pure_workout_mode and pure_nav_key is not None:
                     done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
