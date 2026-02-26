@@ -1481,16 +1481,22 @@ def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num
         rirs = pd.to_numeric(df_last.get("RIR"), errors="coerce").tolist() if "RIR" in df_last.columns else []
 
 
-ex_name = str(item.get("ex", "") or "")
-try:
-    peso_profile = _yami_weight_profile_for_item(ex_name, item, float(peso_sug or 0), df_last if (df_last is not None and not df_last.empty) else None)
-except Exception:
-    peso_profile = []
-if not peso_profile:
+    ex_name = str(item.get("ex", "") or item.get("exercicio", "") or item.get("Exercício", "") or "")
     try:
-        peso_profile = [float(peso_sug or 0) for _ in range(series_n)]
+        peso_profile = _yami_weight_profile_for_item(
+            ex_name,
+            item,
+            float(peso_sug or 0),
+            df_last if (df_last is not None and not df_last.empty) else None,
+        )
     except Exception:
-        peso_profile = [0.0 for _ in range(series_n)]
+        peso_profile = []
+
+    if not peso_profile:
+        try:
+            peso_profile = [float(peso_sug or 0) for _ in range(series_n)]
+        except Exception:
+            peso_profile = [0.0 for _ in range(series_n)]
 
     payload = {"peso": [], "reps": [], "rir": []}
     for s in range(series_n):
