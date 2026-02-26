@@ -33,38 +33,10 @@ st.components.v1.html("""
     if (!('wakeLock' in navigator)) return;
     let lock = null;
     async function acquire(){
-      try {
-        // Some browsers require a user gesture; this may fail silently until the first tap.
-        lock = await navigator.wakeLock.request('screen');
-      } catch(e) {}
+      try { lock = await navigator.wakeLock.request('screen'); } catch(e) {}
     }
-
-    // Try once on load (works in many browsers).
     await acquire();
-
-    // Fallback: first user interaction.
-    let armed = true;
-    async function onFirstGesture(){
-      if (!armed) return;
-      armed = false;
-      await acquire();
-      window.removeEventListener('pointerdown', onFirstGesture, {capture:true});
-      window.removeEventListener('touchstart', onFirstGesture, {capture:true});
-    }
-    window.addEventListener('pointerdown', onFirstGesture, {capture:true, passive:true});
-    window.addEventListener('touchstart', onFirstGesture, {capture:true, passive:true});
-
-    // Re-acquire when returning to the app.
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') await acquire();
-    });
-
-    // If the lock is released by the system, try to re-acquire on next gesture.
-    setInterval(() => {
-      try {
-        if (lock && lock.released) armed = true;
-      } catch(e) {}
-    }, 1500);
+    document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible') await acquire(); });
   } catch(e) {}
 })();
 </script>
@@ -215,6 +187,25 @@ def _enforce_mobile_ui_behaviour():
 
                 function applyUiLocks(){
                   try {
+                    // Bloqueio de scroll horizontal (mantém scroll vertical)
+                    [d.documentElement, d.body].forEach((el) => {
+                      if (!el) return;
+                      el.style.overflowX = 'hidden';
+                      el.style.overscrollBehaviorX = 'none';
+                      el.style.touchAction = 'manipulation';
+                    });
+                    d.querySelectorAll('[data-testid="stAppViewContainer"], .stApp, .main').forEach((el) => {
+                      try {
+                        el.style.overflowX = 'hidden';
+                        el.style.overscrollBehaviorX = 'none';
+                        el.style.touchAction = 'manipulation';
+                      } catch (e) {}
+                    });
+                    // Não mexer no touchAction dos blocos internos (pode bloquear scroll em mobile)
+                    d.querySelectorAll('[data-testid="stVerticalBlock"]').forEach((el) => {
+                      try { el.style.overflowX = 'hidden'; } catch (e) {}
+                    });
+
                     // Selects sem digitação (abre dropdown normal, mas sem teclado / pesquisa por texto)
                     d.querySelectorAll('[data-baseweb="select"] input').forEach((inp) => {
                       try {
@@ -568,10 +559,27 @@ div[data-testid="stTabs"]{ margin-top: 0.1rem !important; }
   }
 }
 
-/* UX mobile: teclado nas selectboxes (sem bloquear scroll) */
+/* UX mobile: evitar scroll lateral e teclado nas selectboxes */
+html, body, .stApp, [data-testid="stAppViewContainer"]{
+  overflow-x: hidden !important;
+  overscroll-behavior-x: none !important;
+}
 [data-baseweb="select"] input{
   caret-color: transparent !important;
 }
+@media (max-width: 768px){
+  html, body, .stApp, [data-testid="stAppViewContainer"]{
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: manipulation !important;
+  }
+  /* Não forçar touch-action em blocos internos para evitar lock do scroll */
+  [data-testid="stVerticalBlock"]{
+    overflow-x: hidden !important;
+  }
+}
+
 
 .stAlert{ margin: .85rem 0 1.10rem 0 !important; border-radius: 12px !important; }
 div[data-testid="stToast"]{ margin-top:.45rem !important; }
@@ -670,7 +678,7 @@ st.markdown("""
 [data-testid='stNumberInput'] button{ min-width: 34px !important; }
 [data-testid='stProgressBar'] > div > div{ border-radius: 999px !important; }
 [data-testid='stProgressBar']{ margin: .40rem 0 .90rem 0 !important; }
-.bc-rest-track{width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); overflow:hidden; margin-top:6px; touch-action: none; overscroll-behavior: contain; user-select: none;}
+.bc-rest-track{ width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); overflow:hidden; margin-top:6px; }
 .bc-rest-fill{ height:100%; border-radius:999px; background:linear-gradient(90deg, rgba(140,29,44,.9), rgba(180,60,82,.95)); }
 .bc-rest-caption{ font-size:.78rem; color:#E8E2E2; opacity:.95; margin-top:4px; }
 @media (max-width: 768px){
