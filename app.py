@@ -1480,7 +1480,7 @@ def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
     if is_lower and is_comp:
         return 5.0, 5.0
     if is_comp:
-        return 2.0, 2.0
+        return 2.5, 2.5
     return 1.0, 1.0
 
 
@@ -1603,6 +1603,17 @@ def _yami_suggest_weight_for_series(
     reps_high = int(rep_info.get("high") or 0) if kind in ("range", "fixed", "fixed_seq") else 0
 
     inc_up, inc_down = _yami_inc_steps(ex, item)
+
+    # flags locais (evita NameError; usados em micro-steps)
+    try:
+        is_lower = _is_lower_exercise(ex)
+    except Exception:
+        is_lower = False
+    try:
+        is_comp = str(item.get("tipo", "")).lower() == "composto"
+    except Exception:
+        is_comp = True
+
 
 
     # baseline: usa o perfil previsto (rampa) quando disponível; caso contrário, parte do último peso usado
@@ -4191,7 +4202,7 @@ Dor articular pontiaguda = troca variação no dia.
 
                     if current_s < total_series:
                         _apply_prefill_payload_if_any(i)
-                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
@@ -4316,7 +4327,7 @@ Dor articular pontiaguda = troca variação no dia.
                     lista_sets = []
                     _apply_prefill_payload_if_any(i)
                     with st.form(key=f"form_{i}"):
-                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.0
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
                         for s in range(item["series"]):
                             st.markdown(f"### Série {s+1}")
                             peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
@@ -4711,7 +4722,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
