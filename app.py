@@ -3719,9 +3719,19 @@ def sugestao_articular(ex: str) -> str:
     return "\n".join(msg)
 
 # --- 7. CABEÇALHO ---
-st.markdown("<div class='bc-main-title'>Black Clover Training  </div>", unsafe_allow_html=True)
-st.caption("")
-st.caption("A minha magia é não desistir 🗡️🖤")
+st.markdown("""
+<style>
+.bc-header-center{ text-align:center; margin: 2px 0 10px 0; }
+.bc-subtitle{ margin-top: 4px; font-size: 0.95rem; color: rgba(232,226,226,0.90); }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class='bc-header-center'>
+  <div class='bc-main-title'>Black Clover Training</div>
+  <div class='bc-subtitle'>A minha magia é não desistir 🗡️🖤</div>
+</div>
+""", unsafe_allow_html=True)
 
 try:
     _pl = st.session_state.get("plano_id_sel", "Base")
