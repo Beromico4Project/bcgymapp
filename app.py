@@ -506,7 +506,52 @@ st.markdown("""
         transform: scale(1.02);
         box-shadow: 0 6px 16px rgba(140, 29, 44, 0.28);
     }
-    </style>
+    
+/* Destaque: botão principal (ex.: Próxima série) */
+button[kind="primary"],
+div.stButton > button[kind="primary"]{
+    background: linear-gradient(180deg, #16a34a 0%, #0b3b1a 100%) !important;
+    border: 1px solid #16a34a !important;
+    color: #FFFFFF !important;
+    font-weight: 900 !important;
+    box-shadow: 0 8px 22px rgba(22,163,74,0.22) !important;
+    transform: none !important;
+}
+button[kind="primary"]:hover,
+div.stButton > button[kind="primary"]:hover{
+    background: linear-gradient(180deg, #22c55e 0%, #0b3b1a 100%) !important;
+    border-color: #22c55e !important;
+    box-shadow: 0 10px 26px rgba(34,197,94,0.26) !important;
+}
+
+/* Destaque: cartão de meta (Meta/RIR/Tempo/Descanso) */
+.bc-meta-card{
+    background: linear-gradient(180deg, rgba(140,29,44,.16), rgba(255,255,255,.02));
+    border: 1px solid rgba(140,29,44,.35);
+    border-left: 6px solid #8C1D2C;
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin: 6px 0 10px 0;
+    box-shadow: 0 10px 24px rgba(0,0,0,.22);
+}
+.bc-meta-line{
+    font-size: 1.02rem;
+    font-weight: 900;
+    color: #F2EEEE;
+    line-height: 1.25;
+    letter-spacing: .01em;
+}
+.bc-meta-sub{
+    margin-top: 6px;
+    font-size: .90rem;
+    font-weight: 800;
+    color: rgba(232,226,226,.94);
+}
+.bc-meta-sub .muted{
+    color: rgba(232,226,226,.78);
+    font-weight: 750;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # --- CSS mobile-first (telemóvel) ---
@@ -3656,8 +3701,15 @@ Dor articular pontiaguda = troca variação no dia.
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
                     st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
-                st.markdown(f"**Meta:** {item['series']}×{item['reps']}   •  **RIR alvo:** {rir_target_str}")
-                st.caption(f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s")
+                st.markdown(
+                    f"""
+                    <div class='bc-meta-card'>
+                      <div class='bc-meta-line'>🎯 Meta: {html.escape(str(item.get('series','')))}×{html.escape(str(item.get('reps','')))} &nbsp;•&nbsp; RIR alvo: {html.escape(str(rir_target_str))}</div>
+                      <div class='bc-meta-sub'>⏱️ Tempo {html.escape(str(item.get('tempo','')))} <span class='muted'>·</span> Descanso ~{html.escape(str(item.get('descanso_s','')))}s</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
                 if isinstance(yami, dict) and yami:
                     _y_action = str(yami.get('acao', 'Mantém carga'))
@@ -3807,8 +3859,8 @@ Dor articular pontiaguda = troca variação no dia.
                             elif is_last:
                                 btn_label = "Guardar última série + avançar"
                             else:
-                                btn_label = "Guardar série + descanso"
-                            submitted = st.form_submit_button(btn_label, width='stretch')
+                                btn_label = "Próxima série"
+                            submitted = st.form_submit_button(btn_label, width='stretch', type='primary')
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
                                 st.session_state[series_key] = novos_sets
@@ -4040,7 +4092,7 @@ Dor articular pontiaguda = troca variação no dia.
         st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
 
         _finish_label = "✅ Terminar treino" if not _all_done else "✅ Terminar treino (concluído)"
-        if st.button(_finish_label, type="primary"):
+        if st.button(_finish_label, type="secondary"):
             st.balloons()
             time.sleep(1.2)
             st.rerun()
