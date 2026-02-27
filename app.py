@@ -1078,6 +1078,156 @@ PROFILES_CACHE_SECONDS = 300
 # --- YAMI: estado persistente (coach) ---
 YAMI_STATE_PATH = "yami_state.json"
 
+# --- TREINO PURO: persistência de sessão em curso (evita reset quando mobile suspende o browser) ---
+INPROGRESS_STATE_PATH = "_inprogress_sessions.json"
+INPROGRESS_MAX_AGE_HOURS = 18
+
+def _inprogress_today_key_date() -> str:
+    try:
+        return datetime.datetime.now(ZoneInfo("Europe/Lisbon")).strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.datetime.now().strftime("%Y-%m-%d")
+
+def _make_inprogress_key(perfil: str, plano_id: str, dia: str, semana: int, date_iso: str) -> str:
+    return f"{perfil}||{plano_id}||{dia}||{int(semana)}||{date_iso}"
+
+def _load_inprogress_store() -> dict:
+    try:
+        if os.path.exists(INPROGRESS_STATE_PATH):
+            with open(INPROGRESS_STATE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+def _save_inprogress_store(store: dict) -> bool:
+    try:
+        tmp = INPROGRESS_STATE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, INPROGRESS_STATE_PATH)
+        return True
+    except Exception:
+        return False
+
+def load_inprogress_session(key: str, max_age_hours: int = INPROGRESS_MAX_AGE_HOURS):
+    try:
+        store = _load_inprogress_store()
+        payload = store.get(key)
+        if not isinstance(payload, dict):
+            return None
+        ts = float(payload.get("ts", 0) or 0)
+        if ts > 0:
+            age_s = time.time() - ts
+            if age_s > float(max_age_hours) * 3600.0:
+                return None
+        return payload
+    except Exception:
+        return None
+
+def save_inprogress_session(key: str, payload: dict) -> None:
+    try:
+        store = _load_inprogress_store()
+        # limpeza simples (evita crescimento infinito)
+        try:
+            now = time.time()
+            for k in list(store.keys()):
+                v = store.get(k)
+                if isinstance(v, dict):
+                    ts = float(v.get("ts", 0) or 0)
+                    if ts and (now - ts) > 72*3600:
+                        del store[k]
+        except Exception:
+            pass
+        store[key] = payload
+        _save_inprogress_store(store)
+    except Exception:
+        pass
+
+def clear_inprogress_session(key: str) -> None:
+    try:
+        store = _load_inprogress_store()
+        if key in store:
+            del store[key]
+            _save_inprogress_store(store)
+    except Exception:
+        pass
+
+def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int, pure_nav_key: str, n_ex: int) -> dict:
+    payload = {
+        "ts": time.time(),
+        "perfil": str(perfil),
+        "dia": str(dia),
+        "plano_id": str(plano_id),
+        "semana": int(semana),
+        "date": _inprogress_today_key_date(),
+        "pt_idx": int(st.session_state.get(pure_nav_key, 0) or 0),
+        "pt_done": {},
+        "pt_sets": {},
+    }
+    for ix in range(int(n_ex)):
+        dk = f"pt_done::{perfil}::{dia}::{ix}"
+        sk = f"pt_sets::{perfil}::{dia}::{ix}"
+        try:
+            payload["pt_done"][str(ix)] = int(st.session_state.get(dk, 0) or 0)
+        except Exception:
+            payload["pt_done"][str(ix)] = 0
+        sets = st.session_state.get(sk, [])
+        payload["pt_sets"][str(ix)] = sets if isinstance(sets, list) else []
+    return payload
+
+def _apply_inprogress_payload(payload: dict, perfil: str, dia: str, pure_nav_key: str) -> None:
+    try:
+        st.session_state[pure_nav_key] = int(payload.get("pt_idx", 0) or 0)
+    except Exception:
+        st.session_state[pure_nav_key] = 0
+    try:
+        pdone = payload.get("pt_done", {})
+        if isinstance(pdone, dict):
+            for k, v in pdone.items():
+                try:
+                    ix = int(k)
+                except Exception:
+                    continue
+                try:
+                    st.session_state[f"pt_done::{perfil}::{dia}::{ix}"] = int(v or 0)
+                except Exception:
+                    st.session_state[f"pt_done::{perfil}::{dia}::{ix}"] = 0
+    except Exception:
+        pass
+    try:
+        psets = payload.get("pt_sets", {})
+        if isinstance(psets, dict):
+            for k, v in psets.items():
+                try:
+                    ix = int(k)
+                except Exception:
+                    continue
+                if isinstance(v, list):
+                    st.session_state[f"pt_sets::{perfil}::{dia}::{ix}"] = v
+    except Exception:
+        pass
+
+def _pure_has_any_progress(perfil: str, dia: str, n_ex: int) -> bool:
+    try:
+        for ix in range(int(n_ex)):
+            dk = f"pt_done::{perfil}::{dia}::{ix}"
+            sk = f"pt_sets::{perfil}::{dia}::{ix}"
+            try:
+                if int(st.session_state.get(dk, 0) or 0) > 0:
+                    return True
+            except Exception:
+                pass
+            vv = st.session_state.get(sk, [])
+            if isinstance(vv, list) and len(vv) > 0:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _yami_state_default() -> dict:
     return {"profiles": {}}
 
@@ -3912,6 +4062,23 @@ Dor articular pontiaguda = troca variação no dia.
     if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
         ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
         pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
+        # AUTO-RESTORE: em mobile o browser pode suspender e a sessão do Streamlit recomeça (session_state limpa).
+        # Se houver snapshot recente para este perfil/dia/plano/semana, restaura progresso e séries pendentes.
+        try:
+            _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+            _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+            if not _pure_has_any_progress(perfil_sel, dia, len(cfg.get('exercicios', []))):
+                _payload = load_inprogress_session(_ip_key)
+                if isinstance(_payload, dict):
+                    _apply_inprogress_payload(_payload, perfil_sel, dia, pure_nav_key)
+                    try:
+                        st.toast("Sessão restaurada ✅")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
         if pure_nav_key not in st.session_state:
             st.session_state[pure_nav_key] = 0
         max_idx = max(0, len(ex_names)-1)
@@ -3921,52 +4088,6 @@ Dor articular pontiaguda = troca variação no dia.
             st.session_state[pure_nav_key] = 0
         st.session_state[pure_nav_key] = max(0, min(max_idx, st.session_state[pure_nav_key]))
         pure_idx = int(st.session_state[pure_nav_key])
-
-
-# AUTO-RESTORE inprogress (mobile background can drop Streamlit session)
-_date_iso = _inprogress_today_key_date()
-_ip_key = _make_inprogress_key(perfil_sel, str(st.session_state.get('plano_id_sel','Base')), dia, int(semana), _date_iso)
-if not _pt_has_any_progress(perfil_sel, dia, len(cfg.get("exercicios", []))):
-    _store = _load_inprogress_store()
-    _snap = _store.get(str(_ip_key))
-    if isinstance(_snap, dict) and isinstance(_snap.get("ex"), dict):
-        try:
-            # restore index
-            st.session_state[pure_nav_key] = int(_snap.get("pt_idx", 0) or 0)
-        except Exception:
-            st.session_state[pure_nav_key] = 0
-        # restore per-exercise state
-        for _k, _v in _snap.get("ex", {}).items():
-            try:
-                _ix = int(_k)
-            except Exception:
-                continue
-            if not isinstance(_v, dict):
-                continue
-            _sk = f"pt_sets::{perfil_sel}::{dia}::{_ix}"
-            _dk = f"pt_done::{perfil_sel}::{dia}::{_ix}"
-            _sets = _v.get("sets", [])
-            if isinstance(_sets, list):
-                st.session_state[_sk] = _sets
-            try:
-                st.session_state[_dk] = int(_v.get("done", 0) or 0)
-            except Exception:
-                pass
-        # restore queued rest info (optional)
-        try:
-            _ra = _snap.get("rest_auto", {})
-            if isinstance(_ra, dict):
-                for _rk, _rv in _ra.items():
-                    st.session_state[_rk] = _rv
-        except Exception:
-            pass
-        try:
-            st.toast("Sessão restaurada ✅")
-        except Exception:
-            pass
-        # update local vars after restore
-        pure_idx = int(st.session_state.get(pure_nav_key, 0) or 0)
-
 
         def _set_pure_idx(_ix:int):
             _ix = max(0, min(max_idx, int(_ix)))
@@ -4287,9 +4408,11 @@ if not _pt_has_any_progress(perfil_sel, dia, len(cfg.get("exercicios", []))):
                         if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
                             st.session_state[series_key] = []
                             st.session_state[done_key] = 0
+                            # snapshot (para não perder estado em mobile)
                             try:
-                                _ip_key = _make_inprogress_key(perfil_sel, str(st.session_state.get('plano_id_sel','Base')), dia, int(semana), _inprogress_today_key_date())
-                                _payload = _build_inprogress_payload(perfil_sel, dia, str(st.session_state.get('plano_id_sel','Base')), int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
                                 save_inprogress_session(_ip_key, _payload)
                             except Exception:
                                 pass
@@ -4351,10 +4474,11 @@ if not _pt_has_any_progress(perfil_sel, dia, len(cfg.get("exercicios", []))):
                                 st.session_state[series_key] = novos_sets
                                 st.session_state[f"rest_{i}"] = int(item["descanso_s"])
 
-                                # persist in-progress snapshot
+                                # snapshot (para não perder estado em mobile)
                                 try:
-                                    _ip_key = _make_inprogress_key(perfil_sel, str(st.session_state.get('plano_id_sel','Base')), dia, int(semana), _inprogress_today_key_date())
-                                    _payload = _build_inprogress_payload(perfil_sel, dia, str(st.session_state.get('plano_id_sel','Base')), int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                    _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                    _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
                                     save_inprogress_session(_ip_key, _payload)
                                 except Exception:
                                     pass
@@ -4367,19 +4491,25 @@ if not _pt_has_any_progress(perfil_sel, dia, len(cfg.get("exercicios", []))):
                                             st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                         except Exception:
                                             pass
-                                        # if finished whole session, clear in-progress snapshot
-                                        try:
-                                            if is_last_ex:
-                                                _ip_key = _make_inprogress_key(perfil_sel, str(st.session_state.get('plano_id_sel','Base')), dia, int(semana), _inprogress_today_key_date())
-                                                clear_inprogress_session(_ip_key)
-                                        except Exception:
-                                            pass
                                         if is_last_ex:
                                             st.session_state["session_finished_flash"] = True
                                             st.success("Último exercício guardado. Treino pronto ✅")
                                         else:
                                             _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                             st.success("Exercício guardado. A seguir…")
+                                        
+                                        # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
+                                        try:
+                                            _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                            _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                            if is_last_ex:
+                                                clear_inprogress_session(_ip_key)
+                                            else:
+                                                _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                                save_inprogress_session(_ip_key, _payload)
+                                        except Exception:
+                                            pass
+
                                         time.sleep(0.35)
                                         st.rerun()
                                 else:
@@ -4437,19 +4567,25 @@ if not _pt_has_any_progress(perfil_sel, dia, len(cfg.get("exercicios", []))):
                                 except Exception:
                                     pass
                                 is_last_ex2 = (i == len(cfg["exercicios"]) - 1)
-                                # if finished whole session, clear in-progress snapshot
-                                try:
-                                    if is_last_ex2:
-                                        _ip_key = _make_inprogress_key(perfil_sel, str(st.session_state.get('plano_id_sel','Base')), dia, int(semana), _inprogress_today_key_date())
-                                        clear_inprogress_session(_ip_key)
-                                except Exception:
-                                    pass
                                 if is_last_ex2:
                                     st.session_state["session_finished_flash"] = True
                                     st.success("Último exercício guardado. Treino pronto ✅")
                                 else:
                                     _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                     st.success("Exercício guardado. A seguir…")
+                                
+                                # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
+                                try:
+                                    _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                    if is_last_ex2:
+                                        clear_inprogress_session(_ip_key)
+                                    else:
+                                        _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                        save_inprogress_session(_ip_key, _payload)
+                                except Exception:
+                                    pass
+
                                 time.sleep(0.35)
                                 st.rerun()
 
