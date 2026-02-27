@@ -4462,12 +4462,43 @@ Dor articular pontiaguda = troca variação no dia.
 
                             is_last = (s == total_series - 1)
                             is_last_ex = (i == len(cfg["exercicios"]) - 1)
-                            if is_last and is_last_ex:
-                                btn_label = "Guardar última série + terminar"
-                            elif is_last:
-                                btn_label = "Guardar última série + avançar"
+                            if not is_last:
+                                btn_label = "Próxima série"
+                                _btn_kind = "series"
+                            elif not is_last_ex:
+                                btn_label = "Próximo exercício"
+                                _btn_kind = "exercise"
                             else:
-                                btn_label = "Guardar série + descanso"
+                                btn_label = "🏁 Terminar treino"
+                                _btn_kind = "finish"
+                            
+                            # estilo do botão (cores por contexto)
+                            try:
+                                if _btn_kind == "series":
+                                    _bg, _fg, _bd = "#0B3D2E", "#FFFFFF", "#0B3D2E"
+                                    _hover_css = "filter: brightness(1.08);"
+                                elif _btn_kind == "exercise":
+                                    _bg, _fg, _bd = "#5B2B82", "#FFFFFF", "#5B2B82"
+                                    _hover_css = "filter: brightness(1.08);"
+                                else:
+                                    _bg, _fg, _bd = "transparent", "#FF3B30", "#FF3B30"
+                                    _hover_css = "background-color: rgba(255, 59, 48, 0.10);"
+                                st.markdown(f"""
+                                <style>
+                                div[data-testid=\"stMarkdownContainer\"]:has(span.bc-nextbtn-marker) + div[data-testid=\"stFormSubmitButton\"] button {
+                                    background-color: {_bg} !important;
+                                    color: {_fg} !important;
+                                    border: 1px solid {_bd} !important;
+                                }
+                                div[data-testid=\"stMarkdownContainer\"]:has(span.bc-nextbtn-marker) + div[data-testid=\"stFormSubmitButton\"] button:hover {
+                                    {_hover_css}
+                                }
+                                </style>
+                                <span class=\"bc-nextbtn-marker\"></span>
+                                """, unsafe_allow_html=True)
+                            except Exception:
+                                pass
+                            
                             submitted = st.form_submit_button(btn_label, width='stretch')
                             if submitted:
                                 novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
@@ -4785,12 +4816,83 @@ Dor articular pontiaguda = troca variação no dia.
                 pass
 
 
-        _finish_label = "✅ Terminar treino" if not _all_done else "✅ Terminar treino (concluído)"
-        if st.button(_finish_label, type="primary"):
+        _finish_label = "🏁 Terminar treino" if not _all_done else "🏁 Terminar treino (concluído)"
+        
+        # estilo: Terminar treino (vermelho)
+        try:
+            st.markdown("""
+            <style>
+            div[data-testid=\"stMarkdownContainer\"]:has(span.bc-finishbtn-marker) + div[data-testid=\"stButton\"] button {
+                background-color: transparent !important;
+                color: #FF3B30 !important;
+                border: 1px solid #FF3B30 !important;
+            }
+            div[data-testid=\"stMarkdownContainer\"]:has(span.bc-finishbtn-marker) + div[data-testid=\"stButton\"] button:hover {
+                background-color: rgba(255, 59, 48, 0.10) !important;
+            }
+            </style>
+            <span class=\"bc-finishbtn-marker\"></span>
+            """, unsafe_allow_html=True)
+        except Exception:
+            pass
+
+        if st.button(_finish_label):
             st.balloons()
             time.sleep(1.2)
             st.rerun()
 
+        st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+        st.markdown("---")
+        _rst_flag = f"reset_treino_confirm::{perfil_sel}::{dia}"
+        if not bool(st.session_state.get(_rst_flag, False)):
+            if st.button("🧨 Reset treino", key=f"reset_treino_btn::{perfil_sel}::{dia}", width='stretch'):
+                st.session_state[_rst_flag] = True
+                st.rerun()
+        else:
+            st.warning("Isto vai reiniciar o progresso do treino atual (volta a 0/7).")
+            cr1, cr2 = st.columns(2)
+            if cr1.button("✅ Confirmar reset", key=f"reset_treino_yes::{perfil_sel}::{dia}", width='stretch'):
+                # parar descanso automático (se estiver a correr)
+                st.session_state["rest_auto_run"] = False
+                # limpar progresso do treino em memória
+                try:
+                    _nex = len(cfg.get("exercicios", []))
+                except Exception:
+                    _nex = 0
+                for _ix in range(int(_nex)):
+                    for _k in [f"pt_done::{perfil_sel}::{dia}::{_ix}", f"pt_sets::{perfil_sel}::{dia}::{_ix}", f"rest_{_ix}"]:
+                        if _k in st.session_state:
+                            del st.session_state[_k]
+                # limpar inputs (peso/reps/rir) para não reaparecerem valores antigos
+                try:
+                    for _k in list(st.session_state.keys()):
+                        if re.match(r"^(peso|reps|rir)_\d+_\d+$", str(_k)):
+                            del st.session_state[_k]
+                except Exception:
+                    pass
+                # voltar ao 1º exercício
+                try:
+                    _set_pure_idx(0)
+                except Exception:
+                    try:
+                        st.session_state.pop(f"pure_idx::{pure_nav_key}", None)
+                    except Exception:
+                        pass
+                # apagar snapshot persistido (mobile restore)
+                try:
+                    _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                    clear_inprogress_session(_ip_key)
+                except Exception:
+                    pass
+                st.session_state[_rst_flag] = False
+                st.toast("Treino reiniciado.")
+                time.sleep(0.25)
+                st.rerun()
+            if cr2.button("Cancelar", key=f"reset_treino_no::{perfil_sel}::{dia}", width='stretch'):
+                st.session_state[_rst_flag] = False
+                st.rerun()
+        
 with tab_historico:
     st.header("Histórico do perfil 📊")
 
