@@ -59,7 +59,7 @@ st.components.v1.html("""
 
     // Re-acquire when returning to the app.
     document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityEstado === 'visible') await acquire();
+      if (document.visibilityState === 'visible') await acquire();
     });
 
     // If the lock is released by the system, try to re-acquire on next gesture.
@@ -2244,7 +2244,7 @@ def yami_pick_weight_optimized(
     except Exception:
         is_lower = False
     try:
-        is_comp = str(item.get("tipo", "")).lower() == "composto"
+        is_comp = _yami_is_composto(ex, item)
     except Exception:
         is_comp = True
     if is_lower and is_comp:
@@ -3098,21 +3098,80 @@ def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_
     return True
 
 
-def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
-    """Incrementos típicos (subir/descer) para ajustes intra-sessão."""
+
+def _yami_is_composto(ex: str, item: dict) -> bool:
+    """Heurística para classificar composto vs isolador quando o plano não traz 'tipo'.
+
+    Regras:
+    - se item['tipo'] contém 'comp' -> composto
+    - se contém 'isol'/'acess' -> isolador
+    - fallback por palavras-chave no nome do exercício
+    """
+    try:
+        tipo = str(item.get("tipo", "") or "").strip().lower()
+    except Exception:
+        tipo = ""
+    if "comp" in tipo:
+        return True
+    if "isol" in tipo or "acess" in tipo:
+        return False
+
+    exl = str(ex or "").lower()
+
+    comp_kw = [
+        "supino", "bench", "press", "agach", "squat", "terra", "deadlift", "rdl",
+        "remada", "row", "barra fixa", "pull-up", "pull up", "chin", "dip",
+        "lunge", "leg press", "hack", "hip thrust", "clean", "snatch",
+        "overhead", "military", "puxada", "pull", "push"
+    ]
+    iso_kw = [
+        "curl", "bíceps", "biceps", "tríceps", "triceps", "elevação", "elevacao",
+        "extensão", "extensao", "fly", "crucif", "panturr", "géme", "geme",
+        "abdu", "addu", "face pull", "pullover", "pushdown", "kickback",
+        "peck deck", "leg extension", "leg curl", "machine fly"
+    ]
+
+    if any(k in exl for k in comp_kw):
+        return True
+    if any(k in exl for k in iso_kw):
+        return False
+
+    # fallback: se for lower-body, assume composto (tende a ser)
+    try:
+        if _is_lower_exercise(ex):
+            return True
+    except Exception:
+        pass
+
+    # último fallback: mais seguro assumir composto (evita micro-incrementos ridículos)
+    return True
+
+
+def _yami_peso_granularidade(ex: str, item: dict) -> float:
+    """Granularidade realista de incrementos, para evitar sugestões tipo +0.5kg em barra."""
     try:
         is_lower = _is_lower_exercise(ex)
     except Exception:
         is_lower = False
-    try:
-        is_comp = str(item.get("tipo", "")).lower() == "composto"
-    except Exception:
-        is_comp = True
+    is_comp = _yami_is_composto(ex, item)
+
     if is_lower and is_comp:
-        return 5.0, 5.0
+        return 5.0
     if is_comp:
-        return 2.5, 2.5
-    return 1.0, 1.0
+        return 2.5
+    return 1.0
+
+
+def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
+    """Incrementos típicos (subir/descer) para ajustes intra-sessão.
+
+    Nota: respeita a granularidade realista (ex.: barra -> 2.5kg, lower composto -> 5kg),
+    para não sugerir coisas impraticáveis tipo +0.5kg.
+    """
+    gran = _yami_peso_granularidade(ex, item)
+    return float(gran), float(gran)
+
+
 
 
 def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last: pd.DataFrame | None = None) -> list[float]:
@@ -3245,7 +3304,7 @@ def _yami_suggest_weight_for_series(
     except Exception:
         is_lower = False
     try:
-        is_comp = str(item.get("tipo", "")).lower() == "composto"
+        is_comp = _yami_is_composto(ex, item)
     except Exception:
         is_comp = True
 
@@ -3308,14 +3367,8 @@ def _yami_suggest_weight_for_series(
     # ajuste fino por desvio de RIR
     delta_rir = float(last_rir) - float(rir_target_num)
 
-    # micro-steps (mais sensível)
-    # micro-passos por tipo (para sugestões mais sensíveis)
-    if is_lower and is_comp:
-        inc_micro = 2.5
-    elif is_comp:
-        inc_micro = 1.0
-    else:
-        inc_micro = 0.5
+    # micro-steps (respeita a granularidade real)
+    inc_micro = _yami_peso_granularidade(ex, item)
 
 
     # "aquecimento disfarçado" (muitas reps acima do alvo) -> sobe micro
@@ -3378,7 +3431,8 @@ def _yami_suggest_weight_for_series(
     except Exception:
         pass
 
-    return float(_round_to_nearest(sug, 0.5))
+    gran = _yami_peso_granularidade(ex, item)
+    return float(_round_to_nearest(sug, gran))
 
 
 
@@ -4123,7 +4177,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     score = 0.0
 
     if deload_now:
-        p_sug = max(0.0, _round_to_nearest(p_atual * 0.88, 0.5))
+        p_sug = max(0.0, _round_to_nearest(p_atual * 0.88, gran))
         delta = p_sug - p_atual
         reasons += [
             'Semana de deload detetada neste plano.',
@@ -4243,48 +4297,48 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     # Decisão final (mais granular + micro-ajustes)
     # Ideia: quando o sinal é "pequeno mas real", mexer pouco (microloading) em vez de só 0/+inc_up.
     try:
-        inc_micro = max(0.5, float(inc_up) / 2.0)
+        inc_micro = max(gran, float(inc_up) / 2.0)
     except Exception:
-        inc_micro = 0.5
+        inc_micro = gran
 
     if score >= 2.25:
         acao = f"+{_fmt_inc(inc_up)}kg"
-        p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
+        p_sug = _round_to_nearest(p_atual + inc_up, gran)
         resumo = 'Boa execução. Vamos subir — sem pressa, mas sem medo.'
     elif score >= 0.6:
         acao = f"+{_fmt_inc(inc_micro)}kg"
-        p_sug = _round_to_nearest(p_atual + inc_micro, 0.5)
+        p_sug = _round_to_nearest(p_atual + inc_micro, gran)
         resumo = 'Margem pequena, mas real. Sobe micro e mantém a técnica limpa.'
     elif score <= -2.25:
         acao = f"Baixa {_fmt_inc(inc_down)}kg"
-        p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
+        p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, gran))
         resumo = 'Isto está pesado para o alvo de hoje. Regride um passo e volta a construir.'
     elif score <= -0.6:
         # micro-regressão (mais frequente em isoladores; em compostos tende a "manter" antes de baixar)
         if is_comp and score > -1.0:
             acao = 'Mantém carga'
-            p_sug = _round_to_nearest(p_atual, 0.5)
+            p_sug = _round_to_nearest(p_atual, gran)
             resumo = 'Está a apertar. Mantém e garante reps limpas.'
         else:
             acao = f"Baixa {_fmt_inc(inc_micro)}kg"
-            p_sug = max(0.0, _round_to_nearest(p_atual - inc_micro, 0.5))
+            p_sug = max(0.0, _round_to_nearest(p_atual - inc_micro, gran))
             resumo = 'Baixa micro para bater reps/RIR com técnica.'
     else:
         acao = 'Mantém carga'
-        p_sug = _round_to_nearest(p_atual, 0.5)
+        p_sug = _round_to_nearest(p_atual, gran)
         resumo = 'Consolida. Ainda não há sinal limpo para mexer na carga.'
 
     # Ajuste por prontidão e deload recomendado
     try:
         if deload_force:
             acao = "DELOAD recomendado (-10%)"
-            p_sug = max(0.0, _round_to_nearest(p_atual * 0.90, 0.5))
+            p_sug = max(0.0, _round_to_nearest(p_atual * 0.90, gran))
             resumo = 'Fadiga alta. Deload curto para voltares a subir com qualidade.'
         else:
             # prontidão: pode "puxar" ligeiramente a carga sugerida
             if abs(float(read_adj_pct)) > 1e-9:
                 _pre = float(p_sug)
-                _adj = float(_round_to_nearest(float(p_sug) * (1.0 + float(read_adj_pct)), 0.5))
+                _adj = float(_round_to_nearest(float(p_sug) * (1.0 + float(read_adj_pct)), gran))
                 # em dias maus, não deixar subir só por score; em dias bons, permitir micro
                 if float(read_adj_pct) < 0:
                     p_sug = min(float(p_sug), float(_adj))
@@ -4294,7 +4348,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
                 _d2 = float(p_sug) - float(p_atual)
                 if abs(_d2) < 0.25:
                     acao = "Mantém carga"
-                    p_sug = float(_round_to_nearest(p_atual, 0.5))
+                    p_sug = float(_round_to_nearest(p_atual, gran))
                 elif _d2 > 0:
                     acao = f"+{_fmt_inc(_d2)}kg"
                 else:
@@ -4320,7 +4374,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             seq = list(rep_info.get("expected") or [])
             target_reps = int(seq[-1]) if seq else int(reps_media or 0)
         elif low > 0 and high > 0:
-            target_reps = int(high if hit_top_all else round((low + high) / 2))
+            target_reps = int(high)
         elif low > 0:
             target_reps = int(low)
         else:
@@ -4331,7 +4385,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         p_ai = 0.0
         if mu > 0:
             p_ai = float(mu) / (1.0 + (min(15.0, reps_to_fail_target) / 30.0))
-            p_ai = float(_round_to_nearest(p_ai, 0.5))
+            p_ai = float(_round_to_nearest(p_ai, gran))
 
         # probabilidade aproximada de bater o alvo (assumindo normal em e1RM)
         prob_hit = None
@@ -4347,20 +4401,20 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             arm_ai = "hold"
             if cp_drop <= -0.03:
                 # queda forte: descarrega 5%
-                p_ai = max(0.0, float(_round_to_nearest(p_atual * 0.95, 0.5)))
+                p_ai = max(0.0, float(_round_to_nearest(p_atual * 0.95, gran)))
             elif cp_drop <= -0.015:
-                p_ai = max(0.0, float(_round_to_nearest(p_atual * 0.97, 0.5)))
+                p_ai = max(0.0, float(_round_to_nearest(p_atual * 0.97, gran)))
 
         # mistura depende da incerteza
         # sig baixo + n bom -> confiar mais no modeloo; caso contrário, confiar mais na heurística
         blend = 0.55 if (n_ai >= 4 and sig <= 18.0) else 0.35
         if p_ai <= 0:
             blend = 0.0
-        p_mix = float(_round_to_nearest(((1.0 - blend) * float(p_sug) + blend * float(p_ai)), 0.5))
+        p_mix = float(_round_to_nearest(((1.0 - blend) * float(p_sug) + blend * float(p_ai)), gran))
 
         # aplica a estratégia escolhida
         if arm_ai == "add_rep":
-            p_mix = float(_round_to_nearest(p_atual, 0.5))
+            p_mix = float(_round_to_nearest(p_atual, gran))
             acao = "Mantém e soma reps"
             resumo = "Mantém carga e tenta +1 rep (sem trair o tempo)."
         elif arm_ai == "micro_load":
@@ -4369,13 +4423,13 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
                 # se o sinal é bom mas o mix ficou tímido, sobe micro
                 if hit_top_all and (rir_eff is None or float(rir_eff) >= float(rir_alvo_num_) - 0.25) and p_mix <= p_atual + 0.25:
                     micro = 2.5 if (is_lower and is_comp) else (1.0 if is_comp else 0.5)
-                    p_mix = float(_round_to_nearest(p_atual + min(max_inc, micro), 0.5))
+                    p_mix = float(_round_to_nearest(p_atual + min(max_inc, micro), gran))
                 p_mix = min(p_atual + max_inc, p_mix)
             if p_mix > p_atual + 0.25:
                 acao = f"+{_fmt_inc(p_mix - p_atual)}kg"
         else:
             # hold: por defeito não sobe; pode baixar se CP/fadiga
-            p_mix = min(p_mix, float(_round_to_nearest(p_atual, 0.5))) if not (deload_now or deload_force) else p_mix
+            p_mix = min(p_mix, float(_round_to_nearest(p_atual, gran))) if not (deload_now or deload_force) else p_mix
             if p_mix < p_atual - 0.25:
                 acao = f"Baixa {_fmt_inc(p_atual - p_mix)}kg"
                 resumo = "Gestão de fadiga: mantém qualidade e volta a construir."
@@ -4571,7 +4625,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     if deload_now or deload_force or ('DELOAD' in str(acao)):
         scale = min(scale, 0.92)
-    w_work_sug = float(_round_to_nearest(max(0.0, w_work_last * scale), 0.5))
+    w_work_sug = float(_round_to_nearest(max(0.0, w_work_last * scale), gran))
 
     return {
         'acao': acao,
@@ -6171,7 +6225,7 @@ Dor articular pontiaguda = troca variação no dia.
                             )
                             rcol1, rcol2 = st.columns(2)
                             reps = rcol1.number_input(
-                                f"Reps • S{s+1}", min_value=0, value=int(reps_low), step=1, key=f"reps_{i}_{s}"
+                                f"Reps • S{s+1}", min_value=0, value=int(reps_high if reps_high>0 else reps_low), step=1, key=f"reps_{i}_{s}"
                             )
                             rir = rcol2.number_input(
                                 f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
@@ -6346,7 +6400,7 @@ Dor articular pontiaguda = troca variação no dia.
                                                    value=float(peso_sug) if peso_sug>0 else 0.0,
                                                    step=float(kg_step), key=f"peso_{i}_{s}")
                             rcol1, rcol2 = st.columns(2)
-                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_low),
+                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_high if reps_high>0 else reps_low),
                                                       step=1, key=f"reps_{i}_{s}")
                             rir = rcol2.number_input(f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
                                                      value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
