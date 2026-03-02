@@ -2233,6 +2233,7 @@ def yami_pick_weight_optimized(
     pain_risk: float = 0.0,
     week_penalty: float = 0.0,
 ) -> dict:
+    gran = float(_yami_granularidade_peso(ex, item))
     pred = yami_kalman_predict(perfil, ex)
     twin = yami_twin_predict(perfil, ex, base_weight, target_reps, rir_target, rest_s, set_idx, total_sets)
     pref = yami_pref_get(perfil)
@@ -2259,9 +2260,9 @@ def yami_pick_weight_optimized(
     cands = [base + k * step for k in (-2, -1, 0, 1, 2)]
     cands = [max(0.0, c) for c in cands if c > 0]
     # de-dup and round to 0.5
-    cands = sorted({float(_round_to_nearest(c, 0.5)) for c in cands})
+    cands = sorted({float(_round_to_nearest(c, gran)) for c in cands})
     if not cands:
-        cands = [float(_round_to_nearest(base, 0.5))]
+        cands = [float(_round_to_nearest(base, gran))]
 
     best = {"w": float(base), "p": 0.5, "score": -1e9, "why": "base"}
     for w in cands:
@@ -3053,6 +3054,51 @@ def _is_lower_exercise(ex_name: str) -> bool:
     return any(k in ex for k in lower_keys)
 
 
+def _is_composto_exercicio(ex_name: str, item: dict | None = None) -> bool:
+    """Heurística para classificar 'composto' quando o plano não traz 'tipo'."""
+    try:
+        tipo = str((item or {}).get("tipo", "")).strip().lower()
+        if tipo:
+            return tipo == "composto"
+    except Exception:
+        pass
+
+    ex = str(ex_name or "").lower()
+
+    # isoladores/acessórios típicos (evita falsos positivos)
+    isol_keys = [
+        "curl", "extens", "extensão", "extensao", "pushdown", "tríceps", "triceps",
+        "elevação", "elevacao", "lateral", "fly", "crucif", "peck", "kickback",
+        "panturrilha", "calf", "abductor", "adutor", "abdutor", "adutor",
+        "shrug", "face pull", "pullover"
+    ]
+    if any(k in ex for k in isol_keys):
+        return False
+
+    comp_keys = [
+        "supino", "bench", "press", "ohp", "overhead", "agach", "squat",
+        "deadlift", "rdl", "levantamento terra", "remada", "row",
+        "barra fixa", "pull-up", "chin-up", "dips", "leg press", "hack", "belt squat"
+    ]
+    return any(k in ex for k in comp_keys)
+
+
+def _yami_granularidade_peso(ex: str, item: dict | None = None) -> float:
+    """Passo mínimo (kg) para arredondar sugestões de carga, alinhado com o equipamento real."""
+    try:
+        tipo = str((item or {}).get("tipo", "")).strip().lower()
+    except Exception:
+        tipo = ""
+
+    is_lower = _is_lower_exercise(ex)
+    is_comp = (tipo == "composto") if tipo else _is_composto_exercicio(ex, item)
+
+    if is_lower and is_comp:
+        return 5.0
+    if is_comp:
+        return 2.5
+    return 1.0
+
 def _rep_low_from_text(rep_str: str) -> int:
     s = str(rep_str).strip()
     nums = re.findall(r"\d+(?:[\.,]\d+)?", s)
@@ -3175,12 +3221,15 @@ def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
 
 
 def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last: pd.DataFrame | None = None) -> list[float]:
+    gran = float(_yami_granularidade_peso(ex, item))
     """Gera um perfil de peso por série.
 
     - Se houver último treino com pesos por série, reaproveita as proporções (p.ex. 15/12/10/8 tende a subir).
     - Se for sequência fixa (15/12/10/8) sem histórico por série, estima uma progressão leve.
     - Caso contrário, mantém constante (o ajuste fino fica para a regra intra-sessão).
     """
+    gran = float(_yami_granularidade_peso(ex, item))
+
     try:
         series_n = int(item.get("series", 0) or 0)
     except Exception:
@@ -3209,7 +3258,7 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 if w_max > 0:
                     padded = list(last_w) + [w_max] * max(0, series_n - len(last_w))
                     ratios = [max(0.20, min(1.05, float(w) / w_max)) for w in padded[:series_n]]
-                    out = [float(_round_to_nearest(base * ratios[s], 0.5)) for s in range(series_n)]
+                    out = [float(_round_to_nearest(base * ratios[s], gran)) for s in range(series_n)]
                     # monotonia não-decrescente (rampa)
                     for j in range(1, len(out)):
                         if out[j] < out[j-1]:
@@ -3238,11 +3287,11 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 mean_mult = 1.0
             base_adj = (base / mean_mult) if mean_mult > 0 else base
 
-            out = [float(_round_to_nearest(base_adj * m, 0.5)) for m in mults]
+            out = [float(_round_to_nearest(base_adj * m, gran)) for m in mults]
             return out
 
     # 3) Default: constante (o ajuste série-a-série vem da performance real)
-    return [float(_round_to_nearest(base, 0.5)) for _ in range(series_n)]
+    return [float(_round_to_nearest(base, gran)) for _ in range(series_n)]
 
 
 def _yami_suggest_weight_for_series(
@@ -4058,6 +4107,10 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         inc_up = inc_down = 2.5
     else:
         inc_up = inc_down = 1.0
+
+
+    # granularidade de arredondamento (passo mínimo de carga) para este exercício
+    gran = float(inc_up)
 
     def _fmt_inc(v: float) -> str:
         return str(int(v)) if float(v).is_integer() else str(v)
