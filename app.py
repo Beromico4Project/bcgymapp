@@ -1375,6 +1375,33 @@ def yami_adjust_rir_target(rir_base: float, item: dict) -> float:
     return float(round(base * 2) / 2.0)
 
 
+def yami_prontidao_latente(perfil: str, ex: str) -> dict:
+    """Estima prontidão sem check-in, a partir dos resíduos recentes do modelo (EWMA).
+    Não é magia: é só detectar se hoje estás acima/abaixo do esperado.
+    Retorna ajustes pequenos (percentuais) para não destabilizar o plano.
+    """
+    try:
+        stt = _yami_state_load()
+        prof = stt.get("profiles", {}).get(str(perfil or "—"), {})
+        model = (prof.get("models", {}) or {}).get(str(ex), {}) or {}
+        zew = float(model.get("resid_z_ewma", 0.0) or 0.0)
+    except Exception:
+        zew = 0.0
+
+    # zew < 0 => desempenho abaixo do esperado (dia "pior"); zew > 0 => acima
+    adj_pct, score_delta, label = 0.0, 0.0, "latente: normal"
+    if zew <= -1.0:
+        adj_pct, score_delta, label = -0.02, -0.20, "latente: baixa"
+    elif zew <= -0.5:
+        adj_pct, score_delta, label = -0.01, -0.10, "latente: média-baixa"
+    elif zew >= 1.0:
+        adj_pct, score_delta, label = +0.01, +0.10, "latente: alta"
+    elif zew >= 0.5:
+        adj_pct, score_delta, label = +0.005, +0.05, "latente: boa"
+
+    return {"adj_load_pct": float(adj_pct), "score_delta": float(score_delta), "label": str(label), "z": float(zew)}
+
+
 
 # =========================================================
 # YAMI IA — nível acima (modeloo + incerteza + multi-braço)
@@ -1538,18 +1565,28 @@ def yami_kalman_update(perfil: str, ex: str, obs: float, obs_var: float, process
         s2 = (1.0 - K) * s2
         # aprende "confiabilidade" do input (RIR/reps variam muito? então aumenta ruído)
         try:
-            z = abs(float(resid)) / math.sqrt(max(1e-9, float(S)))
+            z_signed = float(resid) / math.sqrt(max(1e-9, float(S)))
         except Exception:
-            z = 1.0
-        z = max(0.5, min(3.0, float(z)))
+            z_signed = 0.0
+        z_abs = abs(float(z_signed))
+        z_clip = max(0.5, min(3.0, float(z_abs)))
+
         try:
             mult = float(model.get("obs_mult", 1.0) or 1.0)
         except Exception:
             mult = 1.0
         mult = max(0.5, min(3.0, float(mult)))
-        mult = 0.9 * mult + 0.1 * z
+        mult = 0.9 * mult + 0.1 * z_clip
         mult = max(0.5, min(3.0, float(mult)))
         model["obs_mult"] = float(mult)
+
+        # prontidão latente: EWMA do resíduo normalizado (sinal importa)
+        try:
+            zew = float(model.get("resid_z_ewma", 0.0) or 0.0)
+        except Exception:
+            zew = 0.0
+        zew = 0.85 * float(zew) + 0.15 * max(-3.0, min(3.0, float(z_signed)))
+        model["resid_z_ewma"] = float(zew)
 
     model["mu"] = float(mu)
     model["sigma2"] = float(max(12.0, s2))
@@ -1627,7 +1664,7 @@ def _yami_bandit_pick(perfil: str, ex: str) -> str:
         bb = float(st_arm.get("b", 2) or 2)
         samp = rng.betavariate(max(0.5, a), max(0.5, bb))
         if samp > best_sample:
-            best_sample, best_arm = samp, arm
+            best_sample, best_arm = samp, armrm
 
     _yami_state_save(stt)
     return str(best_arm)
@@ -2199,7 +2236,7 @@ def yami_ctx_bandit_pick(perfil: str, ex: str, ctx: str) -> str:
         bb = float(st_arm.get("b", 2) or 2)
         samp = rng.betavariate(max(0.5, a), max(0.5, bb))
         if samp > best_sample:
-            best_sample, best_arm = samp, arm
+            best_sample, best_arm = samp, armrm
 
     _yami_state_save(stt)
     return str(best_arm)
@@ -2336,7 +2373,7 @@ def yami_week_stats(df_hist: pd.DataFrame, perfil: str) -> dict:
     try:
         if df_hist is None or df_hist.empty:
             return out
-        dfp = df_hist[df_hist["Perfil"] == perfil].copy()
+        dfp = yami_df_limpo_para_yami(df_hist, perfil)
         if dfp.empty:
             return out
         # parse date
@@ -2388,7 +2425,7 @@ def yami_audit_plan(df_hist: pd.DataFrame, perfil: str) -> list:
     try:
         if df_hist is None or df_hist.empty:
             return warnings
-        dfp = df_hist[df_hist["Perfil"] == perfil].copy()
+        dfp = yami_df_limpo_para_yami(df_hist, perfil)
         if dfp.empty:
             return warnings
         dfp["__date"] = pd.to_datetime(dfp["Data"], errors="coerce", dayfirst=True)
@@ -4135,43 +4172,291 @@ def _default_reps_for_set(rep_info: dict, set_index: int, reps_low: int, reps_hi
 
 
 
+
+# =========================================================
+# 🧠 YAMI — HIGIENE/INSPEÇÃO DE DADOS (para decisões estáveis)
+# =========================================================
+
+def _yami_df_signature(df: pd.DataFrame) -> str:
+    """Assinatura leve do DF para cache em sessão (evita recomputar limpeza/diagnóstico)."""
+    try:
+        if df is None or df.empty:
+            return "empty"
+        n = int(len(df))
+        tail = df.tail(1)
+        if tail.empty:
+            return f"n={n}"
+        r = tail.iloc[0].to_dict()
+        core = {
+            "n": n,
+            "Data": str(r.get("Data", "")),
+            "Perfil": str(r.get("Perfil", "")),
+            "Dia": str(r.get("Dia", "")),
+            "Bloco": str(r.get("Bloco", "")),
+            "Plano_ID": str(r.get("Plano_ID", "")),
+            "Exercício": str(r.get("Exercício", "")),
+            "Peso": str(r.get("Peso", "")),
+            "Reps": str(r.get("Reps", "")),
+            "RIR": str(r.get("RIR", "")),
+        }
+        return hashlib.sha256(json.dumps(core, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    except Exception:
+        return "sig_err"
+
+def _yami_cell_to_list(v) -> list:
+    """Converte uma célula (número ou lista em string) numa lista de floats."""
+    try:
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return []
+        if isinstance(v, (int, float)):
+            return [float(v)]
+        s = str(v).strip()
+        if not s:
+            return []
+        # aceita formatos: "70;72.5" | "70, 72.5" | "70/72.5" | "70 72.5"
+        s = s.replace(",", ";").replace("/", ";").replace("|", ";")
+        parts = [p.strip() for p in s.split(";") if p.strip() != ""]
+        out = []
+        for p in parts:
+            p2 = p.replace("kg", "").replace("KG", "").strip()
+            try:
+                out.append(float(p2))
+            except Exception:
+                # tenta extrair número dentro de texto
+                m = re.search(r"(-?\d+(?:\.\d+)?)", p2)
+                if m:
+                    try:
+                        out.append(float(m.group(1)))
+                    except Exception:
+                        pass
+        return out
+    except Exception:
+        return []
+
+def yami_df_limpo_para_yami(df_hist: pd.DataFrame, perfil: str) -> pd.DataFrame:
+    """Limpa (apenas para o Yami) e estabiliza ordenação:
+    - parse de data (dayfirst)
+    - converte Peso/Reps/RIR em numérico (quando possível)
+    - remove linhas obviamente inválidas
+    - dedup por assinatura (evita duplicados por rerun)
+    - mantém uma ordem determinística (data + índice)
+    """
+    try:
+        if df_hist is None or df_hist.empty:
+            return pd.DataFrame(columns=SCHEMA_COLUMNS)
+        if "Perfil" not in df_hist.columns:
+            return df_hist.copy()
+
+        sig = f"{perfil}|{_yami_df_signature(df_hist)}"
+        cache_key = st.session_state.get("_yami_df_clean_key")
+        cache_df = st.session_state.get("_yami_df_clean_df")
+        if cache_key == sig and isinstance(cache_df, pd.DataFrame):
+            return cache_df.copy()
+
+        dfp = df_hist[df_hist["Perfil"].astype(str) == str(perfil)].copy()
+        if dfp.empty:
+            out = dfp
+        else:
+            dfp["__idx"] = list(range(len(dfp)))
+            dfp["__dt"] = pd.to_datetime(dfp.get("Data"), dayfirst=True, errors="coerce")
+            # mantém Data como texto original, mas remove datas inválidas
+            dfp = dfp.dropna(subset=["__dt"])
+
+            # tenta converter Peso/Reps/RIR se forem escalares; se forem listas em string, deixa como string
+            for c in ["Peso", "Reps", "RIR"]:
+                if c in dfp.columns:
+                    # só converte quando parece escalar (não contém separadores típicos)
+                    s = dfp[c].astype(str)
+                    mask_list = s.str.contains(r"[;|/]", regex=True) | s.str.contains(r"\b\d+\s+\d+\b", regex=True)
+                    conv = pd.to_numeric(dfp.loc[~mask_list, c], errors="coerce")
+                    dfp.loc[~mask_list, c] = conv
+
+            # remove sets impossíveis quando temos valores escalares
+            if "Peso" in dfp.columns and "Reps" in dfp.columns:
+                w = pd.to_numeric(dfp["Peso"], errors="coerce")
+                r = pd.to_numeric(dfp["Reps"], errors="coerce")
+                ok = (w.isna() | (w > 0)) & (r.isna() | (r > 0))
+                dfp = dfp[ok]
+
+            # dedup por assinatura das colunas principais (evita duplicados por rerun)
+            sig_cols = [c for c in ["Data","Perfil","Dia","Bloco","Plano_ID","Exercício","Peso","Reps","RIR"] if c in dfp.columns]
+            if sig_cols:
+                dfp["__sig"] = dfp[sig_cols].astype(str).agg("|".join, axis=1)
+                dfp = dfp.sort_values(["__dt", "__idx"], ascending=[True, True])
+                dfp = dfp.drop_duplicates("__sig", keep="last")
+
+            out = dfp.sort_values(["__dt", "__idx"], ascending=[True, True])
+
+        try:
+            st.session_state["_yami_df_clean_key"] = sig
+            st.session_state["_yami_df_clean_df"] = out.copy()
+        except Exception:
+            pass
+        return out.copy()
+    except Exception:
+        return df_hist.copy() if isinstance(df_hist, pd.DataFrame) else pd.DataFrame(columns=SCHEMA_COLUMNS)
+
+def yami_inspecao_geral(df_hist: pd.DataFrame, perfil: str) -> dict:
+    """Inspeção geral dos dados (não altera a sheet). Devolve contagens e problemas prováveis."""
+    out = {
+        "perfil": str(perfil),
+        "linhas": 0,
+        "datas_unicas": 0,
+        "exercicios_unicos": 0,
+        "datas_invalidas": 0,
+        "faltas_peso": 0,
+        "faltas_reps": 0,
+        "faltas_rir": 0,
+        "rir_fora": 0,
+        "reps_fora": 0,
+        "peso_fora": 0,
+        "duplicados": 0,
+        "problemas": [],
+    }
+    try:
+        if df_hist is None or df_hist.empty:
+            out["problemas"].append("Sem dados na sheet (ou falha de leitura).")
+            return out
+        if "Perfil" not in df_hist.columns:
+            out["problemas"].append("Coluna 'Perfil' não existe. Schema inesperado.")
+            return out
+
+        dfp = df_hist[df_hist["Perfil"].astype(str) == str(perfil)].copy()
+        out["linhas"] = int(len(dfp))
+        if dfp.empty:
+            out["problemas"].append("Sem linhas para este perfil.")
+            return out
+
+        dt = pd.to_datetime(dfp.get("Data"), dayfirst=True, errors="coerce")
+        out["datas_invalidas"] = int(dt.isna().sum())
+        dfp["__dt"] = dt
+        out["datas_unicas"] = int(dfp["__dt"].dropna().dt.date.nunique())
+
+        if "Exercício" in dfp.columns:
+            out["exercicios_unicos"] = int(dfp["Exercício"].astype(str).nunique())
+
+        # faltas
+        if "Peso" in dfp.columns:
+            out["faltas_peso"] = int(dfp["Peso"].isna().sum())
+        if "Reps" in dfp.columns:
+            out["faltas_reps"] = int(dfp["Reps"].isna().sum())
+        if "RIR" in dfp.columns:
+            out["faltas_rir"] = int(dfp["RIR"].isna().sum())
+
+        # fora de gama (apenas quando são escalares)
+        w = pd.to_numeric(dfp["Peso"], errors="coerce") if "Peso" in dfp.columns else pd.Series(dtype=float)
+        r = pd.to_numeric(dfp["Reps"], errors="coerce") if "Reps" in dfp.columns else pd.Series(dtype=float)
+        rir = pd.to_numeric(dfp["RIR"], errors="coerce") if "RIR" in dfp.columns else pd.Series(dtype=float)
+
+        if not w.empty:
+            out["peso_fora"] = int(((w > 400) | (w < 0)).sum())  # 400kg já é o suficiente para acusar outlier
+        if not r.empty:
+            out["reps_fora"] = int(((r > 50) | (r < 0)).sum())
+        if not rir.empty:
+            out["rir_fora"] = int(((rir > 10) | (rir < 0)).sum())
+
+        # duplicados prováveis
+        sig_cols = [c for c in ["Data","Perfil","Dia","Bloco","Plano_ID","Exercício","Peso","Reps","RIR"] if c in dfp.columns]
+        if sig_cols:
+            sigs = dfp[sig_cols].astype(str).agg("|".join, axis=1)
+            out["duplicados"] = int(sigs.duplicated().sum())
+
+        # problemas resumidos
+        if out["datas_invalidas"] > 0:
+            out["problemas"].append(f"{out['datas_invalidas']} linhas com 'Data' inválida (formato estranho).")
+        if out["duplicados"] > 0:
+            out["problemas"].append(f"{out['duplicados']} duplicados prováveis (pode acontecer em reruns).")
+        if out["rir_fora"] > 0:
+            out["problemas"].append(f"{out['rir_fora']} linhas com RIR fora de 0–10.")
+        if out["reps_fora"] > 0:
+            out["problemas"].append(f"{out['reps_fora']} linhas com reps fora do normal (0–50).")
+        if out["peso_fora"] > 0:
+            out["problemas"].append(f"{out['peso_fora']} linhas com peso fora do normal (<0 ou >400).")
+        return out
+    except Exception:
+        out["problemas"].append("Falha ao analisar os dados (erro interno).")
+        return out
+
+
 def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list:
+    """Resumo por sessão/dia para um exercício.
+    Nota: a sheet tem 1 linha por set (schema atual), mas suportamos legado com listas na célula.
+    Para o Yami, o que interessa é agrupar sets do mesmo dia (e plano) para evitar "histórico por set"
+    que deixa as sugestões instáveis.
+    """
     if df is None or getattr(df, 'empty', True):
         return []
-    d = df.copy()
-    if 'Perfil' not in d.columns or 'Exercício' not in d.columns:
+    if 'Perfil' not in df.columns or 'Exercício' not in df.columns:
         return []
-    d = d[(d['Perfil'].astype(str) == str(perfil)) & (d['Exercício'].astype(str) == str(ex))].copy()
+
+    # limpeza + ordenação determinística (só para o Yami)
+    d0 = yami_df_limpo_para_yami(df, perfil)
+    if d0 is None or getattr(d0, 'empty', True):
+        return []
+
+    d = d0[d0['Exercício'].astype(str) == str(ex)].copy()
     if d.empty:
         return []
-    d['_dt'] = pd.to_datetime(d.get('Data'), dayfirst=True, errors='coerce')
-    d = d.sort_values('_dt', ascending=False, na_position='last')
+
+    # chaves de sessão (a melhor proxy sem timestamp)
+    group_cols = [c for c in ['Data', 'Plano_ID', 'Dia', 'Bloco'] if c in d.columns]
+    if not group_cols:
+        group_cols = ['Data']
+
+    # garante __dt e __idx
+    if "__dt" not in d.columns:
+        d["__dt"] = pd.to_datetime(d.get('Data'), dayfirst=True, errors='coerce')
+    if "__idx" not in d.columns:
+        d["__idx"] = list(range(len(d)))
 
     out = []
-    for _, row in d.iterrows():
-        pesos = [float(x) for x in _parse_num_list(row.get('Peso')) if x is not None]
-        reps = [float(x) for x in _parse_num_list(row.get('Reps')) if x is not None]
-        rirs = [float(x) for x in _parse_num_list(row.get('RIR')) if x is not None]
-        n_sets = max(len(pesos), len(reps), len(rirs))
+    # agrupa por sessão e agrega sets
+    for gkey, g in d.groupby(group_cols, dropna=False):
+        try:
+            g = g.sort_values("__idx", ascending=True)
+        except Exception:
+            pass
+
+        pesos, reps, rirs = [], [], []
+        for _, row in g.iterrows():
+            pesos += _yami_cell_to_list(row.get('Peso'))
+            reps += _yami_cell_to_list(row.get('Reps'))
+            rirs += _yami_cell_to_list(row.get('RIR'))
+
+        # normaliza: reps como int quando possível
+        reps_num = [x for x in reps if x is not None and not (isinstance(x, float) and pd.isna(x))]
+        rirs_num = [x for x in rirs if x is not None and not (isinstance(x, float) and pd.isna(x))]
+        pesos_num = [x for x in pesos if x is not None and not (isinstance(x, float) and pd.isna(x))]
+
+        n_sets = max(len(pesos_num), len(reps_num), len(rirs_num))
         if n_sets <= 0:
             continue
-        reps_num = [r for r in reps if pd.notna(r)]
-        rirs_num = [r for r in rirs if pd.notna(r)]
-        pesos_num = [w for w in pesos if pd.notna(w)]
+
+        dt = None
+        try:
+            dt = g["__dt"].max()
+        except Exception:
+            dt = None
+
         out.append({
-            'data': row.get('Data', '—'),
-            'dt': row.get('_dt'),
+            'data': str(g.iloc[0].get('Data', '—')),
+            'dt': dt,
             'peso_medio': float(sum(pesos_num)/len(pesos_num)) if pesos_num else 0.0,
             'reps_media': float(sum(reps_num)/len(reps_num)) if reps_num else 0.0,
             'reps_min': int(min(reps_num)) if reps_num else 0,
             'reps_max': int(max(reps_num)) if reps_num else 0,
             'rirs_media': float(sum(rirs_num)/len(rirs_num)) if rirs_num else None,
             'n_sets': int(n_sets),
-            'pesos': pesos_num,
-            'reps': [int(round(x)) for x in reps_num],
-            'rirs': rirs_num,
+            'pesos': [float(x) for x in pesos_num],
+            'reps': [int(round(float(x))) for x in reps_num],
+            'rirs': [float(x) for x in rirs_num],
+            'sess_key': str(gkey),
         })
+
+    out = sorted(out, key=lambda x: (x.get('dt') is not None, x.get('dt')), reverse=True)
     return out
+
+
 
 
 def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict, bloco: str, semana: int, plano_id: str) -> dict:
@@ -4189,6 +4474,39 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         read_label = str(read.get('label', 'Normal') or 'Normal')
     except Exception:
         read_score_delta, read_adj_pct, read_label = 0.0, 0.0, 'Normal'
+
+    # prontidão latente (automática) + sinais do corpo (dor) influenciam decisões
+    pain_bucket = int(st.session_state.get("yami_pain_bucket", 0) or 0)
+    pain_flags = st.session_state.get("yami_pain_flags", {}) or {}
+
+    lat = yami_prontidao_latente(perfil, ex)
+    lat_adj = float(lat.get("adj_load_pct", 0.0) or 0.0)
+    lat_score = float(lat.get("score_delta", 0.0) or 0.0)
+    lat_label = str(lat.get("label", "latente: normal") or "latente: normal")
+
+    # dor: ajuste pequeno, mas real (não é para te “punir”; é para não agravar)
+    pain_adj = 0.0
+    pain_score = 0.0
+    if pain_bucket == 1:
+        pain_adj = -0.02
+        pain_score = -0.20
+    elif pain_bucket >= 2:
+        pain_adj = -0.04
+        pain_score = -0.35
+
+    # combina (check-in + latente + dor)
+    read_adj_pct = float(read_adj_pct) + float(lat_adj) + float(pain_adj)
+    read_score_delta = float(read_score_delta) + float(lat_score) + float(pain_score)
+
+    # etiqueta para aparecer no “porquê”
+    _bits_lbl = []
+    if lat_label and "normal" not in lat_label:
+        _bits_lbl.append(lat_label)
+    if pain_bucket > 0:
+        _bits_lbl.append("sinais do corpo")
+    if _bits_lbl:
+        read_label = f"{read_label} · " + " · ".join(_bits_lbl)
+
 
 
     hist = _historico_resumos_exercicio(df_hist, perfil, ex)
@@ -4232,7 +4550,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         if latest:
             _ = yami_sync_model_from_history(perfil, ex, latest, prev)
         pred_ai = yami_kalman_predict(perfil, ex)
-        ctx_key = yami_context_key(perfil, bloco, pain_bucket=0)
+        ctx_key = yami_context_key(perfil, bloco, pain_bucket=pain_bucket)
         arm_ai = yami_ctx_bandit_pick(perfil, ex, ctx_key)
         changep = yami_detect_changepoint(perfil, ex)
     except Exception:
@@ -4555,6 +4873,17 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     try:
         mu = float(pred_ai.get("mu", 0) or 0)
         sig = float(pred_ai.get("sigma", 999.0) or 999.0)
+
+        # prontidão (check-in + latente + sinais do corpo) ajusta a estimativa do dia
+        try:
+            mu = float(mu) * (1.0 + float(read_adj_pct))
+        except Exception:
+            pass
+        try:
+            if int(pain_bucket) > 0:
+                sig = float(sig) * (1.0 + 0.25 * float(pain_bucket))
+        except Exception:
+            pass
         n_ai = int(pred_ai.get("n", 0) or 0)
         pat = str(pred_ai.get("pattern", "") or "")
         cp_flag = bool(changep.get("flag", False))
@@ -4614,7 +4943,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
                 max_inc = float(inc_up)
                 # se o sinal é bom mas o mix ficou tímido, sobe micro
                 if hit_top_all and (rir_eff is None or float(rir_eff) >= float(rir_alvo_num_) - 0.25) and p_mix <= p_atual + 0.25:
-                    micro = 2.5 if (is_lower and is_comp) else (1.0 if is_comp else 0.5)
+                    micro = float(gran)
                     p_mix = float(_round_to_nearest(p_atual + min(max_inc, micro), gran))
                 p_mix = min(p_atual + max_inc, p_mix)
             if p_mix > p_atual + 0.25:
@@ -4625,6 +4954,22 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             if p_mix < p_atual - 0.25:
                 acao = f"Baixa {_fmt_inc(p_atual - p_mix)}kg"
                 resumo = "Gestão de fadiga: mantém qualidade e volta a construir."
+
+        # aplicar prontidão (check-in + latente + sinais do corpo) também ao mix final da IA
+        try:
+            if abs(float(read_adj_pct)) > 1e-9:
+                _pre_mix = float(p_mix)
+                _adj_mix = float(_round_to_nearest(float(p_mix) * (1.0 + float(read_adj_pct)), gran))
+                if float(read_adj_pct) < 0:
+                    p_mix = min(float(p_mix), float(_adj_mix))
+                elif float(read_adj_pct) > 0:
+                    p_mix = max(float(p_mix), float(_adj_mix))
+
+                if abs(float(p_mix) - float(_pre_mix)) >= (0.5 if gran <= 1.0 else gran - 1e-6):
+                    _d_mix = float(p_mix) - float(_pre_mix)
+                    reasons.append(f"IA: prontidão aplicada no peso sugerido ({_d_mix:+.1f} kg).")
+        except Exception:
+            pass
 
         p_sug = float(p_mix)
 
@@ -5806,13 +6151,110 @@ if st.sidebar.button("💾 Guardar check-in", key="yami_save_checkin"):
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 
+# --- YAMI: diagnóstico de dados (inspeção geral) ---
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Diagnóstico (Yami)</h3>", unsafe_allow_html=True)
+
+_df_diag = st.session_state.get("_df_cache_data")
+if not isinstance(_df_diag, pd.DataFrame):
+    try:
+        _df_diag = get_data(force_refresh=False)
+    except Exception:
+        _df_diag = None
+
+_diag_sig = f"{perfil_sel}|{_yami_df_signature(_df_diag) if isinstance(_df_diag, pd.DataFrame) else 'na'}"
+_diag_cache = st.session_state.get("_yami_diag_cache")
+if isinstance(_diag_cache, dict) and _diag_cache.get("sig") == _diag_sig:
+    _diag = _diag_cache.get("data", {})
+else:
+    _diag = yami_inspecao_geral(_df_diag, perfil_sel) if isinstance(_df_diag, pd.DataFrame) else {"problemas":["Sem DF em memória."]}
+    try:
+        st.session_state["_yami_diag_cache"] = {"sig": _diag_sig, "data": dict(_diag)}
+    except Exception:
+        pass
+
+try:
+    st.sidebar.caption(
+        f"Linhas: **{int(_diag.get('linhas',0) or 0)}** · "
+        f"Datas: **{int(_diag.get('datas_unicas',0) or 0)}** · "
+        f"Exercícios: **{int(_diag.get('exercicios_unicos',0) or 0)}**"
+    )
+except Exception:
+    pass
+
+_problemas = list(_diag.get("problemas", []) or [])
+if _problemas:
+    st.sidebar.warning(" • ".join(_problemas[:3]))
+
+with st.sidebar.expander("Ver detalhes", expanded=False):
+    st.write({
+        "Datas inválidas": int(_diag.get("datas_invalidas",0) or 0),
+        "Duplicados prováveis": int(_diag.get("duplicados",0) or 0),
+        "RIR fora (0–10)": int(_diag.get("rir_fora",0) or 0),
+        "Reps fora (0–50)": int(_diag.get("reps_fora",0) or 0),
+        "Peso fora (<0 ou >400)": int(_diag.get("peso_fora",0) or 0),
+        "Faltas Peso": int(_diag.get("faltas_peso",0) or 0),
+        "Faltas Reps": int(_diag.get("faltas_reps",0) or 0),
+        "Faltas RIR": int(_diag.get("faltas_rir",0) or 0),
+    })
+    if _problemas:
+        st.caption("Notas:")
+        for p in _problemas[:10]:
+            st.write(f"- {p}")
+
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+
 # FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>Sinais do corpo</h3>", unsafe_allow_html=True)
-dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
-dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
-dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
-dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
+
+# Estes sinais têm efeito real: entram no contexto do Yami (estratégia) e reduzem ligeiramente a carga sugerida.
+dor_joelho = st.sidebar.checkbox(
+    "Dor no joelho (pontiaguda)",
+    key="dor_joelho_flag",
+    help="Se for dor pontiaguda/articular, o Yami fica mais conservador e a app sugere substituições (não é para ‘aguentar’).",
+)
+dor_cotovelo = st.sidebar.checkbox(
+    "Dor no cotovelo",
+    key="dor_cotovelo_flag",
+    help="Se o cotovelo estiver a reclamar, o Yami fica mais conservador e sugere variações mais amigáveis (ex.: pushdown barra V).",
+)
+dor_ombro = st.sidebar.checkbox(
+    "Dor no ombro",
+    key="dor_ombro_flag",
+    help="Se o ombro estiver sensível, o Yami reduz agressividade e sugere ajustes (pega neutra, inclinação menor, sem grind).",
+)
+dor_lombar = st.sidebar.checkbox(
+    "Dor na lombar",
+    key="dor_lombar_flag",
+    help="Se a lombar estiver a dar sinal, o Yami puxa a carga para baixo e sugere amplitude/variações seguras.",
+)
+
+# bucket de dor (0/1/2) para condicionar decisões do Yami
+_pain_n = int(bool(dor_joelho)) + int(bool(dor_cotovelo)) + int(bool(dor_ombro)) + int(bool(dor_lombar))
+_pain_bucket = 0
+if _pain_n >= 2 or bool(dor_lombar):
+    _pain_bucket = 2
+elif _pain_n == 1:
+    _pain_bucket = 1
+
+st.session_state["yami_pain_bucket"] = int(_pain_bucket)
+st.session_state["yami_pain_flags"] = {
+    "joelho": bool(dor_joelho),
+    "cotovelo": bool(dor_cotovelo),
+    "ombro": bool(dor_ombro),
+    "lombar": bool(dor_lombar),
+}
+
+# feedback visual (para não parecer que isto é decorativo)
+if _pain_bucket == 0:
+    st.sidebar.caption("🟢 Sem sinais marcados (Yami normal).")
+elif _pain_bucket == 1:
+    st.sidebar.caption("🟠 Sinal marcado (Yami mais conservador).")
+else:
+    st.sidebar.caption("🔴 Vários sinais / lombar (Yami bem mais conservador).")
+
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # Modo mobile permanente (sem toggles na sidebar)
