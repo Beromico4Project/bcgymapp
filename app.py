@@ -59,7 +59,7 @@ st.components.v1.html("""
 
     // Re-acquire when returning to the app.
     document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') await acquire();
+      if (document.visibilityEstado === 'visible') await acquire();
     });
 
     // If the lock is released by the system, try to re-acquire on next gesture.
@@ -318,7 +318,7 @@ def render_progress_compact(done_n: int, total_n: int):
         <div id='exercise-progress-anchor' class='bc-progress-wrap'>
           <div class='bc-progress-label'>Progresso do treino: {done_n}/{total_n} exercícios <span>{pct_txt}%</span></div>
           <div class='bc-progress-track'>
-            <div class='bc-progress-fill {state_cls}' style='width:{pct*100:.1f}%'></div>
+            <div class='bc-progress-fill {estado_cls}' style='width:{pct*100:.1f}%'></div>
           </div>
         </div>
         """,
@@ -1377,12 +1377,12 @@ def yami_adjust_rir_target(rir_base: float, item: dict) -> float:
 
 
 # =========================================================
-# YAMI IA — nível acima (modelo + incerteza + bandit)
+# YAMI IA — nível acima (modeloo + incerteza + multi-braço)
 # Implementa 5 upgrades:
 #  1) Kalman/e1RM com incerteza por exercício
 #  4) Change-point (dia mau vs tendência)
 #  7) "Embeddings" simples por padrão de movimento
-#  6) Bandit (escolhe estratégia de progressão)
+#  6) Multi-braço (escolhe estratégia de progressão)
 #  9) Explicação humana (LLM-like, sem depender de API)
 # =========================================================
 
@@ -1474,7 +1474,7 @@ def _yami_model_init_if_missing(perfil: str, ex: str, init_e1rm: float | None = 
         s20 = 120.0
         n0 = 0
 
-    # prior base se ainda não há nada
+    # a priori base se ainda não há nada
     if mu0 <= 0.0:
         mu0 = float(init_e1rm or 0.0)
     if mu0 <= 0.0:
@@ -1489,11 +1489,11 @@ def _yami_model_init_if_missing(perfil: str, ex: str, init_e1rm: float | None = 
     model.setdefault("last_obs_e1rm", 0.0)
     model.setdefault("obs_mult", 1.0)
 
-    # bandit arms default
+    # multi-braço arms default
     b = prof["bandit"].setdefault(ex, {})
     for arm in ("micro_load", "add_rep", "hold"):
         st_arm = b.setdefault(arm, {})
-        st_arm.setdefault("a", 2)  # prior leve pró-sucesso
+        st_arm.setdefault("a", 2)  # a priori leve pró-sucesso
         st_arm.setdefault("b", 2)
 
     _yami_state_save(stt)
@@ -1556,7 +1556,7 @@ def yami_kalman_update(perfil: str, ex: str, obs: float, obs_var: float, process
     model["n"] = int(model.get("n", 0) or 0) + (1 if obs > 0 else 0)
     model["last_obs_e1rm"] = float(obs)
 
-    # atualiza também prior do padrão (transfer learning interno)
+    # atualiza também a priori do padrão (transfer learning interno)
     pat = str(model.get("pattern") or yami_exercise_pattern(ex))
     model["pattern"] = pat
     pstate = prof.setdefault("patterns", {}).setdefault(pat, {})
@@ -1638,7 +1638,7 @@ def _yami_bandit_update(perfil: str, ex: str, arm: str, reward: int) -> None:
 
 
 
-# --- YAMI AI+ (probabilidade, contextual bandit, twin, auditor) ---
+# --- YAMI AI+ (probabilidade, contextual multi-braço, twin, auditor) ---
 
 def yami_exercise_family(ex: str) -> str:
     """Família/padrão de movimento (granular o suficiente para transfer learning)."""
@@ -1703,13 +1703,13 @@ def _yami_prof(perfil: str) -> dict:
 def _yami_ensure_ai_structures(perfil: str) -> None:
     stt = _yami_state_load()
     prof = stt.setdefault("profiles", {}).setdefault(str(perfil or "—"), {})
-    prof.setdefault("families", {})         # family priors
-    prof.setdefault("bases", {})            # base exercise priors
+    prof.setdefault("families", {})         # family a prioris
+    prof.setdefault("bases", {})            # base exercise a prioris
     prof.setdefault("clf", {})              # success classifier
-    prof.setdefault("ctx_bandit", {})       # contextual bandit
-    prof.setdefault("prefs", {})            # user preference model
-    prof.setdefault("pain_model", {})       # pain risk model
-    prof.setdefault("day_clusters", {})     # clustering for day types
+    prof.setdefault("ctx_bandit", {})       # contextual multi-braço
+    prof.setdefault("prefs", {})            # user preference modelo
+    prof.setdefault("pain_model", {})       # pain risco modelo
+    prof.setdefault("day_clusters", {})     # agrupamento for day types
     prof.setdefault("latent", {})           # latent readiness estimate
     prof.setdefault("tech", {})             # technique anomaly stats
     prof.setdefault("audit", {})            # audit notes
@@ -1992,7 +1992,7 @@ def yami_clf_update(perfil: str, ex: str, feats: list, y: int) -> None:
     _yami_state_save(stt)
 
 
-# ---- (4) Modelo de erro de RIR (sem slider) ----
+# ---- (4) Modeloo de erro de RIR (sem slider) ----
 
 def yami_rir_error_predict(perfil: str, ex: str) -> dict:
     stt = _yami_state_load()
@@ -2029,7 +2029,7 @@ def yami_rir_error_update(perfil: str, ex: str, err: float) -> None:
     _yami_state_save(stt)
 
 
-# ---- (3 & 5) prontidão latente + clustering de dias ----
+# ---- (3 & 5) prontidão latente + agrupamento de dias ----
 
 def yami_latent_get(perfil: str) -> dict:
     _yami_ensure_ai_structures(perfil)
@@ -2063,7 +2063,7 @@ def yami_latent_update_from_residual(perfil: str, resid_pct: float) -> dict:
     s2 = max(1e-5, (1 - alpha) * s2 + alpha * ((x - mu2) ** 2 + 1e-6))
     lat["mu"], lat["s2"], lat["n"] = float(mu2), float(s2), int(n + 1)
 
-    # update day clusters (k=3, online)
+    # update day agrupamentos (k=3, online)
     cl = prof.setdefault("day_clusters", {}).setdefault("k3", {"c": [-0.06, 0.0, 0.06], "n": [1, 1, 1]})
     c = list(cl.get("c", [-0.06, 0.0, 0.06]))
     nn = list(cl.get("n", [1, 1, 1]))
@@ -2136,7 +2136,7 @@ def yami_tech_flag(perfil: str, ex: str) -> dict:
     return {"flag": bool(t.get("flag", False)), "score": float(t.get("last", 0.0) or 0.0), "n": int(t.get("n", 0) or 0)}
 
 
-# ---- (8) Contextual bandit ----
+# ---- (8) Contextual multi-braço ----
 
 def yami_context_key(perfil: str, bloco: str, pain_bucket: int = 0) -> str:
     dt = yami_daytype(perfil)
@@ -2186,7 +2186,7 @@ def yami_ctx_bandit_update(perfil: str, ex: str, ctx: str, arm: str, reward: int
     _yami_state_save(stt)
 
 
-# ---- (10) Digital twin (simulador simples) ----
+# ---- (10) Gémeo digital (simulador simples) ----
 
 def yami_twin_predict_reps_to_fail(e1rm: float, weight: float) -> float:
     try:
@@ -2282,7 +2282,7 @@ def yami_pick_weight_optimized(
         clf = yami_clf_predict(perfil, ex, feats)
         p = 0.55 * float(twin_w.get("p_phys", 0.5) or 0.5) + 0.45 * float(clf.get("p", 0.5) or 0.5)
 
-        # reward de estímulo (peso) + penalizações (falha, dor, semana)
+        # recompensa de estímulo (peso) + penalizações (falha, dor, semana)
         stim = float(w)
         fail_pen = (1.0 - p) * stim * (0.55 + 0.65 * ra)
         pain_pen = float(pain_risk) * stim * 0.65
@@ -2393,7 +2393,7 @@ def yami_audit_plan(df_hist: pd.DataFrame, perfil: str) -> list:
         return warnings
 
 
-# ---- (13) Pain-aware policy aprendida (modelo simples) ----
+# ---- (13) Pain-aware policy aprendida (modeloo simples) ----
 
 def _pain_key(area: str) -> str:
     return f"pain::{str(area)}"
@@ -2441,7 +2441,7 @@ def yami_pain_feat_simple(perfil: str, ex: str, item: dict, avg_w: float, avg_re
     return [1.0] + one + [is_comp, float(avg_w)/100.0, float(avg_reps)/12.0, float(avg_rir)/5.0, float(week_pen)]
 
 
-# ---- (11) Aprender preferências por override ----
+# ---- (11) Aprender preferências por substituição manual ----
 
 def yami_pref_update_override(perfil: str, ex: str, suggested: float, actual: float) -> None:
     try:
@@ -2522,7 +2522,7 @@ def yami_ai_update_from_saved_sets(
     except Exception:
         pass
 
-    # prior prediction for residual
+    # a priori prediction for residual
     pred_before = yami_kalman_predict(perfil, ex)
     mu_before = float(pred_before.get("mu", 0.0) or 0.0)
     resid_pct = 0.0
@@ -2548,7 +2548,7 @@ def yami_ai_update_from_saved_sets(
     # technique update
     yami_tech_update(perfil, ex, sets_list, mu_before)
 
-    # update RIR error model
+    # update RIR error modelo
     try:
         pred_after = yami_kalman_predict(perfil, ex)
         e1_mu = float(pred_after.get("mu", mu_before) or mu_before)
@@ -2624,7 +2624,7 @@ def yami_ai_update_from_saved_sets(
         )
         yami_clf_update(perfil, ex, feats, y)
 
-    # pain model update (label = pain flags atuais)
+    # pain modelo update (label = pain flags atuais)
     pain_flags = pain_flags or {}
     week_pen = yami_week_penalty(df_hist, perfil, ex) if df_hist is not None else 0.0
     try:
@@ -2641,7 +2641,7 @@ def yami_ai_update_from_saved_sets(
         except Exception:
             pass
 
-    # preference update by override
+    # preference update by substituição manual
     try:
         last_sugs = st.session_state.get("yami_last_sug", {}) or {}
         sug = float(last_sugs.get(str(ex), 0) or 0)
@@ -2752,7 +2752,7 @@ def yami_sync_model_from_history(perfil: str, ex: str, latest: dict, prev: dict 
     except Exception:
         pass
 
-    # Bandit reward (inferido): que estratégia tu usaste de facto?
+    # Multi-braço recompensa (inferido): que estratégia tu usaste de facto?
     arm_used = "hold"
     try:
         w_prev = float(prev.get("peso_medio", 0) or 0) if prev else 0.0
@@ -2768,7 +2768,7 @@ def yami_sync_model_from_history(perfil: str, ex: str, latest: dict, prev: dict 
     except Exception:
         arm_used = "hold"
 
-    # reward: e1RM subiu (>= +0.25%) ou segurou bem (>= -0.25%)
+    # recompensa: e1RM subiu (>= +0.25%) ou segurou bem (>= -0.25%)
     reward = 0
     try:
         prev_hist = [x for x in oh[:-1] if float(x.get("e1rm", 0) or 0) > 0]
@@ -3658,7 +3658,7 @@ def _parse_num_list(v):
     s = str(v).strip()
     if s == '' or s.lower() == 'nan':
         return []
-    # prioridade: separador de listas é vírgula; decimal pode vir com ponto.
+    # a prioriidade: separador de listas é vírgula; decimal pode vir com ponto.
     parts = [x.strip() for x in s.split(',')]
     out=[]
     for x in parts:
@@ -3916,7 +3916,7 @@ def _parse_rep_scheme(rep_text: str, series_hint: int | None = None) -> dict:
         out.update({'kind': 'fixed', 'low': nums[0], 'high': nums[0], 'expected': [nums[0]]})
         return out
 
-    # Esquemas especiais (clusters / 4(5/4/3/2/1)) -> usar números apenas como referência leve
+    # Esquemas especiais (agrupamentos / 4(5/4/3/2/1)) -> usar números apenas como referência leve
     out.update({'kind': 'special', 'low': min(nums), 'high': max(nums), 'expected': nums})
     return out
 
@@ -3982,7 +3982,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     prev = hist[1] if len(hist) > 1 else None
     prev2 = hist[2] if len(hist) > 2 else None
 
-    # --- YAMI IA: sincroniza modelo (Kalman) + escolhe estratégia (bandit) ---
+    # --- YAMI IA: sincroniza modeloo (Kalman) + escolhe estratégia (multi-braço) ---
     pred_ai = {"mu": 0.0, "sigma": 999.0, "n": 0, "pattern": yami_exercise_pattern(ex)}
     arm_ai = "micro_load"
     changep = {"flag": False, "delta_pct": 0.0}
@@ -4305,7 +4305,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         pass
 
-    # --- YAMI IA: combinar heurística com modelo probabilístico ---
+    # --- YAMI IA: combinar heurística com modeloo probabilístico ---
     try:
         mu = float(pred_ai.get("mu", 0) or 0)
         sig = float(pred_ai.get("sigma", 999.0) or 999.0)
@@ -4327,7 +4327,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             target_reps = max(1, int(round(reps_media or 1)))
 
         reps_to_fail_target = max(1.0, float(target_reps) + float(rir_alvo_num_))
-        # peso que o modelo "acha" que encaixa nesse alvo
+        # peso que o modeloo "acha" que encaixa nesse alvo
         p_ai = 0.0
         if mu > 0:
             p_ai = float(mu) / (1.0 + (min(15.0, reps_to_fail_target) / 30.0))
@@ -4352,7 +4352,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
                 p_ai = max(0.0, float(_round_to_nearest(p_atual * 0.97, 0.5)))
 
         # mistura depende da incerteza
-        # sig baixo + n bom -> confiar mais no modelo; caso contrário, confiar mais na heurística
+        # sig baixo + n bom -> confiar mais no modeloo; caso contrário, confiar mais na heurística
         blend = 0.55 if (n_ai >= 4 and sig <= 18.0) else 0.35
         if p_ai <= 0:
             blend = 0.0
@@ -4467,7 +4467,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     else:  # Brutal/Normal
         resumo = prefix + " " + resumo
 
-    # confiança (combina consistência da sessão + incerteza do modelo)
+    # confiança (combina consistência da sessão + incerteza do modeloo)
     try:
         _sigma = float(pred_ai.get("sigma", 999.0) or 999.0)
         _n_ai = int(pred_ai.get("n", 0) or 0)
@@ -4479,7 +4479,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     if sessao_incompleta or sets_ratio < 0.75 or latest.get("n_sets", 0) < max(1, min(series_alvo, 2)):
         conf = "baixa"
     else:
-        # modelo ainda sem dados: baixa
+        # modeloo ainda sem dados: baixa
         if _n_ai < 2 or _sigma >= 24.0:
             conf = "baixa"
         elif _n_ai >= 5 and _sigma <= 12.0 and _mult <= 1.35 and not bool(changep.get("flag", False)):
@@ -4528,7 +4528,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         pass
 
-    # risco de dor (modelo aprendido) -> só entra se houver sinal/treino pesado
+    # risco de dor (modeloo aprendido) -> só entra se houver sinal/treino pesado
     pain_risk = 0.0
     try:
         _avg_w = float(p_atual)
@@ -4536,7 +4536,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         _avg_rir = float(rir_eff if rir_eff is not None else rir_alvo_num_)
         _pf = yami_pain_feat_simple(perfil, ex, item, _avg_w, _avg_r, _avg_rir, float(week_pen))
         _areas = ["joelho","ombro","cotovelo","lombar"]
-        # se não há modelo treinado, isto dá ~0.5 (neutro). Vamos baixar o impacto nesse caso.
+        # se não há modeloo treinado, isto dá ~0.5 (neutro). Vamos baixar o impacto nesse caso.
         _prs = []
         for _a in _areas:
             _p = float(yami_pain_predict(perfil, ex, _pf, _a) or 0.0)
@@ -4552,7 +4552,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         pain_risk = 0.0
 
-    # guardar sugestão atual para aprender preferências (override)
+    # guardar sugestão atual para aprender preferências (substituição manual)
     try:
         st.session_state.setdefault("yami_last_sug", {})[str(ex)] = float(p_sug)
     except Exception:
@@ -4657,7 +4657,7 @@ def yami_definir_descanso_s(base_s: int, rir_obtido: float | None, rir_alvo: flo
     return int(round(rest))
 
 
-def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa="", item=None, semana=None, plano_id=None, df_hist=None, pain_flags=None):
+def guardar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa="", item=None, semana=None, plano_id=None, df_hist=None, pain_flags=None):
     """Grava um exercício (várias séries agregadas numa linha). Retorna True/False."""
     lista_sets = list(lista_sets or [])
     if not lista_sets:
@@ -4749,7 +4749,7 @@ def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa
         except Exception:
             pass
 
-        # contextual bandit + preferência (o que tu fizeste vs o que era esperado)
+        # contextual multi-braço + preferência (o que tu fizeste vs o que era esperado)
         try:
             hist = _historico_resumos_exercicio(df_hist, str(perfil), str(ex)) if isinstance(df_hist, pd.DataFrame) else []
             prev = hist[0] if hist else None
@@ -4778,7 +4778,7 @@ def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa
 
             yami_pref_update_from_arm(str(perfil), str(ex), arm_used)
 
-            # reward simples: sucesso médio (sem colapsar RIR) e sem muita dor
+            # recompensa simples: sucesso médio (sem colapsar RIR) e sem muita dor
             reward = 0
             try:
                 avg_rir = statistics.mean([float(s.get("rir", 0) or 0) for s in (lista_sets or []) if float(s.get("reps", 0) or 0) > 0])
@@ -5779,7 +5779,7 @@ Dor articular pontiaguda = troca variação no dia.
     if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
         ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
         pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
-        # AUTO-RESTORE: em mobile o browser pode suspender e a sessão do Streamlit recomeça (session_state limpa).
+        # AUTO-RESTORE: em mobile o browser pode suspender e a sessão do Streamlit recomeça (session_estado limpa).
         # Se houver snapshot recente para este perfil/dia/plano/semana, restaura progresso e séries pendentes.
         try:
             _plano_active = str(st.session_state.get('plano_id_sel','Base'))
@@ -6233,7 +6233,7 @@ Dor articular pontiaguda = troca variação no dia.
                                     pass
 
                                 if is_last:
-                                    ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa, item=item, semana=semana, plano_id=str(st.session_state.get('plano_id_sel','Base')), df_hist=df_hist, pain_flags={'joelho':dor_joelho,'cotovelo':dor_cotovelo,'ombro':dor_ombro,'lombar':dor_lombar})
+                                    ok_gravou = guardar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa, item=item, semana=semana, plano_id=str(st.session_state.get('plano_id_sel','Base')), df_hist=df_hist, pain_flags={'joelho':dor_joelho,'cotovelo':dor_cotovelo,'ombro':dor_ombro,'lombar':dor_lombar})
                                     if ok_gravou:
                                         st.session_state[series_key] = []
                                         try:
@@ -6301,7 +6301,7 @@ Dor articular pontiaguda = troca variação no dia.
                     else:
                         st.success("Exercício concluído.")
                         if st.button("Tentar guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
-                            ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa, item=item, semana=semana, plano_id=str(st.session_state.get('plano_id_sel','Base')), df_hist=df_hist, pain_flags={'joelho':dor_joelho,'cotovelo':dor_cotovelo,'ombro':dor_ombro,'lombar':dor_lombar})
+                            ok_gravou = guardar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa, item=item, semana=semana, plano_id=str(st.session_state.get('plano_id_sel','Base')), df_hist=df_hist, pain_flags={'joelho':dor_joelho,'cotovelo':dor_cotovelo,'ombro':dor_ombro,'lombar':dor_lombar})
                             if ok_gravou:
                                 st.session_state[series_key] = []
                                 try:
@@ -6353,7 +6353,7 @@ Dor articular pontiaguda = troca variação no dia.
                             lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
                         if st.form_submit_button("💾 Gravar exercício", width='stretch'):
-                            ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa, item=item, semana=semana, plano_id=str(st.session_state.get('plano_id_sel','Base')), df_hist=df_hist, pain_flags={'joelho':dor_joelho,'cotovelo':dor_cotovelo,'ombro':dor_ombro,'lombar':dor_lombar})
+                            ok_gravou = guardar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa, item=item, semana=semana, plano_id=str(st.session_state.get('plano_id_sel','Base')), df_hist=df_hist, pain_flags={'joelho':dor_joelho,'cotovelo':dor_cotovelo,'ombro':dor_ombro,'lombar':dor_lombar})
                             if ok_gravou:
                                 if pure_workout_mode and pure_nav_key is not None:
                                     try:
