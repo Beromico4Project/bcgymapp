@@ -1033,6 +1033,51 @@ p{ margin-bottom: .35rem !important; }
 .bc-last-chip{ margin: 0 0 1rem 0; padding: .35rem .55rem; border-radius: 999px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:.86rem; color:#EDE9E9; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.04); }
 .bc-last-chip .bc-lastset{ opacity: .96; }
 .bc-last-chip .bc-tempo{ font-weight: 850; letter-spacing: .02em; border:1px solid rgba(140,29,44,.40); background: rgba(140,29,44,.18); padding: 2px 8px; border-radius: 999px; }
+
+/* aquecimento + mobilidade (destaque) */
+.bc-prep-head{
+  margin: .2rem 0 .55rem 0;
+  padding: .65rem .85rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(180deg, rgba(140,29,44,0.20), rgba(0,0,0,0.10));
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+}
+.bc-prep-title{
+  font-family: 'Cinzel', serif;
+  letter-spacing: .10em;
+  font-weight: 900;
+  font-size: .95rem;
+  color: #EDE7E7;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(0,0,0,0.35);
+}
+.bc-prep-sub{
+  margin-top: 2px;
+  font-size: .82rem;
+  color: rgba(236,231,231,0.78);
+}
+.bc-prep-card{
+  padding: .75rem .9rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-left: 3px solid rgba(140,29,44,0.80);
+  background: rgba(20,20,20,0.55);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.33);
+  margin-bottom: .25rem;
+}
+.bc-prep-card .t{
+  font-weight: 900;
+  font-size: 1.05rem;
+  letter-spacing: .02em;
+  color: #F0ECEC;
+}
+.bc-prep-card .s{
+  margin-top: 2px;
+  font-size: .82rem;
+  color: rgba(232,226,226,0.78);
+}
+
 @media (max-width: 768px){ .bc-last-chip .bc-tempo{ font-size:.90rem; } }
 
 .bc-yami-chip{ margin: .15rem 0 1.35rem 0; padding:.48rem .62rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); color:#EDE8E8; font-size:.88rem; line-height:1.28; }
@@ -4076,20 +4121,37 @@ Dor articular pontiaguda = troca variação no dia.
                 _done_val = 0
             if _done_val >= int(_it.get("series", 0) or 0):
                 _done_ex += 1
-        # --- Aquecimento/Mobilidade (no topo do progresso) ---
-        w1, w2 = st.columns(2)
-        w1.checkbox(
-            "🔥 Aquecimento",
-            value=False,
-            key="chk_aquecimento",
-            help="Marca se fizeste o aquecimento (4–5 min leves + ramp-up do 1º exercício).",
+        # --- Aquecimento/Mobilidade (mais destacado, antes do progresso) ---
+        st.markdown(
+            "<div class='bc-prep-head'>"
+            "<div class='bc-prep-title'>Preparação</div>"
+            "<div class='bc-prep-sub'>Marca antes de começar (qualidade do treino &gt; ego).</div>"
+            "</div>",
+            unsafe_allow_html=True,
         )
-        w2.checkbox(
-            "🧘 Mobilidade",
-            value=False,
-            key="chk_mobilidade",
-            help="Marca se fizeste mobilidade/ativação (ombros, anca, escápulas).",
-        )
+
+        w1, w2 = st.columns(2, gap="large")
+        with w1:
+            st.markdown(
+                "<div class='bc-prep-card'>"
+                "<div class='t'>🔥 Aquecimento</div>"
+                "<div class='s'>4–5 min leves + ramp-up do 1º exercício.</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            aq = st.checkbox("Feito", key="chk_aquecimento")
+            st.caption("✅ Marcado" if aq else " ")
+
+        with w2:
+            st.markdown(
+                "<div class='bc-prep-card'>"
+                "<div class='t'>🧘 Mobilidade</div>"
+                "<div class='s'>Ativação: ombros, anca, escápulas (2–4 min).</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            mob = st.checkbox("Feito", key="chk_mobilidade")
+            st.caption("✅ Marcado" if mob else " ")
 
         render_progress_compact(_done_ex, len(cfg["exercicios"]))
 
