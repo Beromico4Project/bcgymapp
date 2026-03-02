@@ -3372,7 +3372,7 @@ def _yami_suggest_weight_for_series(
             if 0 <= s_idx < len(seq):
                 target_reps = int(float(seq[s_idx]) or 0)
         if target_reps <= 0 and reps_low > 0 and reps_high > 0:
-            target_reps = int(round((float(reps_low) + float(reps_high)) / 2.0))
+            target_reps = int(reps_high)
         if target_reps <= 0 and reps_low > 0:
             target_reps = int(reps_low)
         if target_reps <= 0:
@@ -4022,6 +4022,93 @@ def _parse_rep_scheme(rep_text: str, series_hint: int | None = None) -> dict:
     # Esquemas especiais (agrupamentos / 4(5/4/3/2/1)) -> usar números apenas como referência leve
     out.update({'kind': 'special', 'low': min(nums), 'high': max(nums), 'expected': nums})
     return out
+
+
+def _reps_bounds_from_item(item: dict) -> tuple[dict, int, int]:
+    """Devolve (rep_info, reps_low, reps_high) a partir do texto de reps do item.
+
+    Preferimos ter sempre low/high definidos (mesmo em esquemas fixos/seq),
+    para evitar NameError e para suportar defaults coerentes na UI.
+    """
+    try:
+        rep_text = str((item or {}).get("reps", "") or "")
+    except Exception:
+        rep_text = ""
+    try:
+        series_hint = int((item or {}).get("series", 0) or 0)
+    except Exception:
+        series_hint = 0
+
+    rep_info = _parse_rep_scheme(rep_text, series_hint)
+    kind = str(rep_info.get("kind") or "")
+
+    reps_low, reps_high = 0, 0
+
+    if kind == "fixed_seq":
+        seq = []
+        for x in (rep_info.get("expected") or []):
+            try:
+                v = int(float(x) or 0)
+                if v > 0:
+                    seq.append(v)
+            except Exception:
+                pass
+        if seq:
+            reps_low, reps_high = int(min(seq)), int(max(seq))
+    else:
+        try:
+            reps_low = int(rep_info.get("low") or 0)
+        except Exception:
+            reps_low = 0
+        try:
+            reps_high = int(rep_info.get("high") or reps_low or 0)
+        except Exception:
+            reps_high = 0
+
+    # fallback: tenta extrair pelo menos um número do texto; senão, default simples
+    if reps_low <= 0 and reps_high <= 0:
+        try:
+            m = re.search(r"\d+", rep_text)
+            if m:
+                reps_low = reps_high = int(m.group(0))
+        except Exception:
+            pass
+    if reps_low <= 0 and reps_high <= 0:
+        reps_low, reps_high = 8, 12
+
+    if reps_high <= 0:
+        reps_high = reps_low
+
+    return rep_info, int(reps_low), int(reps_high)
+
+
+def _default_reps_for_set(rep_info: dict, set_index: int, reps_low: int, reps_high: int, prefer_max: bool = True) -> int:
+    """Default de reps para uma série.
+
+    - Em sequências fixas (15/12/10/8), devolve o valor da série.
+    - Em ranges, usa por defeito o topo da faixa (prefer_max=True).
+    """
+    kind = str((rep_info or {}).get("kind") or "")
+    try:
+        s = int(set_index)
+    except Exception:
+        s = 0
+
+    if kind == "fixed_seq":
+        seq = (rep_info or {}).get("expected") or []
+        try:
+            if 0 <= s < len(seq):
+                v = int(float(seq[s]) or 0)
+                if v > 0:
+                    return v
+        except Exception:
+            pass
+        return int(max(1, reps_high if reps_high > 0 else reps_low if reps_low > 0 else 1))
+
+    if prefer_max:
+        return int(reps_high if reps_high > 0 else reps_low if reps_low > 0 else 1)
+    return int(reps_low if reps_low > 0 else reps_high if reps_high > 0 else 1)
+
 
 
 def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list:
@@ -6104,7 +6191,7 @@ Dor articular pontiaguda = troca variação no dia.
             if peso_sug <= 0:
                 peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
 
-            reps_low = _rep_low_from_text(item.get("reps", "")) or 8
+            rep_info, reps_low, reps_high = _reps_bounds_from_item(item)
 
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
@@ -6278,7 +6365,7 @@ Dor articular pontiaguda = troca variação no dia.
                             )
                             rcol1, rcol2 = st.columns(2)
                             reps = rcol1.number_input(
-                                f"Reps • S{s+1}", min_value=0, value=int(reps_high if reps_high>0 else reps_low), step=1, key=f"reps_{i}_{s}"
+                                f"Reps • S{s+1}", min_value=0, value=int(_default_reps_for_set(rep_info, s, reps_low, reps_high, prefer_max=True)), step=1, key=f"reps_{i}_{s}"
                             )
                             rir = rcol2.number_input(
                                 f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
@@ -6453,7 +6540,7 @@ Dor articular pontiaguda = troca variação no dia.
                                                    value=float(peso_sug) if peso_sug>0 else 0.0,
                                                    step=float(kg_step), key=f"peso_{i}_{s}")
                             rcol1, rcol2 = st.columns(2)
-                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_high if reps_high>0 else reps_low),
+                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(_default_reps_for_set(rep_info, s, reps_low, reps_high, prefer_max=True)),
                                                       step=1, key=f"reps_{i}_{s}")
                             rir = rcol2.number_input(f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
                                                      value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
