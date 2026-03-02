@@ -1297,8 +1297,7 @@ def _yami_state_save(state: dict) -> bool:
 def _yami_profile_state(perfil: str) -> dict:
     stt = _yami_state_load()
     prof = stt.setdefault("profiles", {}).setdefault(str(perfil or "—"), {})
-    # calibração e contexto
-    prof.setdefault("rir_bias", {})      # {exercicio: bias}
+    # contexto
     prof.setdefault("checkins", [])      # list[{date,...}]
     # IA "a sério"
     prof.setdefault("models", {})        # {ex: {mu, sigma2, n, last_key, last_dt, last_obs_e1rm}}
@@ -1306,23 +1305,6 @@ def _yami_profile_state(perfil: str) -> dict:
     prof.setdefault("bandit", {})        # {ex: {arm: {a,b}}}
     prof.setdefault("obs_hist", {})      # {ex: list[{dt,e1rm,w,reps,rir_eff}]}
     return prof
-
-def yami_get_rir_bias(perfil: str, ex: str) -> float:
-    try:
-        prof = _yami_profile_state(perfil)
-        return float(prof.get("rir_bias", {}).get(str(ex), 0.0))
-    except Exception:
-        return 0.0
-
-def yami_set_rir_bias(perfil: str, ex: str, bias: float) -> bool:
-    try:
-        bias = max(-1.0, min(1.0, float(bias)))
-        stt = _yami_state_load()
-        prof = stt.setdefault("profiles", {}).setdefault(str(perfil), {})
-        prof.setdefault("rir_bias", {})[str(ex)] = float(bias)
-        return _yami_state_save(stt)
-    except Exception:
-        return False
 
 def yami_log_checkin(perfil: str, checkin: dict) -> bool:
     try:
@@ -1493,6 +1475,7 @@ def _yami_model_init_if_missing(perfil: str, ex: str, init_e1rm: float | None = 
     model.setdefault("last_key", "")
     model.setdefault("last_dt", "")
     model.setdefault("last_obs_e1rm", 0.0)
+    model.setdefault("obs_mult", 1.0)
 
     # bandit arms default
     b = prof["bandit"].setdefault(ex, {})
@@ -1519,8 +1502,15 @@ def yami_kalman_update(perfil: str, ex: str, obs: float, obs_var: float, process
 
     try:
         obs = float(obs)
-        R = float(max(4.0, obs_var))
+        R0 = float(max(4.0, obs_var))
         Q = float(max(1.0, process_var))
+        # ruído adaptativo: se as observações têm sido incoerentes, o Yami confia menos nelas
+        try:
+            mult = float(model.get("obs_mult", 1.0) or 1.0)
+        except Exception:
+            mult = 1.0
+        mult = max(0.5, min(3.0, float(mult)))
+        R = float(R0 * (mult ** 2))
     except Exception:
         obs, R, Q = 0.0, 20.0, 6.0
 
@@ -1529,9 +1519,25 @@ def yami_kalman_update(perfil: str, ex: str, obs: float, obs_var: float, process
 
     if obs > 0.0 and s2 > 0.0:
         # update
-        K = s2 / (s2 + R)
-        mu = mu + K * (obs - mu)
+        S = (s2 + R)
+        K = s2 / S
+        resid = (obs - mu)
+        mu = mu + K * resid
         s2 = (1.0 - K) * s2
+        # aprende "confiabilidade" do input (RIR/reps variam muito? então aumenta ruído)
+        try:
+            z = abs(float(resid)) / math.sqrt(max(1e-9, float(S)))
+        except Exception:
+            z = 1.0
+        z = max(0.5, min(3.0, float(z)))
+        try:
+            mult = float(model.get("obs_mult", 1.0) or 1.0)
+        except Exception:
+            mult = 1.0
+        mult = max(0.5, min(3.0, float(mult)))
+        mult = 0.9 * mult + 0.1 * z
+        mult = max(0.5, min(3.0, float(mult)))
+        model["obs_mult"] = float(mult)
 
     model["mu"] = float(mu)
     model["sigma2"] = float(max(12.0, s2))
@@ -1579,7 +1585,7 @@ def yami_kalman_predict(perfil: str, ex: str) -> dict:
         pat = str(model.get("pattern") or yami_exercise_pattern(ex))
     except Exception:
         mu, s2, n, pat = 0.0, 120.0, 0, yami_exercise_pattern(ex)
-    return {"mu": float(mu), "sigma": float(math.sqrt(max(1e-9, s2))), "sigma2": float(s2), "n": int(n), "pattern": pat}
+    return {"mu": float(mu), "sigma": float(math.sqrt(max(1e-9, s2))), "sigma2": float(s2), "n": int(n), "pattern": pat, "obs_mult": float(model.get("obs_mult", 1.0) or 1.0)}
 
 
 def _yami_bandit_pick(perfil: str, ex: str) -> str:
@@ -1639,7 +1645,7 @@ def yami_detect_changepoint(perfil: str, ex: str) -> dict:
     return {"flag": bool(flag), "delta_pct": float(delta_pct)}
 
 
-def yami_sync_model_from_history(perfil: str, ex: str, latest: dict, prev: dict | None, rir_bias: float = 0.0) -> dict:
+def yami_sync_model_from_history(perfil: str, ex: str, latest: dict, prev: dict | None) -> dict:
     """Sincroniza o modelo persistente a partir do histórico da sheet, uma vez por sessão gravada."""
     # cria chave única (para não atualizar repetidamente em cada rerun)
     try:
@@ -1676,7 +1682,7 @@ def yami_sync_model_from_history(perfil: str, ex: str, latest: dict, prev: dict 
             continue
         if w <= 0 or r <= 0 or rr is None:
             continue
-        rir_eff = max(0.0, float(rr) - float(rir_bias))
+        rir_eff = max(0.0, float(rr))
         e1 = yami_e1rm_obs(w, r, rir_eff)
         if e1 > obs_best:
             obs_best, obs_w, obs_r, obs_rir_eff = e1, w, r, rir_eff
@@ -2892,13 +2898,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     rep_info = _parse_rep_scheme(item.get('reps', ''), series_alvo)
     rir_alvo_base = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
     rir_alvo_num_ = float(yami_adjust_rir_target(rir_alvo_base, item))
-
-    # calibração RIR (bias): positivo = Yami interpreta o teu RIR como mais "optimista" (mais perto da falha)
-    try:
-        rir_bias = float(yami_get_rir_bias(perfil, ex))
-    except Exception:
-        rir_bias = 0.0
-
     read = st.session_state.get('yami_readiness', {}) or {}
     try:
         read_score_delta = float(read.get('score_delta', 0.0) or 0.0)
@@ -2919,7 +2918,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     changep = {"flag": False, "delta_pct": 0.0}
     try:
         if latest:
-            _ = yami_sync_model_from_history(perfil, ex, latest, prev, rir_bias=float(rir_bias))
+            _ = yami_sync_model_from_history(perfil, ex, latest, prev)
         pred_ai = yami_kalman_predict(perfil, ex)
         arm_ai = _yami_bandit_pick(perfil, ex)
         changep = yami_detect_changepoint(perfil, ex)
@@ -2958,7 +2957,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     reps_media = float(latest.get('reps_media', 0) or 0)
     rir_media = None if latest.get('rirs_media') is None else float(latest.get('rirs_media'))
 
-    rir_eff = None if rir_media is None else float(rir_media) - float(rir_bias)
+    rir_eff = None if rir_media is None else float(rir_media)
     if rir_eff is not None:
         rir_eff = max(0.0, min(10.0, float(rir_eff)))
 
@@ -2990,9 +2989,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             reasons.append(f"IA: {_pat} · e1RM ~{_mu:.0f}±{_sig:.0f} (n={_n}) · estratégia: {_arm_pt}.")
     except Exception:
         pass
-
-    if abs(float(rir_bias)) >= 0.25 and rir_media is not None:
-        reasons.append(f"Calibração RIR ativa: bias {rir_bias:+.2f} → RIR efetivo {rir_eff:.1f}.")
     if low and high and rep_kind in ('range', 'fixed', 'fixed_seq'):
         reasons.append(f"Alvo técnico: {low if low==high else f'{low}–{high}'} reps por série com RIR ~{rir_alvo_num_:.1f}.")
     elif rep_info.get('raw'):
@@ -3094,14 +3090,10 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     else:
         reasons.append('Esquema especial: a decisão vai apoiar-se mais no RIR e na tendência recente.')
 
-
-    # RIR vs alvo (usa RIR efetivo = RIR_reportado - bias)
+    # RIR vs alvo
     if rir_eff is not None:
         desvio = float(rir_eff) - float(rir_alvo_num_)
-        if abs(float(rir_bias)) >= 0.25 and rir_media is not None:
-            _rir_lbl = f"RIR {float(rir_media):.1f}→{float(rir_eff):.1f}"
-        else:
-            _rir_lbl = f"RIR {float(rir_eff):.1f}"
+        _rir_lbl = f"RIR {float(rir_eff):.1f}"
 
         if desvio >= 1.25:
             score += 1.25
@@ -3404,13 +3396,27 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     else:  # Brutal/Normal
         resumo = prefix + " " + resumo
 
-    # confiança
-    if sessao_incompleta or sets_ratio < 0.75 or latest.get('n_sets', 0) < max(1, min(series_alvo, 2)):
-        conf = 'baixa'
-    elif abs(score) >= 2 and (prev is not None):
-        conf = 'alta'
+    # confiança (combina consistência da sessão + incerteza do modelo)
+    try:
+        _sigma = float(pred_ai.get("sigma", 999.0) or 999.0)
+        _n_ai = int(pred_ai.get("n", 0) or 0)
+        _mult = float(pred_ai.get("obs_mult", 1.0) or 1.0)
+    except Exception:
+        _sigma, _n_ai, _mult = 999.0, 0, 1.0
+
+    # base pela qualidade do registo
+    if sessao_incompleta or sets_ratio < 0.75 or latest.get("n_sets", 0) < max(1, min(series_alvo, 2)):
+        conf = "baixa"
     else:
-        conf = 'média'
+        # modelo ainda sem dados: baixa
+        if _n_ai < 2 or _sigma >= 24.0:
+            conf = "baixa"
+        elif _n_ai >= 5 and _sigma <= 12.0 and _mult <= 1.35 and not bool(changep.get("flag", False)):
+            conf = "alta"
+        elif abs(score) >= 2 and (prev is not None) and _sigma <= 18.0 and _mult <= 1.7:
+            conf = "alta"
+        else:
+            conf = "média"
 
     # reduzir ruído
     reasons = [r for r in reasons if r]
@@ -3446,8 +3452,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'deload_reco': bool(deload_reco),
         'readiness': str(read_label),
         'rir_alvo': float(rir_alvo_num_),
-        'rir_bias': float(rir_bias),
-        'score': float(score),
+'score': float(score),
         'peso_atual': float(p_atual),
         'peso_work_last': float(w_work_last),
         'peso_work_sugerido': float(w_work_sug),
@@ -4844,46 +4849,12 @@ Dor articular pontiaguda = troca variação no dia.
                             st.markdown(f"**Sugestão do Yami:** {_y_action}")
                             try:
                                 st.caption(
-                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR alvo: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f} · bias: {float(yami.get('rir_bias',0) or 0):+.2f}"
+                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR alvo: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f} "
                                 )
                             except Exception:
                                 pass
                             if bool(yami.get('deload_reco', False)):
                                 st.warning("Yami: deload recomendado (1 semana) para baixar fadiga e voltar a progredir.")
-
-                            # Calibração RIR (bias)
-                            try:
-                                _bias_key = f"yami_bias::{perfil_sel}::{ex}"
-                                _cur_bias = float(yami_get_rir_bias(perfil_sel, ex))
-                                _bias_val = st.slider("Calibração RIR (bias)", -1.0, 1.0, value=float(_cur_bias), step=0.25, key=_bias_key)
-                                bc1, bc2 = st.columns(2)
-                                if bc1.button("Guardar calibração", key=_bias_key + "::save"):
-                                    yami_set_rir_bias(perfil_sel, ex, float(_bias_val))
-                                    st.success("Calibração guardada.")
-                                if bc2.button("Auto (conservador)", key=_bias_key + "::auto"):
-                                    try:
-                                        hist_tmp = _historico_resumos_exercicio(df_now, perfil_sel, ex)
-                                        devs = []
-                                        for h in (hist_tmp[:3] if hist_tmp else []):
-                                            if h.get('rirs_media') is None:
-                                                continue
-                                            devs.append(float(rir_target_num) - float(h.get('rirs_media')))
-                                        newb = _cur_bias
-                                        if devs:
-                                            overs = float(sum(devs) / len(devs))
-                                            if overs >= 0.75:
-                                                newb = min(1.0, _cur_bias + 0.25)
-                                            elif overs <= -1.25:
-                                                newb = max(-1.0, _cur_bias - 0.25)
-                                            yami_set_rir_bias(perfil_sel, ex, float(newb))
-                                            st.success(f"Bias ajustado para {float(newb):+.2f}")
-                                            st.rerun()
-                                        else:
-                                            st.info("Auto: sem RIR suficiente nas últimas sessões.")
-                                    except Exception:
-                                        st.info("Auto: sem dados suficientes.")
-                            except Exception:
-                                pass
 
                             _py = float(yami.get('peso_sugerido', 0) or 0)
                             if _py > 0:
@@ -5102,15 +5073,8 @@ Dor articular pontiaguda = troca variação no dia.
                                         _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
                                     except Exception:
                                         _prev_reps = None
-                                    # RIR efetivo com calibração (bias)
-                                    try:
-                                        _rbx = float(yami_get_rir_bias(perfil_sel, ex))
-                                    except Exception:
-                                        _rbx = 0.0
-                                    try:
-                                        _rir_eff = max(0.0, float(rir) - float(_rbx))
-                                    except Exception:
-                                        _rir_eff = float(rir) if rir is not None else None
+                                    # RIR obtido (sem calibração)
+                                    _rir_eff = float(rir) if rir is not None else None
 
                                     _rest_yami = yami_definir_descanso_s(
                                         int(item.get('descanso_s', 75)),
