@@ -1601,21 +1601,38 @@ def yami_kalman_predict(perfil: str, ex: str) -> dict:
 
 
 def _yami_bandit_pick(perfil: str, ex: str) -> str:
-    """Escolhe estratégia via Thompson Sampling (bandit)."""
+    """Escolhe estratégia via Thompson Sampling (bandit).
+    Nota (Streamlit): determinístico por contexto para não variar a cada rerun.
+    """
     _yami_model_init_if_missing(perfil, ex, init_e1rm=None)
     stt = _yami_state_load()
     prof = stt.setdefault("profiles", {}).setdefault(str(perfil or "—"), {})
     b = prof.setdefault("bandit", {}).setdefault(str(ex), {})
+
+    # Seed estável: perfil + exercício + último registo ingerido
+    try:
+        model = prof.setdefault("models", {}).setdefault(str(ex), {})
+        last_key = str(model.get("last_key", "") or "")
+    except Exception:
+        last_key = ""
+    today = datetime.date.today().isoformat()
+    seed_str = f"{perfil}|{ex}|{last_key}|{today}"
+    seed = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest()[:16], 16)
+    rng = random.Random(seed)
+
     best_arm, best_sample = "micro_load", -1.0
     for arm in ("micro_load", "add_rep", "hold"):
         st_arm = b.setdefault(arm, {"a": 2, "b": 2})
         a = float(st_arm.get("a", 2) or 2)
         bb = float(st_arm.get("b", 2) or 2)
-        samp = random.betavariate(max(0.5, a), max(0.5, bb))
+        samp = rng.betavariate(max(0.5, a), max(0.5, bb))
         if samp > best_sample:
             best_sample, best_arm = samp, arm
+
     _yami_state_save(stt)
     return str(best_arm)
+
+
 
 
 def _yami_bandit_update(perfil: str, ex: str, arm: str, reward: int) -> None:
@@ -2151,26 +2168,43 @@ def yami_ctx_bandit_pick(perfil: str, ex: str, ctx: str) -> str:
     stt = _yami_state_load()
     prof = stt.setdefault("profiles", {}).setdefault(str(perfil or "—"), {})
     cb = prof.setdefault("ctx_bandit", {}).setdefault(str(ctx), {}).setdefault(str(ex), {})
-    best_arm, best_sample = "micro_load", -1.0
-    # prefere decisão mais "suave" se user preferir reps
+
+    # Preferência do utilizador (só para ordenar braços quando empata)
     pref = yami_pref_get(perfil)
     lv = float(pref.get("load_vs_rep", 0.55) or 0.55)
+
     arms = ["micro_load", "add_rep", "hold", "cut_volume"]
-    # ajusta ordem por preferência (só para desempate psicológico)
     if lv < 0.45:
         arms = ["add_rep", "hold", "micro_load", "cut_volume"]
     elif lv > 0.65:
         arms = ["micro_load", "hold", "add_rep", "cut_volume"]
 
+    # IMPORTANTÍSSIMO (Streamlit): isto tem de ser determinístico dentro do mesmo contexto.
+    # Caso contrário, cada 'rerun' escolhe um braço diferente e o Yami parece aleatório.
+    try:
+        model = prof.setdefault("models", {}).setdefault(str(ex), {})
+        last_key = str(model.get("last_key", "") or "")
+    except Exception:
+        last_key = ""
+
+    today = datetime.date.today().isoformat()
+    seed_str = f"{perfil}|{ex}|{ctx}|{last_key}|{today}"
+    seed = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest()[:16], 16)
+    rng = random.Random(seed)
+
+    best_arm, best_sample = "micro_load", -1.0
     for arm in arms:
         st_arm = cb.setdefault(arm, {"a": 2, "b": 2})
         a = float(st_arm.get("a", 2) or 2)
         bb = float(st_arm.get("b", 2) or 2)
-        samp = random.betavariate(max(0.5, a), max(0.5, bb))
+        samp = rng.betavariate(max(0.5, a), max(0.5, bb))
         if samp > best_sample:
             best_sample, best_arm = samp, arm
+
     _yami_state_save(stt)
     return str(best_arm)
+
+
 
 
 def yami_ctx_bandit_update(perfil: str, ex: str, ctx: str, arm: str, reward: int) -> None:
@@ -2239,21 +2273,12 @@ def yami_pick_weight_optimized(
     pref = yami_pref_get(perfil)
     ra = float(pref.get("risk_aversion", 0.55) or 0.55)
 
-    # micro step
+    # passo de exploração: usa a granularidade do exercício (evita sugestões a 0.5 kg em compostos)
     try:
-        is_lower = _is_lower_exercise(ex)
+        step = float(gran)
     except Exception:
-        is_lower = False
-    try:
-        is_comp = _yami_is_composto(ex, item)
-    except Exception:
-        is_comp = True
-    if is_lower and is_comp:
         step = 2.5
-    elif is_comp:
-        step = 1.0
-    else:
-        step = 0.5
+    step = max(0.5, step)
 
     # candidates around base
     base = max(0.0, float(base_weight))
@@ -2823,7 +2848,13 @@ def yami_explain_ai(
     ]
     if cp:
         variants.insert(0, f"Estou a ver uma **queda persistente** (~{dp:.1f}%). Hoje é dia de **segurança**: {arm_pt}.{extra}")
-    return random.choice(variants)
+    # determinístico por contexto (para não mudar a cada clique)
+    perfil_key = str(st.session_state.get('perfil_sel', '') or '')
+    today = datetime.date.today().isoformat()
+    seed_str = f"{perfil_key}|{ex}|{arm}|{pat}|{mu:.2f}|{sig:.2f}|{int(cp)}|{readiness_label}|{today}"
+    seed = int(hashlib.sha256(seed_str.encode('utf-8')).hexdigest()[:16], 16)
+    idx = seed % max(1, len(variants))
+    return variants[int(idx)]
 
 
 def _service_account_email():
@@ -4165,6 +4196,34 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     prev = hist[1] if len(hist) > 1 else None
     prev2 = hist[2] if len(hist) > 2 else None
 
+    # Cache por contexto (Streamlit rerun): garante que ao clicar no botão o Yami não muda
+    # a sugestão nem a justificação sem haver dados novos.
+    try:
+        latest_key = ""
+        if latest:
+            latest_key = f"{latest.get('data','')}|{latest.get('pesos', [])}|{latest.get('reps', [])}|{latest.get('rirs', [])}"
+        cache_blob = {
+            "perfil": str(perfil),
+            "ex": str(ex),
+            "plano_id": str(plano_id),
+            "bloco": str(bloco),
+            "semana": int(semana),
+            "yami_mode": str(yami_mode),
+            "item_reps": str(item.get("reps", "")),
+            "item_series": int(item.get("series", 0) or 0),
+            "item_tipo": str(item.get("tipo", "")),
+            "rir_alvo": float(rir_alvo_num_),
+            "read_label": str(read_label),
+            "read_adj_pct": float(read_adj_pct),
+            "read_score_delta": float(read_score_delta),
+            "latest_key": str(latest_key),
+        }
+        cache_key = hashlib.sha256(json.dumps(cache_blob, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        _cache = st.session_state.setdefault("_yami_coach_cache", {})
+        if cache_key in _cache:
+            return dict(_cache[cache_key])
+    except Exception:
+        cache_key = None
     # --- YAMI IA: sincroniza modeloo (Kalman) + escolhe estratégia (multi-braço) ---
     pred_ai = {"mu": 0.0, "sigma": 999.0, "n": 0, "pattern": yami_exercise_pattern(ex)}
     arm_ai = "micro_load"
@@ -4760,7 +4819,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         scale = min(scale, 0.92)
     w_work_sug = float(_round_to_nearest(max(0.0, w_work_last * scale), gran))
 
-    return {
+    out = {
         'acao': acao,
         'peso_sugerido': float(p_sug),
         'delta': float(p_sug - p_atual),
@@ -4776,6 +4835,13 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'peso_work_last': float(w_work_last),
         'peso_work_sugerido': float(w_work_sug),
     }
+
+    try:
+        if cache_key:
+            st.session_state.setdefault("_yami_coach_cache", {})[cache_key] = dict(out)
+    except Exception:
+        pass
+    return out
 
 
 def yami_definir_descanso_s(base_s: int, rir_obtido: float | None, rir_alvo: float, reps_obtidas: int | None,
