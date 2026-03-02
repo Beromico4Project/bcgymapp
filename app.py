@@ -2314,7 +2314,7 @@ def yami_week_stats(df_hist: pd.DataFrame, perfil: str) -> dict:
         if dfp.empty:
             return out
         # parse date
-        dfp["__date"] = pd.to_datetime(dfp["Data"], errors="coerce")
+        dfp["__date"] = pd.to_datetime(dfp["Data"], errors="coerce", dayfirst=True)
         dfp = dfp.dropna(subset=["__date"])
         if dfp.empty:
             return out
@@ -2365,7 +2365,7 @@ def yami_audit_plan(df_hist: pd.DataFrame, perfil: str) -> list:
         dfp = df_hist[df_hist["Perfil"] == perfil].copy()
         if dfp.empty:
             return warnings
-        dfp["__date"] = pd.to_datetime(dfp["Data"], errors="coerce")
+        dfp["__date"] = pd.to_datetime(dfp["Data"], errors="coerce", dayfirst=True)
         dfp = dfp.dropna(subset=["__date"])
         if dfp.empty:
             return warnings
@@ -5980,6 +5980,7 @@ Dor articular pontiaguda = troca variação no dia.
             else:
                 st.info("Gui: progressão semanal da sheet (Mesociclos 1→5). Mantém descanso 60–90s e RIR 2.")
         df_now = df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data()
+        df_hist = df_now  # histórico completo (usado pelo Yami AI)
         for i,item in enumerate(cfg["exercicios"]):
             if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
                 continue
