@@ -1257,7 +1257,6 @@ def _yami_profile_state(perfil: str) -> dict:
     prof = stt.setdefault("profiles", {}).setdefault(str(perfil or "—"), {})
     prof.setdefault("rir_bias", {})   # {exercicio: bias}
     prof.setdefault("checkins", [])   # list[{date,...}]
-    prof.setdefault("sessions", [])   # list[{date,dia,load,...}]
     return prof
 
 def yami_get_rir_bias(perfil: str, ex: str) -> float:
@@ -1290,45 +1289,6 @@ def yami_log_checkin(perfil: str, checkin: dict) -> bool:
         return _yami_state_save(stt)
     except Exception:
         return False
-
-def yami_log_session(perfil: str, sess: dict) -> bool:
-    try:
-        stt = _yami_state_load()
-        prof = stt.setdefault("profiles", {}).setdefault(str(perfil), {})
-        lst = prof.setdefault("sessions", [])
-        d = str(sess.get("date",""))
-        dia = str(sess.get("dia",""))
-        kept = [x for x in lst if not (str(x.get("date","")) == d and str(x.get("dia","")) == dia)]
-        kept.append(sess)
-        kept = sorted(kept, key=lambda x: (str(x.get("date","")), str(x.get("dia",""))))[-180:]
-        prof["sessions"] = kept
-        return _yami_state_save(stt)
-    except Exception:
-        return False
-
-def yami_sessions_stats(perfil: str, days: int = 7) -> dict:
-    out = {"last": None, "sum_load": 0.0, "n": 0}
-    try:
-        prof = _yami_profile_state(perfil)
-        sess = list(prof.get("sessions", []) or [])
-        if not sess:
-            return out
-        today = datetime.date.today()
-        cutoff = today - datetime.timedelta(days=max(1, int(days)))
-        total, n, last = 0.0, 0, None
-        for s in sorted(sess, key=lambda x: (str(x.get("date","")), str(x.get("dia","")))):
-            last = s
-            try:
-                d = datetime.date.fromisoformat(str(s.get("date","")))
-            except Exception:
-                continue
-            if d >= cutoff:
-                total += float(s.get("load", 0) or 0)
-                n += 1
-        out.update({"last": last, "sum_load": float(total), "n": int(n)})
-        return out
-    except Exception:
-        return out
 
 def yami_compute_readiness(sleep: str, stress: str, doms: int, joint: int) -> dict:
     s_map = {"ruim": -1.0, "ok": 0.0, "top": 1.0}
@@ -3817,12 +3777,6 @@ _adj_pct_txt = f"{float(_y_read.get('adj_load_pct', 0.0) or 0.0)*100:+.0f}%"
 _adj_rir_txt = f"{float(_y_read.get('adj_rir', 0.0) or 0.0):+.1f}"
 st.sidebar.caption(f"Yami: **{_y_read.get('label','Normal')}** · Ajuste: **{_adj_pct_txt}** carga · **RIR {_adj_rir_txt}**")
 
-try:
-    _st7 = yami_sessions_stats(perfil_sel, days=7)
-    if int(_st7.get("n", 0) or 0) > 0:
-        st.sidebar.caption(f"Últimos 7 dias: carga total ~ **{float(_st7.get('sum_load',0) or 0):.0f}** (sRPE×min)")
-except Exception:
-    pass
 
 if st.sidebar.button("💾 Guardar check-in", key="yami_save_checkin"):
     _ck = dict(_y_read)
@@ -3938,9 +3892,6 @@ except Exception:
 tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino", "📊 Histórico", "🏅 Ranking"])
 
 with tab_treino:
-    # --- YAMI: início de sessão (para sRPE×min) ---
-    _sess_key = f"yami_sess_start::{perfil_sel}::{dia}::{datetime.date.today().isoformat()}"
-    st.session_state.setdefault(_sess_key, time.time())
 
     pure_workout_mode = bool(st.session_state.get("ui_pure_mode", True))
     show_rules = (not pure_workout_mode) or bool(st.session_state.get("ui_show_rules", False))
@@ -4781,39 +4732,6 @@ Dor articular pontiaguda = troca variação no dia.
         done_req = sum(1 for k in req_keys if req.get(k, False))
         total_req = max(1, len(req_keys))
         st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
-
-
-        # --- YAMI: carga da sessão (sRPE) ---
-        with st.expander("📌 Carga da sessão (sRPE)", expanded=False):
-            try:
-                _start_ts = float(st.session_state.get(_sess_key, time.time()) or time.time())
-            except Exception:
-                _start_ts = time.time()
-            _dur_auto = max(10, int(round((time.time() - _start_ts) / 60.0)))
-            dur_min = st.number_input("Duração (min)", min_value=10, max_value=240, value=int(_dur_auto), step=5, key="yami_session_dur")
-            srpe = st.slider("sRPE (0–10)", 0.0, 10.0, value=float(st.session_state.get("yami_session_srpe", 7.0) or 7.0), step=0.5, key="yami_session_srpe")
-            load = float(dur_min) * float(srpe)
-            st.metric("Carga (sRPE×min)", f"{load:.0f}")
-
-            c_s1, c_s2 = st.columns([1.4, 1.0])
-            if c_s1.button("💾 Guardar sessão (Yami)", key="yami_save_session"):
-                sess = {
-                    "date": datetime.date.today().isoformat(),
-                    "dia": str(dia),
-                    "dur_min": int(dur_min),
-                    "srpe": float(srpe),
-                    "load": float(load),
-                    "readiness": str((st.session_state.get("yami_readiness") or {}).get("label", "Normal")),
-                }
-                yami_log_session(perfil_sel, sess)
-                st.success("Sessão guardada.")
-
-            try:
-                _st7 = yami_sessions_stats(perfil_sel, days=7)
-                if int(_st7.get("n", 0) or 0) > 0:
-                    st.caption(f"Últimos 7 dias: **{float(_st7.get('sum_load',0) or 0):.0f}** (sRPE×min) · sessões: {_st7.get('n',0)}")
-            except Exception:
-                pass
 
 
         _finish_label = "🏁 Terminar treino" if not _all_done else "🏁 Terminar treino (concluído)"
