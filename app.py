@@ -1034,48 +1034,44 @@ p{ margin-bottom: .35rem !important; }
 .bc-last-chip .bc-lastset{ opacity: .96; }
 .bc-last-chip .bc-tempo{ font-weight: 850; letter-spacing: .02em; border:1px solid rgba(140,29,44,.40); background: rgba(140,29,44,.18); padding: 2px 8px; border-radius: 999px; }
 
-/* aquecimento + mobilidade (destaque) */
+/* aquecimento + mobilidade (mais espaçado, menos destaque) */
 .bc-prep-head{
-  margin: .2rem 0 .55rem 0;
-  padding: .65rem .85rem;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: linear-gradient(180deg, rgba(140,29,44,0.20), rgba(0,0,0,0.10));
-  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+  margin: .65rem 0 1.05rem 0;
+  padding: .55rem .75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
 }
 .bc-prep-title{
   font-family: 'Cinzel', serif;
   letter-spacing: .10em;
-  font-weight: 900;
-  font-size: .95rem;
-  color: #EDE7E7;
+  font-weight: 800;
+  font-size: .90rem;
+  color: rgba(237,231,231,0.92);
   text-transform: uppercase;
-  text-shadow: 0 0 12px rgba(0,0,0,0.35);
 }
 .bc-prep-sub{
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: .82rem;
-  color: rgba(236,231,231,0.78);
+  color: rgba(236,231,231,0.70);
 }
 .bc-prep-card{
-  padding: .75rem .9rem;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.10);
-  border-left: 3px solid rgba(140,29,44,0.80);
-  background: rgba(20,20,20,0.55);
-  box-shadow: 0 10px 22px rgba(0,0,0,0.33);
-  margin-bottom: .25rem;
+  padding: .65rem .8rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  margin-bottom: .65rem;
 }
 .bc-prep-card .t{
-  font-weight: 900;
-  font-size: 1.05rem;
-  letter-spacing: .02em;
-  color: #F0ECEC;
+  font-weight: 800;
+  font-size: 1.00rem;
+  letter-spacing: .01em;
+  color: rgba(240,236,236,0.94);
 }
 .bc-prep-card .s{
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: .82rem;
-  color: rgba(232,226,226,0.78);
+  color: rgba(232,226,226,0.68);
 }
 
 @media (max-width: 768px){ .bc-last-chip .bc-tempo{ font-size:.90rem; } }
@@ -4152,6 +4148,8 @@ Dor articular pontiaguda = troca variação no dia.
             )
             mob = st.checkbox("Feito", key="chk_mobilidade")
             st.caption("✅ Marcado" if mob else " ")
+
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
         render_progress_compact(_done_ex, len(cfg["exercicios"]))
 
