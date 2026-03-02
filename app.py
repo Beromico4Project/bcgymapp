@@ -4076,6 +4076,21 @@ Dor articular pontiaguda = troca variação no dia.
                 _done_val = 0
             if _done_val >= int(_it.get("series", 0) or 0):
                 _done_ex += 1
+        # --- Aquecimento/Mobilidade (no topo do progresso) ---
+        w1, w2 = st.columns(2)
+        w1.checkbox(
+            "🔥 Aquecimento",
+            value=False,
+            key="chk_aquecimento",
+            help="Marca se fizeste o aquecimento (4–5 min leves + ramp-up do 1º exercício).",
+        )
+        w2.checkbox(
+            "🧘 Mobilidade",
+            value=False,
+            key="chk_mobilidade",
+            help="Marca se fizeste mobilidade/ativação (ombros, anca, escápulas).",
+        )
+
         render_progress_compact(_done_ex, len(cfg["exercicios"]))
 
         st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
@@ -4134,7 +4149,7 @@ Dor articular pontiaguda = troca variação no dia.
         }
 
     req = _get_req_state_from_session()
-    justificativa = str(st.session_state.get("chk_justif", "") or "")
+    justificativa = ""
     _save_status = st.session_state.get("last_save_status")
     if _save_status == "error":
         _save_err_msg = str(st.session_state.get("last_save_error_msg", "") or "")
@@ -4633,23 +4648,7 @@ Dor articular pontiaguda = troca variação no dia.
 - Suitcase carry 2×20–30m/lado (se houver espaço)
 """)
 
-        st.markdown("### Checklist da sessão")
-
         req = _get_req_state_from_session()
-
-        c1, c2 = st.columns(2)
-        c1.checkbox(
-            "🔥 Aquecimento",
-            value=False,
-            key="chk_aquecimento",
-            help="Marca se fizeste o aquecimento (ex.: 4–5 min leves + ramp-up do primeiro exercício)."
-        )
-        c2.checkbox(
-            "🧘 Mobilidade",
-            value=False,
-            key="chk_mobilidade",
-            help="Marca se fizeste mobilidade/ativação (ombros, anca, escápulas)."
-        )
 
         c3, c4 = st.columns(2)
         c3.checkbox(
@@ -4682,19 +4681,9 @@ Dor articular pontiaguda = troca variação no dia.
             help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves)."
         )
 
-        st.caption("ℹ️ Checklist do que fizeste hoje. As caixas cinzentas não estão previstas para este dia/plano.")
-
         req = _get_req_state_from_session()
         justificativa = ""
         xp_pre, ok_checklist = checklist_xp(req, justificativa="")
-        if not ok_checklist:
-            st.info("Falta algum item obrigatório? Podes justificar para não perder XP.")
-            justificativa = st.text_input("Justificativa", value=str(st.session_state.get("chk_justif", "")), key="chk_justif")
-        else:
-            # mantém o campo disponível no estado, sem mostrar ruído extra
-            st.session_state.setdefault("chk_justif", str(st.session_state.get("chk_justif", "") or ""))
-            justificativa = str(st.session_state.get("chk_justif", "") or "")
-        xp_pre, ok_checklist = checklist_xp(req, justificativa=justificativa)
 
         df_now = get_data()
         streak_atual = get_last_streak(df_now, perfil_sel)
