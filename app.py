@@ -406,51 +406,6 @@ def _peso_label_para_ex(ex_name: str, serie_idx: int | None = None) -> str:
         return base
 
 
-
-def _peso_input_series_com_passos_assimetricos(label: str, key: str, default_value: float, min_value: float = 0.0) -> float:
-    """Input de peso com controlos rápidos.
-
-    - Botão de subida: +1 kg
-    - Botão de descida: -0.5 kg
-
-    Nota: Streamlit não permite passos diferentes no botão nativo do number_input.
-    Por isso criamos botões dedicados (e mantemos o input editável).
-    """
-    try:
-        if key not in st.session_state:
-            st.session_state[key] = float(default_value or 0.0)
-    except Exception:
-        pass
-
-    c_dec, c_inp, c_inc = st.columns([1.25, 6.0, 1.25])
-    # Este helper é usado dentro de st.form (por isso usamos form_submit_button).
-    with c_dec:
-        dec = st.form_submit_button("−0.5", key=f"{key}__dec", use_container_width=True)
-    with c_inc:
-        inc = st.form_submit_button("+1", key=f"{key}__inc", use_container_width=True)
-
-
-    if dec:
-        try:
-            st.session_state[key] = max(float(min_value), float(st.session_state.get(key, 0.0)) - 0.5)
-        except Exception:
-            pass
-        st.rerun()
-    if inc:
-        try:
-            st.session_state[key] = max(float(min_value), float(st.session_state.get(key, 0.0)) + 1.0)
-        except Exception:
-            pass
-        st.rerun()
-
-    with c_inp:
-        # step=0.5 para casar com o decremento e permitir afinação manual.
-        val = st.number_input(label, min_value=float(min_value), value=float(st.session_state.get(key, 0.0)), step=0.5, key=key)
-    try:
-        return float(val)
-    except Exception:
-        return float(st.session_state.get(key, 0.0) or 0.0)
-
 def _is_per_side_exercise(ex_name: str) -> bool:
     """Heurística para saber se o peso costuma ser por lado (halteres/unilateral/barra carregada)."""
     try:
@@ -3266,12 +3221,8 @@ def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
 
 
 def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last: pd.DataFrame | None = None) -> list[float]:
-    """Devolve um peso por série.
-
-    Por defeito é constante (todas as séries com o mesmo peso). O ajuste fino fica para a sugestão
-    intra-sessão do Yami e para os controlos manuais (+1 / -0.5).
-    """
     gran = float(_yami_granularidade_peso(ex, item))
+
     try:
         series_n = int(item.get("series", 0) or 0)
     except Exception:
@@ -3286,8 +3237,55 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
     if base <= 0:
         return [0.0 for _ in range(series_n)]
 
-    base = float(_round_to_nearest(base, gran))
-    return [base for _ in range(series_n)]
+    rep_info = _parse_rep_scheme(str(item.get("reps", "")), series_n)
+    kind = str(rep_info.get("kind") or "")
+
+    # 1) Se houver df_last com pesos por série, mantém o padrão (rampa) relativo ao top set.
+    #    O 'base' aqui representa o peso de trabalho sugerido (top set). As séries anteriores ficam como rampa.
+    try:
+        if df_last is not None and (not df_last.empty) and ("Peso (kg)" in df_last.columns):
+            last_w = pd.to_numeric(df_last["Peso (kg)"], errors="coerce").tolist()
+            last_w = [float(x) for x in last_w[:series_n] if pd.notna(x)]
+            if last_w:
+                w_max = float(max(last_w))
+                if w_max > 0:
+                    padded = list(last_w) + [w_max] * max(0, series_n - len(last_w))
+                    ratios = [max(0.20, min(1.05, float(w) / w_max)) for w in padded[:series_n]]
+                    out = [float(_round_to_nearest(base * ratios[s], gran)) for s in range(series_n)]
+                    # monotonia não-decrescente (rampa)
+                    for j in range(1, len(out)):
+                        if out[j] < out[j-1]:
+                            out[j] = out[j-1]
+                    return out
+    except Exception:
+        pass
+
+    # 2) Sequência fixa/descendente (15/12/10/8): progressão leve estimada
+    if kind == "fixed_seq":
+        seq = list(rep_info.get("expected") or [])
+        if len(seq) >= series_n:
+            try:
+                r0 = float(seq[0]) if float(seq[0]) > 0 else float(max(seq))
+            except Exception:
+                r0 = float(max(seq))
+            mults = []
+            for r in seq[:series_n]:
+                rr = max(1.0, float(r))
+                mults.append((r0 / rr) ** 0.35)
+
+            # ajusta para o "base" representar a MÉDIA do bloco (mais robusto quando o base vem de histórico médio)
+            try:
+                mean_mult = float(sum(mults) / max(1, len(mults)))
+            except Exception:
+                mean_mult = 1.0
+            base_adj = (base / mean_mult) if mean_mult > 0 else base
+
+            out = [float(_round_to_nearest(base_adj * m, gran)) for m in mults]
+            return out
+
+    # 3) Default: constante (o ajuste série-a-série vem da performance real)
+    return [float(_round_to_nearest(base, gran)) for _ in range(series_n)]
+
 
 def _yami_suggest_weight_for_series(
     perfil: str,
@@ -6344,6 +6342,7 @@ Dor articular pontiaguda = troca variação no dia.
 
                     if current_s < total_series:
                         _apply_prefill_payload_if_any(i)
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
@@ -6353,7 +6352,10 @@ Dor articular pontiaguda = troca variação no dia.
                                     default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
                                 except Exception:
                                     pass
-                            peso = _peso_input_series_com_passos_assimetricos(_peso_label_para_ex(ex, s), key=f"peso_{i}_{s}", default_value=float(default_peso), min_value=0.0)
+                            peso = st.number_input(
+                                _peso_label_para_ex(ex, s), min_value=0.0,
+                                value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
+                            )
                             rcol1, rcol2 = st.columns(2)
                             reps = rcol1.number_input(
                                 f"Reps • S{s+1}", min_value=0, value=int(_default_reps_for_set(rep_info, s, reps_low, reps_high, prefer_max=True)), step=1, key=f"reps_{i}_{s}"
@@ -6524,9 +6526,12 @@ Dor articular pontiaguda = troca variação no dia.
                     lista_sets = []
                     _apply_prefill_payload_if_any(i)
                     with st.form(key=f"form_{i}"):
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
                         for s in range(item["series"]):
                             st.markdown(f"### Série {s+1}")
-                            peso = _peso_input_series_com_passos_assimetricos(_peso_label_para_ex(ex, s), key=f"peso_{i}_{s}", default_value=float(peso_sug) if peso_sug>0 else 0.0, min_value=0.0)
+                            peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
+                                                   value=float(peso_sug) if peso_sug>0 else 0.0,
+                                                   step=float(kg_step), key=f"peso_{i}_{s}")
                             rcol1, rcol2 = st.columns(2)
                             reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(_default_reps_for_set(rep_info, s, reps_low, reps_high, prefer_max=True)),
                                                       step=1, key=f"reps_{i}_{s}")
@@ -6928,6 +6933,8 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
+
 
 
 
