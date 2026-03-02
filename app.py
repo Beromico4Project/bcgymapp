@@ -318,7 +318,7 @@ def render_progress_compact(done_n: int, total_n: int):
         <div id='exercise-progress-anchor' class='bc-progress-wrap'>
           <div class='bc-progress-label'>Progresso do treino: {done_n}/{total_n} exercícios <span>{pct_txt}%</span></div>
           <div class='bc-progress-track'>
-            <div class='bc-progress-fill {estado_cls}' style='width:{pct*100:.1f}%'></div>
+            <div class='bc-progress-fill {state_cls}' style='width:{pct*100:.1f}%'></div>
           </div>
         </div>
         """,
