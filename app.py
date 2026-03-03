@@ -3476,17 +3476,13 @@ def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
 
 
 def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last: pd.DataFrame | None = None) -> list[float]:
+    """Gera um perfil de pesos por série para o item.
+
+    Importante: esta função NÃO aplica prontidão/sinais/semana.
+    Esses factores são aplicados no ponto de decisão (ctx) e no optimizador.
+    Aqui só definimos uma rampa/constância base, para não criar conflitos.
+    """
     gran = float(_yami_granularidade_peso(ex, item))
-    # contexto unificado (se fornecido) manda nas penalizações
-    if isinstance(ctx, dict):
-        try:
-            pain_risk = max(float(pain_risk), float(ctx.get('pain_risk', 0.0) or 0.0))
-        except Exception:
-            pass
-        try:
-            week_penalty = max(float(week_penalty), float(ctx.get('week_pen', 0.0) or 0.0))
-        except Exception:
-            pass
 
     try:
         series_n = int(item.get("series", 0) or 0)
@@ -3509,8 +3505,9 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
     #    O 'base' aqui representa o peso de trabalho sugerido (top set). As séries anteriores ficam como rampa.
     try:
         if df_last is not None and (not df_last.empty) and ("Peso (kg)" in df_last.columns):
-            last_w = pd.to_numeric(df_last["Peso (kg)"], errors="coerce").tolist()
-            last_w = [float(x) for x in last_w[:series_n] if pd.notna(x)]
+            # robusto PT-PT (72,5 -> 72.5) e compatível com valores já numéricos
+            last_w = df_last["Peso (kg)"].apply(_yami_parse_float_pt).tolist()
+            last_w = [float(x) for x in last_w[:series_n] if (x is not None and pd.notna(x))]
             if last_w:
                 w_max = float(max(last_w))
                 if w_max > 0:
