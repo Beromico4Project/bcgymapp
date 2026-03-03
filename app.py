@@ -345,7 +345,7 @@ def _format_ex_select_label(item: dict, ix: int, total: int, bloco: str | None =
 
     reps = str(item.get("reps", "") or "").strip()
 
-    # RIR alvo: preferir campo do item; senão calcula pelo bloco/semana
+    # RIR esperado: preferir campo do item; senão calcula pelo bloco/semana
     rir_txt = ""
     for k in ("rir_alvo", "rir", "rir_target", "RIR"):
         try:
@@ -2037,7 +2037,7 @@ def _yami_suggest_weight_for_series(
             if 0 <= s_idx < len(seq):
                 target_reps = int(float(seq[s_idx]) or 0)
         if target_reps <= 0 and reps_low > 0 and reps_high > 0:
-            target_reps = int(round((float(reps_low) + float(reps_high)) / 2.0))
+            target_reps = int(reps_high)
         if target_reps <= 0 and reps_low > 0:
             target_reps = int(reps_low)
         if target_reps <= 0:
@@ -2115,7 +2115,7 @@ def _yami_suggest_weight_for_series(
     return float(_round_to_nearest(sug, _yami_round_step()))
 
 
-def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact: bool = True):
+def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact: bool = True):
     """Preenche valores via payload pendente.
 
     Importante: não escrever diretamente em keys de widgets depois de eles já existirem no
@@ -2161,12 +2161,12 @@ def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num
         if use_df_exact and s < len(reps_list) and pd.notna(reps_list[s]):
             payload["reps"].append(int(reps_list[s]))
         else:
-            payload["reps"].append(int(reps_low))
+            payload["reps"].append(int(reps_default))
 
         if use_df_exact and s < len(rirs) and pd.notna(rirs[s]):
             payload["rir"].append(float(rirs[s]))
         else:
-            payload["rir"].append(float(rir_target_num))
+            payload["rir"].append(float(rir_expect))
 
     st.session_state[f"prefill_payload_{i}"] = payload
 
@@ -2705,12 +2705,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     rir_alvo_base = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
     rir_alvo_num_ = float(yami_adjust_rir_target(rir_alvo_base, item, ex_name=ex))
 
-    # calibração RIR (bias): positivo = Yami interpreta o teu RIR como mais "optimista" (mais perto da falha)
-    try:
-        rir_bias = float(yami_get_rir_bias(perfil, ex))
-    except Exception:
-        rir_bias = 0.0
-
     read = st.session_state.get('yami_readiness', {}) or {}
     try:
         read_score_delta = float(read.get('score_delta', 0.0) or 0.0)
@@ -2786,9 +2780,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     reps_media = float(latest.get('reps_media', 0) or 0)
     rir_media = None if latest.get('rirs_media') is None else float(latest.get('rirs_media'))
 
-    rir_eff = None if rir_media is None else float(rir_media) - float(rir_bias)
-    if rir_eff is not None:
-        rir_eff = max(0.0, min(10.0, float(rir_eff)))
+    rir_eff = None if rir_media is None else float(rir_media)
 
 
     low = int(rep_info.get('low') or 0)
@@ -2807,8 +2799,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         f"Último treino ({latest.get('data','—')}): {latest.get('n_sets',0)}/{series_alvo or latest.get('n_sets',0)} séries · média {p_atual:.1f} kg · {reps_media:.1f} reps"
         + (f" · RIR {rir_media:.1f}" if rir_media is not None else "")
     )
-    if abs(float(rir_bias)) >= 0.25 and rir_media is not None:
-        reasons.append(f"Calibração RIR ativa: bias {rir_bias:+.2f} → RIR efetivo {rir_eff:.1f}.")
     if low and high and rep_kind in ('range', 'fixed', 'fixed_seq'):
         reasons.append(f"Alvo técnico: {low if low==high else f'{low}–{high}'} reps por série com RIR ~{rir_alvo_num_:.1f}.")
     elif rep_info.get('raw'):
@@ -2916,13 +2906,10 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         reasons.append('Esquema especial: a decisão vai apoiar-se mais no RIR e na tendência recente.')
 
 
-    # RIR vs alvo (usa RIR efetivo = RIR_reportado - bias)
+    # RIR vs alvo (usa RIR registado)
     if rir_eff is not None:
         desvio = float(rir_eff) - float(rir_alvo_num_)
-        if abs(float(rir_bias)) >= 0.25 and rir_media is not None:
-            _rir_lbl = f"RIR {float(rir_media):.1f}→{float(rir_eff):.1f}"
-        else:
-            _rir_lbl = f"RIR {float(rir_eff):.1f}"
+        _rir_lbl = f"RIR {float(rir_eff):.1f}"
 
         if desvio >= 1.25:
             score += 1.25
@@ -3197,7 +3184,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'adj_total_load_pct': float(total_adj_pct) if 'total_adj_pct' in locals() else float(read_adj_pct),
         'readiness': str(read_label),
         'rir_alvo': float(rir_alvo_num_),
-        'rir_bias': float(rir_bias),
         'score': float(score),
         'peso_atual': float(p_atual),
         'peso_work_last': float(w_work_last),
@@ -4757,16 +4743,30 @@ Dor articular pontiaguda = troca variação no dia.
             yami = yami_coach_sugestao(df_now, perfil_sel, ex, item, bloco, semana, plano_atual_id)
             peso_sug = float(yami.get('peso_work_sugerido', yami.get('peso_sugerido', 0.0)) or 0.0)
             if peso_sug <= 0:
-                peso_sug = sugerir_carga(peso_medio, rir_medio, rir_target_num, passo_up, 0.05)
+                peso_sug = sugerir_carga(peso_medio, rir_medio, float(yami.get('rir_alvo', rir_target_num) or rir_target_num), passo_up, 0.05)
 
-            reps_low = _rep_low_from_text(item.get("reps", "")) or 8
+            # RIR esperado hoje (alvo ajustado por prontidão/sinais/estilo/controlo)
+            try:
+                rir_expect = float(yami.get('rir_alvo', rir_target_num) or rir_target_num) if isinstance(yami, dict) else float(rir_target_num)
+            except Exception:
+                rir_expect = float(rir_target_num)
+            try:
+                rir_expect = max(0.0, min(6.0, float(round(float(rir_expect) * 2.0) / 2.0)))
+            except Exception:
+                rir_expect = float(rir_target_num)
+
+            rep_info_ui = _parse_rep_scheme(str(item.get("reps", "")), int(item.get("series", 0) or 0))
+            reps_low = int(rep_info_ui.get("low") or 0) or 8
+            reps_high = int(rep_info_ui.get("high") or 0) or reps_low
+            reps_default = int(reps_high) if int(reps_high) > 0 else int(reps_low)
+
 
             with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                 if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
                     st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
                 series_txt = str(item.get('series',''))
                 reps_txt = str(item.get('reps',''))
-                meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR alvo: {rir_target_str}"
+                meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR esperado: {rir_target_str}"
                 sub_line = f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s"
                 st.markdown(
                     f"""<div class='bc-meta-card'>
@@ -4805,46 +4805,12 @@ Dor articular pontiaguda = troca variação no dia.
                             st.markdown(f"**Sugestão do Yami:** {_y_action}")
                             try:
                                 st.caption(
-                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR alvo: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f} · bias: {float(yami.get('rir_bias',0) or 0):+.2f}" + (f" · Sinais: {', '.join(list(yami.get('signals', []) or []))}" if (yami.get('signals') if isinstance(yami, dict) else None) else "")
+                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR esperado: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f}" + (f" · Sinais: {', '.join(list(yami.get('signals', []) or []))}" if (yami.get('signals') if isinstance(yami, dict) else None) else "")
                                 )
                             except Exception:
                                 pass
                             if bool(yami.get('deload_reco', False)):
                                 st.warning("Yami: deload recomendado (1 semana) para baixar fadiga e voltar a progredir.")
-
-                            # Calibração RIR (bias)
-                            try:
-                                _bias_key = f"yami_bias::{perfil_sel}::{ex}"
-                                _cur_bias = float(yami_get_rir_bias(perfil_sel, ex))
-                                _bias_val = st.slider("Calibração RIR (bias)", -1.0, 1.0, value=float(_cur_bias), step=0.25, key=_bias_key)
-                                bc1, bc2 = st.columns(2)
-                                if bc1.button("Guardar calibração", key=_bias_key + "::save"):
-                                    yami_set_rir_bias(perfil_sel, ex, float(_bias_val))
-                                    st.success("Calibração guardada.")
-                                if bc2.button("Auto (conservador)", key=_bias_key + "::auto"):
-                                    try:
-                                        hist_tmp = _historico_resumos_exercicio(df_now, perfil_sel, ex)
-                                        devs = []
-                                        for h in (hist_tmp[:3] if hist_tmp else []):
-                                            if h.get('rirs_media') is None:
-                                                continue
-                                            devs.append(float(rir_target_num) - float(h.get('rirs_media')))
-                                        newb = _cur_bias
-                                        if devs:
-                                            overs = float(sum(devs) / len(devs))
-                                            if overs >= 0.75:
-                                                newb = min(1.0, _cur_bias + 0.25)
-                                            elif overs <= -1.25:
-                                                newb = max(-1.0, _cur_bias - 0.25)
-                                            yami_set_rir_bias(perfil_sel, ex, float(newb))
-                                            st.success(f"Bias ajustado para {float(newb):+.2f}")
-                                            st.rerun()
-                                        else:
-                                            st.info("Auto: sem RIR suficiente nas últimas sessões.")
-                                    except Exception:
-                                        st.info("Auto: sem dados suficientes.")
-                            except Exception:
-                                pass
 
                             _py = float(yami.get('peso_sugerido', 0) or 0)
                             if _py > 0:
@@ -4911,10 +4877,10 @@ Dor articular pontiaguda = troca variação no dia.
                 def _render_prefill_buttons_block():
                     p1, p2 = st.columns(2)
                     if p1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
-                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact=True)
+                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact=True)
                         st.rerun()
                     if p2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
-                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact=False)
+                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact=False)
                         st.rerun()
                     if pure_workout_mode and pure_nav_key is not None:
                         series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
@@ -4955,7 +4921,7 @@ Dor articular pontiaguda = troca variação no dia.
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
-                            default_peso = _yami_suggest_weight_for_series(ex, item, float(peso_sug), df_last, pending_sets, s, float(rir_target_num))
+                            default_peso = _yami_suggest_weight_for_series(ex, item, float(peso_sug), df_last, pending_sets, s, float(rir_expect))
                             if default_peso <= 0 and pending_sets:
                                 try:
                                     default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
@@ -4967,11 +4933,11 @@ Dor articular pontiaguda = troca variação no dia.
                             )
                             rcol1, rcol2 = st.columns(2)
                             reps = rcol1.number_input(
-                                f"Reps • S{s+1}", min_value=0, value=int(reps_low), step=1, key=f"reps_{i}_{s}"
+                                f"Reps • S{s+1}", min_value=0, value=int(reps_default), step=1, key=f"reps_{i}_{s}"
                             )
                             rir = rcol2.number_input(
-                                f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
-                                value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}"
+                                f"RIR (esp. {rir_expect:.1f}) • S{s+1}", min_value=0.0, max_value=6.0,
+                                value=float(rir_expect), step=0.5, key=f"rir_{i}_{s}"
                             )
 
                             is_last = (s == total_series - 1)
@@ -5063,19 +5029,11 @@ Dor articular pontiaguda = troca variação no dia.
                                         _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
                                     except Exception:
                                         _prev_reps = None
-                                    # RIR efetivo com calibração (bias)
-                                    try:
-                                        _rbx = float(yami_get_rir_bias(perfil_sel, ex))
-                                    except Exception:
-                                        _rbx = 0.0
-                                    try:
-                                        _rir_eff = max(0.0, float(rir) - float(_rbx))
-                                    except Exception:
-                                        _rir_eff = float(rir) if rir is not None else None
+                                    _rir_eff = float(rir) if rir is not None else None
 
                                     _rest_yami = yami_definir_descanso_s(
                                         int(item.get('descanso_s', 75)),
-                                        _rir_eff, float(rir_target_num),
+                                        _rir_eff, float(rir_expect),
                                         int(reps), reps_low, (lambda _ri: int(_ri.get('high') or 0) if str(_ri.get('kind') or '') in ('range','fixed','fixed_seq') else None)(_parse_rep_scheme(item.get('reps',''), int(item.get('series',0) or 0))),
                                         _prev_reps,
                                         is_composto=(str(item.get('tipo','')).lower()=='composto')
@@ -5083,9 +5041,9 @@ Dor articular pontiaguda = troca variação no dia.
                                     _queue_auto_rest(int(_rest_yami), ex)
                                     try:
                                         # comentário curto "ao vivo" (Yami)
-                                        if (_rir_eff is not None) and float(_rir_eff) <= max(0.5, float(rir_target_num) - 1.0):
+                                        if (_rir_eff is not None) and float(_rir_eff) <= max(0.5, float(rir_expect) - 1.0):
                                             st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Isso foi pesado — limpa a próxima.")
-                                        elif (_rir_eff is not None) and float(_rir_eff) >= float(rir_target_num) + 1.0:
+                                        elif (_rir_eff is not None) and float(_rir_eff) >= float(rir_expect) + 1.0:
                                             st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Estava folgado — prepara-te para subir.")
                                         else:
                                             st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Mantém a lâmina afiada.")
@@ -5149,10 +5107,10 @@ Dor articular pontiaguda = troca variação no dia.
                                                    value=float(peso_sug) if peso_sug>0 else 0.0,
                                                    step=float(kg_step), key=f"peso_{i}_{s}")
                             rcol1, rcol2 = st.columns(2)
-                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_low),
+                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_default),
                                                       step=1, key=f"reps_{i}_{s}")
-                            rir = rcol2.number_input(f"RIR • S{s+1}", min_value=0.0, max_value=6.0,
-                                                     value=float(rir_target_num), step=0.5, key=f"rir_{i}_{s}")
+                            rir = rcol2.number_input(f"RIR (esp. {rir_expect:.1f}) • S{s+1}", min_value=0.0, max_value=6.0,
+                                                     value=float(rir_expect), step=0.5, key=f"rir_{i}_{s}")
                             lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
                         if st.form_submit_button("💾 Gravar exercício", width='stretch'):
