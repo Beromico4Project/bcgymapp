@@ -5061,14 +5061,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
-
-
-
-
