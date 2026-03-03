@@ -4121,6 +4121,32 @@ if not is_ineix:
         with st.sidebar.expander("Ajustar semana automática", expanded=False):
             _start_key = f"cycle_start::{_cyc_key}"
             _wk_key = f"cycle_week::{_cyc_key}"
+            _pending_start_key = f"cycle_pending_start::{_cyc_key}"
+            _pending_week_key = f"cycle_pending_week::{_cyc_key}"
+
+            # aplica updates pendentes ANTES dos widgets (Streamlit não deixa mexer no state de um widget depois de criado)
+            try:
+                if _pending_start_key in st.session_state:
+                    _p = st.session_state.get(_pending_start_key)
+                    if isinstance(_p, datetime.date):
+                        st.session_state[_start_key] = _p
+                    else:
+                        # tenta converter ISO -> date
+                        try:
+                            st.session_state[_start_key] = datetime.date.fromisoformat(str(_p))
+                        except Exception:
+                            pass
+                    del st.session_state[_pending_start_key]
+                if _pending_week_key in st.session_state:
+                    _pw = st.session_state.get(_pending_week_key)
+                    try:
+                        st.session_state[_wk_key] = int(_pw)
+                    except Exception:
+                        pass
+                    del st.session_state[_pending_week_key]
+            except Exception:
+                pass
+
             if _start_key not in st.session_state:
                 st.session_state[_start_key] = start_date
             if _wk_key not in st.session_state:
@@ -4168,7 +4194,10 @@ if not is_ineix:
                         yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start2.isoformat())
                     except Exception:
                         pass
-                    st.session_state[_start_key] = start2
+                    # não mexer diretamente no state do date_input (key=_start_key) aqui, senão Streamlit explode.
+                    # mete como "pendente" e aplica antes dos widgets no rerun seguinte.
+                    st.session_state[_pending_start_key] = start2
+                    st.session_state[_pending_week_key] = tw
                     st.session_state["semana_sel"] = tw
                     try:
                         _reset_daily_state()
