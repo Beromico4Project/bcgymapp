@@ -1298,7 +1298,61 @@ def _yami_profile_state(perfil: str) -> dict:
     prof = stt.setdefault("profiles", {}).setdefault(str(perfil or "—"), {})
     prof.setdefault("rir_bias", {})   # {exercicio: bias}
     prof.setdefault("checkins", [])   # list[{date,...}]
+    # ciclos/periodização por plano (auto-semana)
+    # estrutura: cycles[plano_id] = {"auto": bool, "start": "YYYY-MM-DD"}
+    prof.setdefault("cycles", {})
     return prof
+
+
+def _lisbon_today_date() -> datetime.date:
+    try:
+        return datetime.datetime.now(ZoneInfo("Europe/Lisbon")).date()
+    except Exception:
+        return datetime.date.today()
+
+
+def yami_get_cycle_cfg(perfil: str, plano_id: str) -> dict:
+    """Lê configuração de ciclo (auto-semana) do estado persistente do Yami."""
+    try:
+        prof = _yami_profile_state(perfil)
+        cyc = (prof.get("cycles", {}) or {}).get(str(plano_id or "Base"), {}) or {}
+        out = {
+            "auto": bool(cyc.get("auto", True)),
+            "start": str(cyc.get("start", "") or "").strip(),
+        }
+        # valida ISO simples
+        if out["start"]:
+            try:
+                datetime.date.fromisoformat(out["start"])
+            except Exception:
+                out["start"] = ""
+        return out
+    except Exception:
+        return {"auto": True, "start": ""}
+
+
+def yami_set_cycle_cfg(perfil: str, plano_id: str, *, auto: bool | None = None, start_iso: str | None = None) -> bool:
+    """Guarda configuração de ciclo (auto-semana) no estado persistente do Yami."""
+    try:
+        stt = _yami_state_load()
+        prof = stt.setdefault("profiles", {}).setdefault(str(perfil), {})
+        cycles = prof.setdefault("cycles", {})
+        pid = str(plano_id or "Base")
+        curr = cycles.get(pid, {}) if isinstance(cycles.get(pid, {}), dict) else {}
+        if auto is not None:
+            curr["auto"] = bool(auto)
+        if start_iso is not None:
+            s = str(start_iso or "").strip()
+            if s:
+                try:
+                    datetime.date.fromisoformat(s)
+                except Exception:
+                    s = ""
+            curr["start"] = s
+        cycles[pid] = curr
+        return _yami_state_save(stt)
+    except Exception:
+        return False
 
 def yami_get_rir_bias(perfil: str, ex: str) -> float:
     try:
@@ -2740,22 +2794,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     low = int(rep_info.get('low') or 0)
     high = int(rep_info.get('high') or 0)
     rep_kind = str(rep_info.get('kind') or '')
-    # dica de reps (para o Yami falar de reps, não só de peso)
-    reps_hint = ""
-    try:
-        if rep_kind == 'fixed_seq':
-            reps_hint = f"Reps alvo hoje: {str(rep_info.get('raw','') or '').strip()}"
-        elif low > 0 and high > 0 and rep_kind in ('range', 'fixed'):
-            if (('body_flags' in locals()) and bool(body_flags)) or float(total_adj_pct) < -0.005:
-                aim = int(low)
-            elif float(total_adj_pct) > 0.005:
-                aim = int(high)
-            else:
-                aim = int(round((float(low) + float(high)) / 2.0))
-            reps_hint = f"Reps alvo hoje: {low if low==high else f'{low}–{high}'} (mira {aim})"
-    except Exception:
-        reps_hint = ""
-
     hit_low_all = bool(reps_list) and (low > 0) and all(int(r) >= low for r in reps_list)
     hit_top_all = bool(reps_list) and (high > 0) and all(int(r) >= high for r in reps_list)
     falhou_min = bool(reps_list) and (low > 0) and any(int(r) < low for r in reps_list)
@@ -2775,9 +2813,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         reasons.append(f"Alvo técnico: {low if low==high else f'{low}–{high}'} reps por série com RIR ~{rir_alvo_num_:.1f}.")
     elif rep_info.get('raw'):
         reasons.append(f"Esquema do exercício: {rep_info.get('raw')} (peso maior no RIR/tendência).")
-    if reps_hint:
-        reasons.append(str(reps_hint).strip())
-
 
     # tendência e consistência (até 3 sessões)
     trend_score = 0.0
@@ -3160,7 +3195,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'deload_reco': bool(deload_reco),
         'signals': list(body_flags) if 'body_flags' in locals() else [],
         'adj_total_load_pct': float(total_adj_pct) if 'total_adj_pct' in locals() else float(read_adj_pct),
-        'reps_hint': str(reps_hint) if 'reps_hint' in locals() else '',
         'readiness': str(read_label),
         'rir_alvo': float(rir_alvo_num_),
         'rir_bias': float(rir_bias),
@@ -3981,40 +4015,200 @@ pass  # sidebar divider removido
 plano_cycle = st.session_state.get("plano_id_sel","Base")
 is_ineix = (plano_cycle == "INEIX_ABC_v1")
 if not is_ineix:
+    cycle_len = 12 if plano_cycle == GUI_PPLA_ID else 8
+
+    # --- Semana automática (não tens de te lembrar de mexer) ---
+    _cyc_cfg = yami_get_cycle_cfg(perfil_sel, plano_cycle)
+    if "auto_week" not in st.session_state:
+        st.session_state["auto_week"] = bool(_cyc_cfg.get("auto", True))
+
+    st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
     try:
-        _wk_state = int(st.session_state.get("semana_sel", 1))
+        auto_week = st.sidebar.toggle(
+            "Semana automática",
+            value=bool(st.session_state.get("auto_week", True)),
+            key="auto_week",
+            help="Calcula a semana pelo calendário a partir da data de início do ciclo.",
+            on_change=_reset_daily_state,
+        )
     except Exception:
-        _wk_state = 1
-    if plano_cycle == GUI_PPLA_ID:
-        if _wk_state < 1 or _wk_state > 12:
-            st.session_state["semana_sel"] = 1
-            _wk_state = 1
-        st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
-        semana_sel = st.sidebar.radio(
-            "Semana do ciclo:",
-            list(range(1,13)),
-            format_func=semana_label_gui,
-            index=min(max(_wk_state-1,0),11),
-            key="semana_sel",
+        auto_week = st.sidebar.checkbox(
+            "Semana automática",
+            value=bool(st.session_state.get("auto_week", True)),
+            key="auto_week",
+            help="Calcula a semana pelo calendário a partir da data de início do ciclo.",
             on_change=_reset_daily_state,
-            label_visibility="collapsed",
         )
+    try:
+        yami_set_cycle_cfg(perfil_sel, plano_cycle, auto=bool(auto_week))
+    except Exception:
+        pass
+
+    def _infer_cycle_start_from_history() -> str:
+        """Heurística: tenta inferir o início do ciclo olhando para o histórico recente.
+        Regra simples: pega na data mais antiga dentro dos últimos 21 dias.
+        """
+        try:
+            dfh = df_all
+        except Exception:
+            return ""
+        if dfh is None or dfh.empty:
+            return ""
+        try:
+            dfh = dfh[(dfh["Perfil"].astype(str) == str(perfil_sel)) & (dfh["Plano_ID"].astype(str) == str(plano_cycle))]
+        except Exception:
+            return ""
+        if dfh is None or dfh.empty or ("Data" not in dfh.columns):
+            return ""
+        today = _lisbon_today_date()
+        ds: list[datetime.date] = []
+        for x in dfh["Data"].astype(str).tolist():
+            s = str(x or "").strip()
+            if not s:
+                continue
+            try:
+                d = datetime.date.fromisoformat(s[:10])
+            except Exception:
+                continue
+            if 0 <= (today - d).days <= 21:
+                ds.append(d)
+        if not ds:
+            return ""
+        return min(ds).isoformat()
+
+    # chave segura por perfil+plano (para não colidir)
+    _cyc_key = hashlib.md5(f"{perfil_sel}|{plano_cycle}".encode("utf-8")).hexdigest()[:8]
+
+    if bool(auto_week):
+        start_iso = str(_cyc_cfg.get("start", "") or "").strip()
+        if not start_iso:
+            # tenta inferir pelo histórico recente (funciona bem quando estás na semana 2 e esqueceste de mexer)
+            start_iso = _infer_cycle_start_from_history()
+            if start_iso:
+                try:
+                    yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start_iso)
+                except Exception:
+                    pass
+        if not start_iso:
+            # fallback: assume que hoje é o início (melhor do que inventar)
+            start_iso = _lisbon_today_date().isoformat()
+            try:
+                yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start_iso)
+            except Exception:
+                pass
+
+        try:
+            start_date = datetime.date.fromisoformat(start_iso)
+        except Exception:
+            start_date = _lisbon_today_date()
+            start_iso = start_date.isoformat()
+        today = _lisbon_today_date()
+
+        wk = int(((today - start_date).days // 7) + 1)
+        wk = max(1, min(int(cycle_len), wk))
+
+        prev = int(st.session_state.get("semana_sel", 1) or 1)
+        if prev != wk:
+            st.session_state["semana_sel"] = wk
+            try:
+                _reset_daily_state()
+            except Exception:
+                pass
+
+        semana = int(st.session_state.get("semana_sel", wk) or wk)
+        st.sidebar.caption(f"Semana: **{semana}/{cycle_len}** · Início: **{start_iso}**")
+
+        with st.sidebar.expander("Ajustar semana automática", expanded=False):
+            _start_key = f"cycle_start::{_cyc_key}"
+            _wk_key = f"cycle_week::{_cyc_key}"
+            if _start_key not in st.session_state:
+                st.session_state[_start_key] = start_date
+            if _wk_key not in st.session_state:
+                st.session_state[_wk_key] = int(semana)
+
+            new_start = st.date_input(
+                "Início do ciclo",
+                value=st.session_state.get(_start_key, start_date),
+                key=_start_key,
+                help="Se o ciclo começou antes, mete a data certa e a semana ajusta sozinha.",
+            )
+
+            # se mudar a data, recalcula e guarda
+            try:
+                if isinstance(new_start, datetime.date) and new_start.isoformat() != start_iso:
+                    yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=new_start.isoformat())
+                    start_date = new_start
+                    start_iso = new_start.isoformat()
+                    wk = int(((today - start_date).days // 7) + 1)
+                    wk = max(1, min(int(cycle_len), wk))
+                    st.session_state["semana_sel"] = wk
+                    st.session_state[_wk_key] = wk
+            except Exception:
+                pass
+
+            cols = st.columns(2)
+            with cols[0]:
+                target_week = st.number_input(
+                    "Hoje é semana",
+                    min_value=1,
+                    max_value=int(cycle_len),
+                    value=int(st.session_state.get(_wk_key, semana) or semana),
+                    key=_wk_key,
+                )
+            with cols[1]:
+                if st.button("Aplicar", key=f"cycle_apply::{_cyc_key}"):
+                    try:
+                        tw = int(target_week)
+                    except Exception:
+                        tw = int(semana)
+                    tw = max(1, min(int(cycle_len), tw))
+                    # define start = hoje - (tw-1)*7
+                    start2 = today - datetime.timedelta(days=7 * (tw - 1))
+                    try:
+                        yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start2.isoformat())
+                    except Exception:
+                        pass
+                    st.session_state[_start_key] = start2
+                    st.session_state["semana_sel"] = tw
+                    try:
+                        _reset_daily_state()
+                    except Exception:
+                        pass
+                    st.rerun()
+        pass  # sidebar divider removido
     else:
-        if _wk_state < 1 or _wk_state > 8:
+        # modo manual (old-school)
+        try:
+            _wk_state = int(st.session_state.get("semana_sel", 1) or 1)
+        except Exception:
+            _wk_state = 1
+
+        if _wk_state < 1 or _wk_state > int(cycle_len):
             st.session_state["semana_sel"] = 1
             _wk_state = 1
-        st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
-        semana_sel = st.sidebar.radio(
-            "Semana do ciclo:",
-            list(range(1,9)),
-            format_func=semana_label,
-            index=min(max(_wk_state-1,0),7),
-            key="semana_sel",
-            on_change=_reset_daily_state,
-            label_visibility="collapsed",
-        )
-    semana = int(semana_sel)
-    pass  # sidebar divider removido
+
+        if plano_cycle == GUI_PPLA_ID:
+            semana_sel = st.sidebar.radio(
+                "Semana do ciclo:",
+                list(range(1, 13)),
+                format_func=semana_label_gui,
+                index=min(max(_wk_state - 1, 0), 11),
+                key="semana_sel",
+                on_change=_reset_daily_state,
+                label_visibility="collapsed",
+            )
+        else:
+            semana_sel = st.sidebar.radio(
+                "Semana do ciclo:",
+                list(range(1, 9)),
+                format_func=semana_label,
+                index=min(max(_wk_state - 1, 0), 7),
+                key="semana_sel",
+                on_change=_reset_daily_state,
+                label_visibility="collapsed",
+            )
+        semana = int(semana_sel)
+        pass  # sidebar divider removido
 else:
     # Plano Ineix (A/B/C) não usa periodização por semanas
     semana = 1
@@ -4584,12 +4778,6 @@ Dor articular pontiaguda = troca variação no dia.
                                 st.caption(
                                     f"Prontidão: {yami.get('readiness','Normal')} · RIR alvo: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f} · bias: {float(yami.get('rir_bias',0) or 0):+.2f}" + (f" · Sinais: {', '.join(list(yami.get('signals', []) or []))}" if (yami.get('signals') if isinstance(yami, dict) else None) else "")
                                 )
-                            except Exception:
-                                pass
-                            try:
-                                _rh = str(yami.get('reps_hint','') or '').strip()
-                                if _rh:
-                                    st.caption(_rh)
                             except Exception:
                                 pass
                             if bool(yami.get('deload_reco', False)):
