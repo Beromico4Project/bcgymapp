@@ -1365,15 +1365,163 @@ def yami_compute_readiness(sleep: str, stress: str, doms: int, joint: int) -> di
         "joint": int(joint),
     }
 
-def yami_adjust_rir_target(rir_base: float, item: dict) -> float:
+
+
+# --- YAMI: controlo fino + sinais do corpo (entra na equação) ---
+def yami_get_ctrl() -> dict:
+    """Knobs do utilizador para o Yami.
+
+    Objetivo: mais controlo sobre peso/reps/RIR sem rebentar o resto da app.
+    """
+    ctrl = st.session_state.get("yami_ctrl", {}) or {}
+
+    def _get(key: str, default):
+        try:
+            return st.session_state.get(key, ctrl.get(key, default))
+        except Exception:
+            return default
+
+    out = {
+        "style": str(_get("yami_style", "Normal") or "Normal"),
+        "effort_bias": float(_get("yami_effort_bias", 0.0) or 0.0),   # + = mais leve (mais RIR)
+        "round_step": float(_get("yami_round_step", 0.5) or 0.5),
+        "inc_lower_comp": float(_get("yami_inc_lower_comp", 5.0) or 5.0),
+        "inc_comp": float(_get("yami_inc_comp", 2.5) or 2.5),
+        "inc_iso": float(_get("yami_inc_iso", 1.0) or 1.0),
+        "strict_double_prog": bool(_get("yami_strict_double_prog", False)),
+        "pain_blocks_up": bool(_get("yami_pain_blocks_up", True)),
+    }
+
+    # limites práticos
+    try:
+        out["round_step"] = max(0.25, min(5.0, float(out["round_step"])))
+    except Exception:
+        out["round_step"] = 0.5
+    try:
+        out["effort_bias"] = max(-1.5, min(2.0, float(out["effort_bias"])))
+    except Exception:
+        out["effort_bias"] = 0.0
+    for k in ("inc_lower_comp", "inc_comp", "inc_iso"):
+        try:
+            out[k] = max(0.25, min(20.0, float(out[k])))
+        except Exception:
+            pass
+
+    return out
+
+
+def yami_style_score_bias(style: str) -> float:
+    s = str(style or "").strip().lower()
+    if s.startswith("conserv"):
+        return -0.35
+    if s.startswith("agress"):
+        return +0.35
+    return 0.0
+
+
+def yami_body_adjustment_for_ex(ex_name: str) -> dict:
+    """Traduz sinais do corpo (checkboxes) em ajustes concretos para o Yami (por exercício)."""
+    exl = str(ex_name or "").lower()
+
+    joelho = bool(st.session_state.get("sig_dor_joelho", False))
+    cotovelo = bool(st.session_state.get("sig_dor_cotovelo", False))
+    ombro = bool(st.session_state.get("sig_dor_ombro", False))
+    lombar = bool(st.session_state.get("sig_dor_lombar", False))
+
+    flags: list[str] = []
+    adj_rir = 0.0
+    adj_pct = 0.0
+    score_delta = 0.0
+    block_up = False
+
+    def _hit(keys: list[str]) -> bool:
+        return any(k in exl for k in keys)
+
+    # Mantém as mesmas heurísticas do bloco de substituições (consistência > criatividade).
+    if joelho and _hit(["agach", "squat", "leg press", "bulgarian", "lunge", "extens", "hack", "step", "prensa"]):
+        flags.append("joelho")
+        adj_rir += 0.5
+        adj_pct -= 0.03
+        score_delta -= 0.35
+        block_up = True
+
+    if ombro and _hit(["ohp", "overhead", "supino", "bench", "inclinado", "press", "dips", "fly", "crossover", "peito"]):
+        flags.append("ombro")
+        adj_rir += 0.5
+        adj_pct -= 0.02
+        score_delta -= 0.30
+        block_up = True
+
+    if cotovelo and _hit(["tríceps", "triceps", "curl", "bíceps", "biceps", "barra fixa", "pull-up", "chin", "remada", "row", "puxada"]):
+        flags.append("cotovelo")
+        adj_rir += 0.25
+        adj_pct -= 0.02
+        score_delta -= 0.25
+        block_up = True
+
+    if lombar and _hit(["deadlift", "rdl", "remada", "row", "agach", "squat", "good morning", "hip hinge", "terra"]):
+        flags.append("lombar")
+        adj_rir += 0.75
+        adj_pct -= 0.04
+        score_delta -= 0.45
+        block_up = True
+
+    # caps (não transformar um checkbox em apocalipse)
+    adj_rir = max(0.0, min(2.0, adj_rir))
+    adj_pct = max(-0.12, min(0.0, adj_pct))
+    score_delta = max(-1.25, min(0.0, score_delta))
+
+    return {
+        "flags": list(flags),
+        "adj_rir": float(adj_rir),
+        "adj_load_pct": float(adj_pct),
+        "score_delta": float(score_delta),
+        "block_up": bool(block_up),
+    }
+
+
+def _yami_round_step() -> float:
+    try:
+        return float(yami_get_ctrl().get("round_step", 0.5) or 0.5)
+    except Exception:
+        return 0.5
+
+def yami_adjust_rir_target(rir_base: float, item: dict, ex_name: str | None = None) -> float:
     try:
         base = float(rir_base)
     except Exception:
         base = 2.0
 
+    ctrl = yami_get_ctrl()
+
+    # prontidão do dia
     read = st.session_state.get("yami_readiness", {}) or {}
     try:
         base += float(read.get("adj_rir", 0.0) or 0.0)
+    except Exception:
+        pass
+
+    # sinais do corpo (por exercício)
+    if ex_name:
+        try:
+            body = yami_body_adjustment_for_ex(str(ex_name))
+            base += float(body.get("adj_rir", 0.0) or 0.0)
+        except Exception:
+            pass
+
+    # preferência manual (mais controlo)
+    try:
+        base += float(ctrl.get("effort_bias", 0.0) or 0.0)
+    except Exception:
+        pass
+
+    # estilo (ligeiro, para não virar um jogo de RPG)
+    try:
+        s = str(ctrl.get("style", "Normal") or "Normal").lower()
+        if s.startswith("conserv"):
+            base += 0.25
+        elif s.startswith("agress"):
+            base -= 0.25
     except Exception:
         pass
 
@@ -1659,7 +1807,11 @@ def _double_progression_ready(last_df: pd.DataFrame | None, rep_range: str, rir_
 
 
 def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
-    """Incrementos típicos (subir/descer) para ajustes intra-sessão."""
+    """Incrementos típicos (subir/descer) para ajustes intra-sessão.
+
+    Agora usa os knobs do utilizador (Controlo do Yami).
+    """
+    ctrl = yami_get_ctrl()
     try:
         is_lower = _is_lower_exercise(ex)
     except Exception:
@@ -1668,11 +1820,22 @@ def _yami_inc_steps(ex: str, item: dict) -> tuple[float, float]:
         is_comp = str(item.get("tipo", "")).lower() == "composto"
     except Exception:
         is_comp = True
-    if is_lower and is_comp:
-        return 5.0, 5.0
-    if is_comp:
-        return 2.5, 2.5
-    return 1.0, 1.0
+
+    try:
+        inc_low = float(ctrl.get("inc_lower_comp", 5.0) or 5.0)
+    except Exception:
+        inc_low = 5.0
+    try:
+        inc_comp = float(ctrl.get("inc_comp", 2.5) or 2.5)
+    except Exception:
+        inc_comp = 2.5
+    try:
+        inc_iso = float(ctrl.get("inc_iso", 1.0) or 1.0)
+    except Exception:
+        inc_iso = 1.0
+
+    inc = inc_low if (is_lower and is_comp) else (inc_comp if is_comp else inc_iso)
+    return float(inc), float(inc)
 
 
 def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last: pd.DataFrame | None = None) -> list[float]:
@@ -1710,7 +1873,7 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 if w_max > 0:
                     padded = list(last_w) + [w_max] * max(0, series_n - len(last_w))
                     ratios = [max(0.20, min(1.05, float(w) / w_max)) for w in padded[:series_n]]
-                    out = [float(_round_to_nearest(base * ratios[s], 0.5)) for s in range(series_n)]
+                    out = [float(_round_to_nearest(base * ratios[s], _yami_round_step())) for s in range(series_n)]
                     # monotonia não-decrescente (rampa)
                     for j in range(1, len(out)):
                         if out[j] < out[j-1]:
@@ -1739,11 +1902,11 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 mean_mult = 1.0
             base_adj = (base / mean_mult) if mean_mult > 0 else base
 
-            out = [float(_round_to_nearest(base_adj * m, 0.5)) for m in mults]
+            out = [float(_round_to_nearest(base_adj * m, _yami_round_step())) for m in mults]
             return out
 
     # 3) Default: constante (o ajuste série-a-série vem da performance real)
-    return [float(_round_to_nearest(base, 0.5)) for _ in range(series_n)]
+    return [float(_round_to_nearest(base, _yami_round_step())) for _ in range(series_n)]
 
 
 def _yami_suggest_weight_for_series(
@@ -1895,7 +2058,7 @@ def _yami_suggest_weight_for_series(
     except Exception:
         pass
 
-    return float(_round_to_nearest(sug, 0.5))
+    return float(_round_to_nearest(sug, _yami_round_step()))
 
 
 def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_low, rir_target_num, use_df_exact: bool = True):
@@ -2480,10 +2643,13 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     """Coach de progressão ('Yami'): sugere carga e explica o porquê, com heurística mais robusta."""
     yami_mode = str(st.session_state.get('yami_mode', 'Brutal'))
 
+    ctrl = yami_get_ctrl()
+    rstep = _yami_round_step()
+
     series_alvo = int(item.get('series', 0) or 0)
     rep_info = _parse_rep_scheme(item.get('reps', ''), series_alvo)
     rir_alvo_base = float(rir_alvo_num(item.get('tipo', ''), bloco, semana) or 2.0)
-    rir_alvo_num_ = float(yami_adjust_rir_target(rir_alvo_base, item))
+    rir_alvo_num_ = float(yami_adjust_rir_target(rir_alvo_base, item, ex_name=ex))
 
     # calibração RIR (bias): positivo = Yami interpreta o teu RIR como mais "optimista" (mais perto da falha)
     try:
@@ -2499,6 +2665,20 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         read_score_delta, read_adj_pct, read_label = 0.0, 0.0, 'Normal'
 
+    # sinais do corpo (entra na equação)
+    body = yami_body_adjustment_for_ex(str(ex))
+    try:
+        body_score_delta = float(body.get('score_delta', 0.0) or 0.0)
+        body_adj_pct = float(body.get('adj_load_pct', 0.0) or 0.0)
+        body_flags = list(body.get('flags', []) or [])
+    except Exception:
+        body_score_delta, body_adj_pct, body_flags = 0.0, 0.0, []
+
+    total_score_delta = float(read_score_delta) + float(body_score_delta)
+    total_adj_pct = float(read_adj_pct) + float(body_adj_pct)
+    # bloquear subida de carga quando há sinal relevante (configurável)
+    body_block_up = bool(body.get('block_up', False)) and bool(ctrl.get('pain_blocks_up', True))
+
 
     hist = _historico_resumos_exercicio(df_hist, perfil, ex)
     latest = hist[0] if hist else None
@@ -2507,12 +2687,27 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     is_lower = _is_lower_exercise(ex)
     is_comp = str(item.get('tipo', '')).lower() == 'composto'
+
+    # Incrementos por tipo (user-controlled)
+    try:
+        inc_low_comp = float(ctrl.get("inc_lower_comp", 5.0) or 5.0)
+    except Exception:
+        inc_low_comp = 5.0
+    try:
+        inc_comp = float(ctrl.get("inc_comp", 2.5) or 2.5)
+    except Exception:
+        inc_comp = 2.5
+    try:
+        inc_iso = float(ctrl.get("inc_iso", 1.0) or 1.0)
+    except Exception:
+        inc_iso = 1.0
+
     if is_lower and is_comp:
-        inc_up = inc_down = 5.0
+        inc_up = inc_down = inc_low_comp
     elif is_comp:
-        inc_up = inc_down = 2.5
+        inc_up = inc_down = inc_comp
     else:
-        inc_up = inc_down = 1.0
+        inc_up = inc_down = inc_iso
 
     def _fmt_inc(v: float) -> str:
         return str(int(v)) if float(v).is_integer() else str(v)
@@ -2545,6 +2740,22 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     low = int(rep_info.get('low') or 0)
     high = int(rep_info.get('high') or 0)
     rep_kind = str(rep_info.get('kind') or '')
+    # dica de reps (para o Yami falar de reps, não só de peso)
+    reps_hint = ""
+    try:
+        if rep_kind == 'fixed_seq':
+            reps_hint = f"Reps alvo hoje: {str(rep_info.get('raw','') or '').strip()}"
+        elif low > 0 and high > 0 and rep_kind in ('range', 'fixed'):
+            if (('body_flags' in locals()) and bool(body_flags)) or float(total_adj_pct) < -0.005:
+                aim = int(low)
+            elif float(total_adj_pct) > 0.005:
+                aim = int(high)
+            else:
+                aim = int(round((float(low) + float(high)) / 2.0))
+            reps_hint = f"Reps alvo hoje: {low if low==high else f'{low}–{high}'} (mira {aim})"
+    except Exception:
+        reps_hint = ""
+
     hit_low_all = bool(reps_list) and (low > 0) and all(int(r) >= low for r in reps_list)
     hit_top_all = bool(reps_list) and (high > 0) and all(int(r) >= high for r in reps_list)
     falhou_min = bool(reps_list) and (low > 0) and any(int(r) < low for r in reps_list)
@@ -2564,6 +2775,9 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         reasons.append(f"Alvo técnico: {low if low==high else f'{low}–{high}'} reps por série com RIR ~{rir_alvo_num_:.1f}.")
     elif rep_info.get('raw'):
         reasons.append(f"Esquema do exercício: {rep_info.get('raw')} (peso maior no RIR/tendência).")
+    if reps_hint:
+        reasons.append(str(reps_hint).strip())
+
 
     # tendência e consistência (até 3 sessões)
     trend_score = 0.0
@@ -2621,9 +2835,14 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
                     overload_flag = True
 
     score = 0.0
+    # estilo do Yami (tende a subir mais cedo ou segurar mais)
+    try:
+        score += float(yami_style_score_bias(ctrl.get('style', 'Normal')))
+    except Exception:
+        pass
 
     if deload_now:
-        p_sug = max(0.0, _round_to_nearest(p_atual * 0.88, 0.5))
+        p_sug = max(0.0, _round_to_nearest(p_atual * 0.88, rstep))
         delta = p_sug - p_atual
         reasons += [
             'Semana de deload detetada neste plano.',
@@ -2714,9 +2933,11 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     # Prontidão do dia (check-in) — pode inclinar a decisão
     try:
-        if abs(float(read_score_delta)) > 1e-9 or abs(float(read_adj_pct)) > 1e-9:
-            score += float(read_score_delta)
-            reasons.append(f"Prontidão hoje: {read_label} (ajuste {float(read_adj_pct)*100:+.0f}% carga).")
+        if abs(float(total_score_delta)) > 1e-9 or abs(float(total_adj_pct)) > 1e-9:
+            score += float(total_score_delta)
+            reasons.append(f"Contexto hoje: {read_label} (ajuste {float(total_adj_pct)*100:+.0f}% carga).")
+            if body_flags:
+                reasons.append(f"Sinais do corpo: {', '.join(body_flags)} (mais conservador neste padrão).")
     except Exception:
         pass
 
@@ -2753,52 +2974,72 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     if score >= 2.25:
         acao = f"+{_fmt_inc(inc_up)}kg"
-        p_sug = _round_to_nearest(p_atual + inc_up, 0.5)
+        p_sug = _round_to_nearest(p_atual + inc_up, rstep)
         resumo = 'Boa execução. Vamos subir — sem pressa, mas sem medo.'
     elif score >= 0.6:
         acao = f"+{_fmt_inc(inc_micro)}kg"
-        p_sug = _round_to_nearest(p_atual + inc_micro, 0.5)
+        p_sug = _round_to_nearest(p_atual + inc_micro, rstep)
         resumo = 'Margem pequena, mas real. Sobe micro e mantém a técnica limpa.'
     elif score <= -2.25:
         acao = f"Baixa {_fmt_inc(inc_down)}kg"
-        p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, 0.5))
+        p_sug = max(0.0, _round_to_nearest(p_atual - inc_down, rstep))
         resumo = 'Isto está pesado para o alvo de hoje. Regride um passo e volta a construir.'
     elif score <= -0.6:
         # micro-regressão (mais frequente em isoladores; em compostos tende a "manter" antes de baixar)
         if is_comp and score > -1.0:
             acao = 'Mantém carga'
-            p_sug = _round_to_nearest(p_atual, 0.5)
+            p_sug = _round_to_nearest(p_atual, rstep)
             resumo = 'Está a apertar. Mantém e garante reps limpas.'
         else:
             acao = f"Baixa {_fmt_inc(inc_micro)}kg"
-            p_sug = max(0.0, _round_to_nearest(p_atual - inc_micro, 0.5))
+            p_sug = max(0.0, _round_to_nearest(p_atual - inc_micro, rstep))
             resumo = 'Baixa micro para bater reps/RIR com técnica.'
     else:
         acao = 'Mantém carga'
-        p_sug = _round_to_nearest(p_atual, 0.5)
+        p_sug = _round_to_nearest(p_atual, rstep)
         resumo = 'Consolida. Ainda não há sinal limpo para mexer na carga.'
 
-    # Ajuste por prontidão e deload recomendado
+    
+    # Guardrails: controlo sobre subir carga
+    try:
+        # 1) Dupla progressão estrita: só sobe carga quando fecha topo de reps (e RIR não está a mentir)
+        if str(acao).startswith('+') and bool(ctrl.get('strict_double_prog', False)):
+            can_up = bool(hit_top_all) and (not sessao_incompleta)
+            if rir_eff is not None:
+                can_up = can_up and (float(rir_eff) >= float(rir_alvo_num_) - 0.25)
+            if not can_up:
+                acao = 'Mantém carga'
+                p_sug = float(_round_to_nearest(p_atual, rstep))
+                resumo = 'Dupla progressão: fecha reps limpas primeiro, depois sobe carga.'
+        # 2) Sinal do corpo: não subir carga no padrão que está a reclamar
+        if bool(body_block_up) and float(p_sug) > float(p_atual):
+            acao = 'Mantém (sinal do corpo)'
+            p_sug = float(_round_to_nearest(p_atual, rstep))
+            resumo = 'Sinal do corpo ativo: hoje é controlo, não é ego.'
+    except Exception:
+        pass
+
+# Ajuste por prontidão e deload recomendado
     try:
         if deload_force:
             acao = "DELOAD recomendado (-10%)"
-            p_sug = max(0.0, _round_to_nearest(p_atual * 0.90, 0.5))
+            p_sug = max(0.0, _round_to_nearest(p_atual * 0.90, rstep))
             resumo = 'Fadiga alta. Deload curto para voltares a subir com qualidade.'
         else:
             # prontidão: pode "puxar" ligeiramente a carga sugerida
-            if abs(float(read_adj_pct)) > 1e-9:
+            if abs(float(total_adj_pct)) > 1e-9:
                 _pre = float(p_sug)
-                _adj = float(_round_to_nearest(float(p_sug) * (1.0 + float(read_adj_pct)), 0.5))
+                _adj = float(_round_to_nearest(float(p_sug) * (1.0 + float(total_adj_pct)), rstep))
                 # em dias maus, não deixar subir só por score; em dias bons, permitir micro
-                if float(read_adj_pct) < 0:
+                if float(total_adj_pct) < 0:
                     p_sug = min(float(p_sug), float(_adj))
-                elif float(read_adj_pct) > 0:
+                elif float(total_adj_pct) > 0:
                     p_sug = max(float(p_sug), float(_adj))
 
                 _d2 = float(p_sug) - float(p_atual)
                 if abs(_d2) < 0.25:
                     acao = "Mantém carga"
-                    p_sug = float(_round_to_nearest(p_atual, 0.5))
+                    p_sug = float(_round_to_nearest(p_atual, rstep))
                 elif _d2 > 0:
                     acao = f"+{_fmt_inc(_d2)}kg"
                 else:
@@ -2917,6 +3158,9 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         'porque': str(porque),
         'razoes': reasons,
         'deload_reco': bool(deload_reco),
+        'signals': list(body_flags) if 'body_flags' in locals() else [],
+        'adj_total_load_pct': float(total_adj_pct) if 'total_adj_pct' in locals() else float(read_adj_pct),
+        'reps_hint': str(reps_hint) if 'reps_hint' in locals() else '',
         'readiness': str(read_label),
         'rir_alvo': float(rir_alvo_num_),
         'rir_bias': float(rir_bias),
@@ -3837,6 +4081,27 @@ dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensív
 dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
+# guardar sinais no session_state (para o Yami usar nas sugestões)
+try:
+    st.session_state["sig_dor_joelho"] = bool(dor_joelho)
+    st.session_state["sig_dor_cotovelo"] = bool(dor_cotovelo)
+    st.session_state["sig_dor_ombro"] = bool(dor_ombro)
+    st.session_state["sig_dor_lombar"] = bool(dor_lombar)
+except Exception:
+    pass
+
+try:
+    _sig_on = []
+    if bool(st.session_state.get("sig_dor_joelho", False)): _sig_on.append("joelho")
+    if bool(st.session_state.get("sig_dor_cotovelo", False)): _sig_on.append("cotovelo")
+    if bool(st.session_state.get("sig_dor_ombro", False)): _sig_on.append("ombro")
+    if bool(st.session_state.get("sig_dor_lombar", False)): _sig_on.append("lombar")
+    if _sig_on:
+        st.sidebar.caption("⚠️ Sinais ativos: **" + ", ".join(_sig_on) + "**. O Yami vai ser mais conservador nos exercícios que batem aqui.")
+except Exception:
+    pass
+
+
 # Modo mobile permanente (sem toggles na sidebar)
 st.session_state["ui_compact_mode"] = False
 st.session_state["ui_pure_mode"] = True
@@ -4317,8 +4582,14 @@ Dor articular pontiaguda = troca variação no dia.
                             st.markdown(f"**Sugestão do Yami:** {_y_action}")
                             try:
                                 st.caption(
-                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR alvo: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f} · bias: {float(yami.get('rir_bias',0) or 0):+.2f}"
+                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR alvo: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f} · bias: {float(yami.get('rir_bias',0) or 0):+.2f}" + (f" · Sinais: {', '.join(list(yami.get('signals', []) or []))}" if (yami.get('signals') if isinstance(yami, dict) else None) else "")
                                 )
+                            except Exception:
+                                pass
+                            try:
+                                _rh = str(yami.get('reps_hint','') or '').strip()
+                                if _rh:
+                                    st.caption(_rh)
                             except Exception:
                                 pass
                             if bool(yami.get('deload_reco', False)):
@@ -5061,3 +5332,14 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
+
+
+
+
+
+
+
+
+
+
