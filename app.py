@@ -1129,8 +1129,76 @@ def _inprogress_today_key_date() -> str:
     except Exception:
         return datetime.datetime.now().strftime("%Y-%m-%d")
 
-def _make_inprogress_key(perfil: str, plano_id: str, dia: str, semana: int, date_iso: str) -> str:
+def _make_inprogress_key(perfil: str, plano_id: str, dia: str, semana: int, date_iso: str = "") -> str:
+    # Key de sessão em curso (NÃO depende da data).
+    # A data real fica dentro do payload ("date"), assim podes fazer "terça" na quarta e continuar depois.
+    return f"{perfil}||{plano_id}||{dia}||{int(semana)}"
+
+def _make_inprogress_key_legacy(perfil: str, plano_id: str, dia: str, semana: int, date_iso: str) -> str:
+    # Compatibilidade com versões antigas (incluíam a data na key).
     return f"{perfil}||{plano_id}||{dia}||{int(semana)}||{date_iso}"
+
+def _active_inprogress_pointer_key(perfil: str, plano_id: str) -> str:
+    # Ponteiro para a sessão ativa de um perfil+plano
+    return f"active::{perfil}::{plano_id}"
+
+def get_active_inprogress_session(perfil: str, plano_id: str, max_age_hours: int = INPROGRESS_MAX_AGE_HOURS):
+    """Devolve (key, payload) da sessão ativa mais recente (se existir e não estiver expirada).
+    Usa ponteiro 'active::' quando existir; se não existir, faz scan (compatível com keys antigas).
+    """
+    try:
+        store = _load_inprogress_store()
+        now = time.time()
+        pkey = _active_inprogress_pointer_key(str(perfil), str(plano_id))
+
+        # 1) Ponteiro explícito
+        sk = store.get(pkey)
+        if isinstance(sk, str):
+            payload = store.get(sk)
+            if isinstance(payload, dict):
+                ts = float(payload.get("ts", 0) or 0)
+                if ts > 0 and (now - ts) <= float(max_age_hours) * 3600.0:
+                    return sk, payload
+
+        # 2) Scan por sessão mais recente (ignora ponteiros)
+        prefix = f"{perfil}||{plano_id}||"
+        best_k, best_p, best_ts = None, None, 0.0
+        for k, v in store.items():
+            if not isinstance(k, str):
+                continue
+            if k.startswith("active::"):
+                continue
+            if not k.startswith(prefix):
+                continue
+            if not isinstance(v, dict):
+                continue
+            ts = float(v.get("ts", 0) or 0)
+            if ts <= 0:
+                continue
+            if (now - ts) > float(max_age_hours) * 3600.0:
+                continue
+            if ts > best_ts:
+                best_k, best_p, best_ts = k, v, ts
+
+        if best_k and isinstance(best_p, dict):
+            # grava ponteiro para o próximo arranque (melhora restore)
+            try:
+                store[pkey] = best_k
+                _save_inprogress_store(store)
+            except Exception:
+                pass
+            return best_k, best_p
+
+        # 3) Nada ativo
+        try:
+            if pkey in store:
+                del store[pkey]
+                _save_inprogress_store(store)
+        except Exception:
+            pass
+        return None, None
+    except Exception:
+        return None, None
 
 def _load_inprogress_store() -> dict:
     try:
@@ -1171,6 +1239,7 @@ def load_inprogress_session(key: str, max_age_hours: int = INPROGRESS_MAX_AGE_HO
 def save_inprogress_session(key: str, payload: dict) -> None:
     try:
         store = _load_inprogress_store()
+
         # limpeza simples (evita crescimento infinito)
         try:
             now = time.time()
@@ -1178,11 +1247,43 @@ def save_inprogress_session(key: str, payload: dict) -> None:
                 v = store.get(k)
                 if isinstance(v, dict):
                     ts = float(v.get("ts", 0) or 0)
-                    if ts and (now - ts) > 72*3600:
+                    if ts and (now - ts) > 72 * 3600:
                         del store[k]
         except Exception:
             pass
-        store[key] = payload
+
+        # limpa ponteiros quebrados
+        try:
+            for k in list(store.keys()):
+                if isinstance(k, str) and k.startswith("active::"):
+                    v = store.get(k)
+                    if isinstance(v, str) and v not in store:
+                        del store[k]
+        except Exception:
+            pass
+
+        # remove snapshots legados para a mesma sessão (chave com data)
+        try:
+            parts = str(key).split("||")
+            if len(parts) >= 4:
+                base = "||".join(parts[:4])
+                for k in list(store.keys()):
+                    if isinstance(k, str) and k.startswith(base + "||"):
+                        del store[k]
+        except Exception:
+            pass
+
+        store[str(key)] = payload
+
+        # Atualiza ponteiro da sessão ativa (perfil+plano)
+        try:
+            _perfil = str(payload.get("perfil", "") or "")
+            _plano = str(payload.get("plano_id", "") or "")
+            if _perfil and _plano:
+                store[_active_inprogress_pointer_key(_perfil, _plano)] = str(key)
+        except Exception:
+            pass
+
         _save_inprogress_store(store)
     except Exception:
         pass
@@ -1190,9 +1291,35 @@ def save_inprogress_session(key: str, payload: dict) -> None:
 def clear_inprogress_session(key: str) -> None:
     try:
         store = _load_inprogress_store()
-        if key in store:
-            del store[key]
-            _save_inprogress_store(store)
+        skey = str(key)
+
+        parts = skey.split("||")
+        if len(parts) >= 4:
+            base = "||".join(parts[:4])
+
+            # apaga a key nova (base) e quaisquer keys antigas que incluam data
+            for k in list(store.keys()):
+                if not isinstance(k, str):
+                    continue
+                if k == base or k == skey or k.startswith(base + "||"):
+                    try:
+                        del store[k]
+                    except Exception:
+                        pass
+
+            # apaga ponteiro ativo se estiver a apontar para esta sessão
+            try:
+                pkey = _active_inprogress_pointer_key(parts[0], parts[1])
+                pv = store.get(pkey)
+                if isinstance(pv, str) and (pv == skey or pv == base or pv.startswith(base + "||")):
+                    del store[pkey]
+            except Exception:
+                pass
+        else:
+            if skey in store:
+                del store[skey]
+
+        _save_inprogress_store(store)
     except Exception:
         pass
 
@@ -4323,6 +4450,37 @@ if plan_id_active == "INEIX_ABC_v1" and isinstance(plan_obj, dict):
 else:
     treinos_dict = plan_obj
 
+
+# --- TREINO PURO: se existir sessão em curso (snapshot), força o "Treino" (dia) e a semana,
+# para poderes fazer "terça" na quarta e continuar depois sem a app voltar ao dia real.
+try:
+    st.session_state["_inprogress_active"] = False
+    st.session_state.pop("_inprogress_session_key", None)
+
+    _plano_active = str(st.session_state.get("plano_id_sel", "Base"))
+    _k_ip, _p_ip = get_active_inprogress_session(perfil_sel, _plano_active, INPROGRESS_MAX_AGE_HOURS)
+
+    if isinstance(_p_ip, dict) and isinstance(_k_ip, str):
+        st.session_state["_inprogress_active"] = True
+        st.session_state["_inprogress_session_key"] = _k_ip
+
+        try:
+            _p_dia = str(_p_ip.get("dia", "") or "")
+            if _p_dia:
+                st.session_state["dia_sel"] = _p_dia
+        except Exception:
+            pass
+
+        try:
+            _p_sem = int(_p_ip.get("semana", 0) or 0)
+            if _p_sem > 0:
+                st.session_state["semana_sel"] = _p_sem
+        except Exception:
+            pass
+except Exception:
+    pass
+
+
 _treino_options = list(treinos_dict.keys())
 if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
     _idx_today = _default_treino_index_for_today(_treino_options)
@@ -4517,13 +4675,17 @@ if not is_ineix:
         wk = max(1, min(int(cycle_len), wk))
 
         prev = int(st.session_state.get("semana_sel", 1) or 1)
-        if prev != wk:
-            st.session_state["semana_sel"] = wk
-            try:
-                _reset_daily_state()
-            except Exception:
-                pass
-
+        _lock_week = bool(st.session_state.get("_inprogress_active"))
+        if not _lock_week:
+            if prev != wk:
+                st.session_state["semana_sel"] = wk
+                try:
+                    _reset_daily_state()
+                except Exception:
+                    pass
+        else:
+            # Mantém a semana da sessão em curso (não força o calendário de hoje)
+            wk = prev
         semana = int(st.session_state.get("semana_sel", wk) or wk)
         st.sidebar.caption(f"Semana: **{semana}/{cycle_len}** · Início: **{start_iso}**")
 
@@ -5017,7 +5179,7 @@ Dor articular pontiaguda = troca variação no dia.
         # Se houver snapshot recente para este perfil/dia/plano/semana, restaura progresso e séries pendentes.
         try:
             _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-            _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+            _ip_key = st.session_state.get("_inprogress_session_key") or _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
             if not _pure_has_any_progress(perfil_sel, dia, len(cfg.get('exercicios', []))):
                 _payload = load_inprogress_session(_ip_key)
                 if isinstance(_payload, dict):
