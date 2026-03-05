@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st  
 import streamlit.components.v1 as components
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -234,7 +234,7 @@ def _enforce_mobile_ui_behaviour():
                     // Limpa artefactos vazios na sidebar (cards HTML abertos/fechados sem conteúdo útil)
                     d.querySelectorAll('section[data-testid="stSidebar"] .sidebar-card, section[data-testid="stSidebar"] .sidebar-seal').forEach((el) => {
                       try {
-                        const txt = ((el.innerText || '') + '').replace(/\s+/g, '').trim();
+                        const txt = ((el.innerText || '') + '').replace(/\\s+/g, '').trim();
                         const hasWidget = !!el.querySelector('[data-testid], [data-baseweb], input, button, textarea, select, label');
                         const hasContent = !!el.querySelector('h1,h2,h3,h4,p,span,small');
                         const tooSmall = (el.getBoundingClientRect ? el.getBoundingClientRect().height : 0) < 24;
@@ -4311,6 +4311,33 @@ except Exception:
     pass
 
 
+
+# TIMER
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Descanso</h3>", unsafe_allow_html=True)
+
+if "disable_rest_timer" not in st.session_state:
+    st.session_state["disable_rest_timer"] = False
+
+try:
+    disable_rest_timer = st.sidebar.toggle(
+        "Desligar timer de descanso",
+        value=bool(st.session_state.get("disable_rest_timer", False)),
+        key="disable_rest_timer",
+        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+    )
+except Exception:
+    disable_rest_timer = st.sidebar.checkbox(
+        "Desligar timer de descanso",
+        value=bool(st.session_state.get("disable_rest_timer", False)),
+        key="disable_rest_timer",
+        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+    )
+
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+
+
 # Modo mobile permanente (sem toggles na sidebar)
 st.session_state["ui_compact_mode"] = False
 st.session_state["ui_pure_mode"] = True
@@ -4411,18 +4438,158 @@ with tab_treino:
     pure_workout_mode = bool(st.session_state.get("ui_pure_mode", True))
     show_rules = (not pure_workout_mode) or bool(st.session_state.get("ui_show_rules", False))
 
-    def _queue_auto_rest(seconds:int, ex_name:str=""):
+    def _bc_fmt_mmss(secs: int) -> str:
         try:
-            secs = max(1, int(seconds))
+            s = max(0, int(secs or 0))
         except Exception:
-            secs = 60
-        st.session_state["rest_auto_seconds"] = secs
-        st.session_state["rest_auto_from"] = str(ex_name or "")
-        st.session_state["rest_auto_end_ts"] = float(time.time()) + float(secs)
-        st.session_state["rest_auto_run"] = True
-        st.session_state["rest_auto_notified"] = False
-        st.session_state["scroll_to_rest_timer"] = True
-        st.session_state["yami_last_rest_s"] = secs
+            s = 0
+        m, s2 = divmod(s, 60)
+        return f"{m:02d}:{s2:02d}"
+
+    def _bc_fmt_hms(ts: float) -> str:
+        try:
+            dt = datetime.datetime.fromtimestamp(float(ts), ZoneInfo("Europe/Lisbon"))
+        except Exception:
+            dt = datetime.datetime.fromtimestamp(float(ts))
+        return dt.strftime("%H:%M:%S")
+
+    def _bc_show_rest_info_window(total_s: int, start_ts: float, end_ts: float, ex_name: str = "") -> None:
+        """Mostra uma janela (modal) com o descanso recomendado quando o timer está desligado."""
+        try:
+            payload = {
+                "ex": str(ex_name or ""),
+                "mmss": _bc_fmt_mmss(int(total_s or 0)),
+                "start": _bc_fmt_hms(float(start_ts)),
+                "end": _bc_fmt_hms(float(end_ts)),
+            }
+            components.html(
+                f"""
+<script>
+(function(){{
+  try {{
+    const d = parent.document || document;
+    const id = 'bc-rest-info-modal';
+    const payload = {json.dumps(payload)};
+    let ov = d.getElementById(id);
+    if (!ov) {{
+      ov = d.createElement('div');
+      ov.id = id;
+      ov.style.position = 'fixed';
+      ov.style.inset = '0';
+      ov.style.zIndex = '100000';
+      ov.style.display = 'flex';
+      ov.style.alignItems = 'center';
+      ov.style.justifyContent = 'center';
+      ov.style.background = 'rgba(0,0,0,0.72)';
+      ov.style.backdropFilter = 'blur(8px)';
+      ov.style.padding = '18px';
+      d.body.appendChild(ov);
+    }}
+
+    const title = payload.ex ? ('Descanso • ' + payload.ex) : 'Descanso';
+    ov.innerHTML = `
+      <div style="width:min(540px, 92vw); border-radius:16px; border:1px solid rgba(255,255,255,0.12); background:rgba(18,18,18,0.92); box-shadow:0 18px 38px rgba(0,0,0,0.55); overflow:hidden;">
+        <div style="padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <div style="font-weight:900; color:#E8E2E2; letter-spacing:.02em;">⏱️ ${title}</div>
+          <button id="bc-rest-close" style="border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.06); color:#E8E2E2; border-radius:10px; padding:6px 10px; cursor:pointer;">Fechar</button>
+        </div>
+        <div style="padding:14px 16px; color:rgba(232,226,226,0.92); font-size:14px; line-height:1.4;">
+          <div style="font-size:22px; font-weight:900; margin-bottom:10px; color:#FFFFFF;">${payload.mmss} <span style="font-size:13px; font-weight:700; opacity:.75;">(min:seg)</span></div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+            <div style="border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px 12px; background:rgba(255,255,255,0.03);">
+              <div style="opacity:.75; font-size:12px;">Início</div>
+              <div style="font-weight:900; font-size:16px;">${payload.start}</div>
+            </div>
+            <div style="border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px 12px; background:rgba(255,255,255,0.03);">
+              <div style="opacity:.75; font-size:12px;">Fim</div>
+              <div style="font-weight:900; font-size:16px;">${payload.end}</div>
+            </div>
+          </div>
+          <div style="margin-top:10px; opacity:.75; font-size:12px;">Timer desligado na sidebar.</div>
+        </div>
+      </div>
+    `;
+
+    function close() {{
+      try {{ ov.remove(); }} catch(e) {{ ov.style.display = 'none'; }}
+    }}
+    const btn = ov.querySelector('#bc-rest-close');
+    if (btn) btn.onclick = close;
+    ov.onclick = (e) => {{ if (e.target === ov) close(); }};
+  }} catch(e) {{}}
+}})();
+</script>
+""",
+                height=0,
+            )
+        except Exception:
+            pass
+
+
+
+def _queue_auto_rest(seconds:int, ex_name:str=""):
+    try:
+        secs = max(1, int(seconds))
+    except Exception:
+        secs = 60
+
+    # Se o utilizador desligar o timer, não fazemos contagem; mostramos só a info.
+    if bool(st.session_state.get("disable_rest_timer", False)):
+        start_ts = float(time.time())
+        end_ts = float(start_ts) + float(secs)
+        st.session_state["rest_info_pending"] = True
+        st.session_state["rest_info_total_s"] = int(secs)
+        st.session_state["rest_info_start_ts"] = float(start_ts)
+        st.session_state["rest_info_end_ts"] = float(end_ts)
+        st.session_state["rest_info_ex"] = str(ex_name or "")
+        st.session_state["rest_auto_run"] = False
+        st.session_state["yami_last_rest_s"] = int(secs)
+        return
+
+    start_ts = float(time.time())
+    st.session_state["rest_auto_seconds"] = secs
+    st.session_state["rest_auto_from"] = str(ex_name or "")
+    st.session_state["rest_auto_start_ts"] = float(start_ts)
+    st.session_state["rest_auto_end_ts"] = float(start_ts) + float(secs)
+    st.session_state["rest_auto_run"] = True
+    st.session_state["rest_auto_notified"] = False
+    st.session_state["scroll_to_rest_timer"] = True
+    st.session_state["yami_last_rest_s"] = secs
+
+
+# Timer desligado: parar contagem ativa e mostrar só a janela com o descanso recomendado.
+if bool(st.session_state.get("disable_rest_timer", False)) and bool(st.session_state.get("rest_auto_run", False)):
+    try:
+        total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
+        end_ts = float(st.session_state.get("rest_auto_end_ts", float(time.time()) + float(total_rest)) or (float(time.time()) + float(total_rest)))
+        start_ts = float(st.session_state.get("rest_auto_start_ts", float(end_ts) - float(total_rest)) or (float(end_ts) - float(total_rest)))
+        ex_rest = str(st.session_state.get("rest_auto_from", "") or "")
+    except Exception:
+        total_rest = 60
+        start_ts = float(time.time())
+        end_ts = float(start_ts) + float(total_rest)
+        ex_rest = ""
+    st.session_state["rest_info_pending"] = True
+    st.session_state["rest_info_total_s"] = int(total_rest)
+    st.session_state["rest_info_start_ts"] = float(start_ts)
+    st.session_state["rest_info_end_ts"] = float(end_ts)
+    st.session_state["rest_info_ex"] = str(ex_rest)
+    st.session_state["rest_auto_run"] = False
+
+# Se houver info pendente (timer desligado), mostra uma janela com horas e mm:ss.
+if bool(st.session_state.get("rest_info_pending", False)):
+    try:
+        total_rest = int(st.session_state.get("rest_info_total_s", 60) or 60)
+        start_ts = float(st.session_state.get("rest_info_start_ts", float(time.time())) or float(time.time()))
+        end_ts = float(st.session_state.get("rest_info_end_ts", float(start_ts) + float(total_rest)) or (float(start_ts) + float(total_rest)))
+        ex_rest = str(st.session_state.get("rest_info_ex", "") or "")
+    except Exception:
+        total_rest = 60
+        start_ts = float(time.time())
+        end_ts = float(start_ts) + float(total_rest)
+        ex_rest = ""
+    _bc_show_rest_info_window(total_rest, start_ts, end_ts, ex_rest)
+    st.session_state["rest_info_pending"] = False
 
     if st.session_state.get("rest_auto_run", False):
         st.markdown("<div id='rest-timer-anchor'></div>", unsafe_allow_html=True)
@@ -5507,14 +5674,4 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
-
-
-
 
