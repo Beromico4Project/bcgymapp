@@ -2040,6 +2040,9 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
     if base <= 0:
         return [0.0 for _ in range(series_n)]
 
+    # passo realista (2/2.5) para evitar pesos 'impossíveis' (ex.: +0.5kg)
+    step = yami_infer_load_step(df_last=df_last, pending_sets=None, fallback=2.5)
+
     rep_info = _parse_rep_scheme(str(item.get("reps", "")), series_n)
     kind = str(rep_info.get("kind") or "")
 
@@ -2054,7 +2057,7 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 if w_max > 0:
                     padded = list(last_w) + [w_max] * max(0, series_n - len(last_w))
                     ratios = [max(0.20, min(1.05, float(w) / w_max)) for w in padded[:series_n]]
-                    out = [float(_round_to_nearest(base * ratios[s], _yami_round_step())) for s in range(series_n)]
+                    out = [float(_round_to_nearest(base * ratios[s], step)) for s in range(series_n)]
                     # monotonia não-decrescente (rampa)
                     for j in range(1, len(out)):
                         if out[j] < out[j-1]:
@@ -2083,11 +2086,11 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 mean_mult = 1.0
             base_adj = (base / mean_mult) if mean_mult > 0 else base
 
-            out = [float(_round_to_nearest(base_adj * m, _yami_round_step())) for m in mults]
+            out = [float(_round_to_nearest(base_adj * m, step)) for m in mults]
             return out
 
     # 3) Default: constante (o ajuste série-a-série vem da performance real)
-    return [float(_round_to_nearest(base, _yami_round_step())) for _ in range(series_n)]
+    return [float(_round_to_nearest(base, step)) for _ in range(series_n)]
 
 
 def _yami_suggest_weight_for_series(
@@ -2138,6 +2141,13 @@ def _yami_suggest_weight_for_series(
     reps_high = int(rep_info.get("high") or 0) if kind in ("range", "fixed", "fixed_seq") else 0
 
     inc_up, inc_down = _yami_inc_steps(ex, item)
+
+    # Yami: só permite subir/descer em passos de 2kg ou 2,5kg (conforme último treino)
+    step = yami_infer_load_step(df_last=df_last, pending_sets=pending_sets, fallback=2.5)
+    try:
+        inc_up = inc_down = float(step)
+    except Exception:
+        inc_up = inc_down = 2.5
 
     # flags locais (evita NameError; usados em micro-steps)
     try:
@@ -2239,7 +2249,11 @@ def _yami_suggest_weight_for_series(
     except Exception:
         pass
 
-    return float(_round_to_nearest(sug, _yami_round_step()))
+    try:
+        anchor = float(last_w) if float(last_w) > 0 else float(base)
+    except Exception:
+        anchor = float(base)
+    return float(yami_snap_to_load_grid(sug, anchor, step))
 
 
 def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact: bool = True):
@@ -2735,6 +2749,85 @@ def _round_to_nearest(x: float, step: float = 0.5) -> float:
         return 0.0
 
 
+def _yami_is_close_to_multiple(x: float, step: float, tol: float = 1e-6) -> bool:
+    try:
+        x = float(x)
+        step = float(step)
+        if step <= 0:
+            return False
+        q = x / step
+        return abs(q - round(q)) <= tol
+    except Exception:
+        return False
+
+
+def yami_load_step_from_weight(last_weight: float | None, default_step: float = 2.5) -> float:
+    """Escolhe o passo de carga (apenas 2.0 ou 2.5) com base no último peso do exercício.
+    - Se o último peso parece cair numa grelha de 2.5 (ex.: 17.5, 30.0, 72.5) -> 2.5
+    - Caso contrário -> 2.0
+    """
+    try:
+        w = float(last_weight) if last_weight is not None else 0.0
+    except Exception:
+        w = 0.0
+    if w > 0:
+        return 2.5 if (_yami_is_close_to_multiple(w, 2.5) or _yami_is_close_to_multiple(w * 2.0, 5.0)) else 2.0
+    # fallback: se não houver histórico, assume 2.5 (mais comum em halteres/máquinas)
+    try:
+        d = float(default_step)
+    except Exception:
+        d = 2.5
+    return 2.5 if d >= 2.5 else 2.0
+
+
+def yami_infer_load_step(df_last: pd.DataFrame | None = None, pending_sets: list | None = None, fallback: float = 2.5) -> float:
+    """Infere passo (2/2.5) do exercício a partir do último treino OU das séries já lançadas."""
+    # 1) prioridade: série já lançada neste exercício (mesma sessão)
+    try:
+        if isinstance(pending_sets, list) and pending_sets:
+            w = float(pending_sets[-1].get("peso", 0) or 0)
+            if w > 0:
+                return yami_load_step_from_weight(w, default_step=fallback)
+    except Exception:
+        pass
+
+    # 2) histórico do último treino do exercício
+    try:
+        if df_last is not None and (not df_last.empty) and ("Peso (kg)" in df_last.columns):
+            w_list = pd.to_numeric(df_last["Peso (kg)"], errors="coerce").dropna().astype(float).tolist()
+            if w_list:
+                # usa o top set como âncora (é o peso real que tu sentiste)
+                return yami_load_step_from_weight(max(w_list), default_step=fallback)
+    except Exception:
+        pass
+
+    # 3) fallback
+    return yami_load_step_from_weight(None, default_step=fallback)
+
+
+def yami_snap_to_load_grid(weight: float, anchor: float, step: float) -> float:
+    """Ajusta 'weight' para a grelha permitida (2/2.5) ancorada no último peso real."""
+    try:
+        w = float(weight or 0.0)
+        a = float(anchor or 0.0)
+        s = float(step or 0.0)
+    except Exception:
+        return 0.0
+    if w <= 0:
+        return 0.0
+    if s <= 0:
+        return float(round(w, 1))
+    if a <= 0:
+        # sem âncora, arredonda ao passo puro
+        return float(round(_round_to_nearest(w, s), 1))
+    k = round((w - a) / s)
+    out = a + (k * s)
+    out = max(0.0, out)
+    # limpeza de float: 72.499999 -> 72.5
+    return float(round(out, 1))
+
+
+
 def _parse_rep_scheme(rep_text: str, series_hint: int | None = None) -> dict:
     s = str(rep_text or '').strip()
     s_low = s.lower().replace(' ', '')
@@ -3074,6 +3167,20 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         }
 
     p_atual = float(latest.get('peso_medio', 0) or 0)
+    # passo de carga permitido (apenas 2/2.5) baseado no último treino deste exercício
+    try:
+        _w_anchor_tmp = list(latest.get('pesos', []) or [])
+        _w_anchor = float(max(_w_anchor_tmp)) if _w_anchor_tmp else float(p_atual)
+    except Exception:
+        _w_anchor = float(p_atual)
+    load_step = float(yami_load_step_from_weight(_w_anchor, default_step=2.5))
+    # forçar arredondamentos/alterações do Yami a este passo (evita sugestões "impossíveis" tipo +0.5)
+    rstep = float(load_step)
+    try:
+        inc_up = inc_down = float(load_step)
+    except Exception:
+        pass
+
     reps_list = list(latest.get('reps', []) or [])
     rirs_list = [float(x) for x in list(latest.get('rirs', []) or []) if x is not None]
     reps_media = float(latest.get('reps_media', 0) or 0)
@@ -3311,10 +3418,11 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     # Decisão final (mais granular + micro-ajustes)
     # Ideia: quando o sinal é "pequeno mas real", mexer pouco (microloading) em vez de só 0/+inc_up.
+    # micro-ajuste desativado: só 2kg ou 2.5kg (sem 0.5/1.25/etc.)
     try:
-        inc_micro = max(0.5, float(inc_up) / 2.0)
+        inc_micro = float(inc_up)
     except Exception:
-        inc_micro = 0.5
+        inc_micro = float(2.5)
 
     if score >= 2.25:
         acao = f"+{_fmt_inc(inc_up)}kg"
@@ -3554,7 +3662,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         scale = 1.0
     if deload_now or deload_force or ('DELOAD' in str(acao)):
         scale = min(scale, 0.92)
-    w_work_sug = float(_round_to_nearest(max(0.0, w_work_last * scale), 0.5))
+    w_work_sug = float(yami_snap_to_load_grid(max(0.0, w_work_last * scale), w_work_last, load_step))
 
     # Plano de execução (Top set + Back-off) — estrutura para tornar a sugestão acionável
     plan = {}
@@ -5607,7 +5715,7 @@ Dor articular pontiaguda = troca variação no dia.
 
                     if current_s < total_series:
                         _apply_prefill_payload_if_any(i)
-                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
+                        kg_step = yami_infer_load_step(df_last=df_last, pending_sets=pending_sets, fallback=2.5)
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
@@ -5790,7 +5898,7 @@ Dor articular pontiaguda = troca variação no dia.
                     lista_sets = []
                     _apply_prefill_payload_if_any(i)
                     with st.form(key=f"form_{i}"):
-                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
+                        kg_step = yami_infer_load_step(df_last=df_last, pending_sets=None, fallback=2.5)
                         for s in range(item["series"]):
                             st.markdown(f"### Série {s+1}")
                             peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
