@@ -2655,6 +2655,14 @@ def _parse_rep_scheme(rep_text: str, series_hint: int | None = None) -> dict:
 
 
 def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list:
+    """Resumo histórico por sessão para um exercício.
+
+    Mantém chaves existentes (compat) e adiciona métricas úteis para o Yami:
+    - w_work: maior peso do dia
+    - tonnage: tonelagem total (peso * reps)
+    - e1rm_simple: melhor 1RM estimado (Epley) só com reps
+    - e1rm_rir: melhor 1RM estimado (Epley) usando reps + RIR quando existe
+    """
     if df is None or getattr(df, 'empty', True):
         return []
     d = df.copy()
@@ -2666,29 +2674,131 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
     d['_dt'] = pd.to_datetime(d.get('Data'), dayfirst=True, errors='coerce')
     d = d.sort_values('_dt', ascending=False, na_position='last')
 
+    def _safe_float(x, default=None):
+        try:
+            if x is None:
+                return default
+            if isinstance(x, str) and x.strip() == '':
+                return default
+            fx = float(x)
+            try:
+                if pd.isna(fx):
+                    return default
+            except Exception:
+                pass
+            if fx == float('inf') or fx == float('-inf'):
+                return default
+            return fx
+        except Exception:
+            return default
+
+    def _epley_1rm(w: float, reps_to_fail: float) -> float:
+        try:
+            w = float(w)
+            reps_to_fail = float(reps_to_fail)
+        except Exception:
+            return 0.0
+        if w <= 0 or reps_to_fail <= 0:
+            return 0.0
+        r = min(15.0, reps_to_fail)  # cap para evitar exageros com reps altas
+        return float(w) * (1.0 + (r / 30.0))
+
     out = []
     for _, row in d.iterrows():
-        pesos = [float(x) for x in _parse_num_list(row.get('Peso')) if x is not None]
-        reps = [float(x) for x in _parse_num_list(row.get('Reps')) if x is not None]
-        rirs = [float(x) for x in _parse_num_list(row.get('RIR')) if x is not None]
-        n_sets = max(len(pesos), len(reps), len(rirs))
+        pesos_raw = _parse_num_list(row.get('Peso'))
+        reps_raw = _parse_num_list(row.get('Reps'))
+        rirs_raw = _parse_num_list(row.get('RIR'))
+
+        pesos_raw = [_safe_float(x, None) for x in pesos_raw]
+        reps_raw = [_safe_float(x, None) for x in reps_raw]
+        rirs_raw = [_safe_float(x, None) for x in rirs_raw]
+
+        # tamanho real do exercício (broadcast simples para listas com 1 valor)
+        n_sets = max(len(pesos_raw), len(reps_raw), len(rirs_raw))
         if n_sets <= 0:
             continue
-        reps_num = [r for r in reps if pd.notna(r)]
-        rirs_num = [r for r in rirs if pd.notna(r)]
-        pesos_num = [w for w in pesos if pd.notna(w)]
+
+        def _get(arr, i):
+            if not arr:
+                return None
+            if len(arr) == 1:
+                return arr[0]
+            return arr[i] if i < len(arr) else None
+
+        pesos = []
+        reps = []
+        rirs = []
+        for i in range(n_sets):
+            w = _get(pesos_raw, i)
+            r = _get(reps_raw, i)
+            rr = _get(rirs_raw, i)
+            pesos.append(float(w) if (w is not None and w > 0) else None)
+            reps.append(int(round(float(r))) if (r is not None and r > 0) else None)
+            rirs.append(float(rr) if (rr is not None) else None)
+
+        pesos_num = [w for w in pesos if isinstance(w, (int, float)) and pd.notna(w) and float(w) > 0]
+        reps_num = [r for r in reps if isinstance(r, (int, float)) and pd.notna(r) and float(r) > 0]
+        rirs_num = [rr for rr in rirs if isinstance(rr, (int, float)) and pd.notna(rr)]
+
+        peso_medio = float(sum(pesos_num) / len(pesos_num)) if pesos_num else 0.0
+        reps_media = float(sum(reps_num) / len(reps_num)) if reps_num else 0.0
+        rir_media = float(sum(rirs_num) / len(rirs_num)) if rirs_num else None
+
+        # trabalho (top set) e volume
+        w_work = float(max(pesos_num)) if pesos_num else 0.0
+        tonnage = 0.0
+        for i in range(n_sets):
+            w = pesos[i]
+            r = reps[i]
+            if isinstance(w, (int, float)) and isinstance(r, (int, float)) and w > 0 and r > 0:
+                tonnage += float(w) * float(r)
+
+        # e1RM (Epley)
+        e1rm_simple = 0.0
+        e1rm_rir = 0.0
+        for i in range(n_sets):
+            w = pesos[i]
+            r = reps[i]
+            rr = rirs[i]
+            if not (isinstance(w, (int, float)) and isinstance(r, (int, float))):
+                continue
+            if w <= 0 or r <= 0:
+                continue
+
+            e1 = _epley_1rm(w, r)
+            if e1 > e1rm_simple:
+                e1rm_simple = e1
+
+            # se tiver RIR, melhora a estimativa (reps até falha ≈ reps + RIR)
+            if isinstance(rr, (int, float)) and pd.notna(rr):
+                e1r = _epley_1rm(w, max(1.0, float(r) + float(rr)))
+                if e1r > e1rm_rir:
+                    e1rm_rir = e1r
+
+        if e1rm_rir <= 0:
+            e1rm_rir = e1rm_simple
+
         out.append({
             'data': row.get('Data', '—'),
             'dt': row.get('_dt'),
-            'peso_medio': float(sum(pesos_num)/len(pesos_num)) if pesos_num else 0.0,
-            'reps_media': float(sum(reps_num)/len(reps_num)) if reps_num else 0.0,
-            'reps_min': int(min(reps_num)) if reps_num else 0,
-            'reps_max': int(max(reps_num)) if reps_num else 0,
-            'rirs_media': float(sum(rirs_num)/len(rirs_num)) if rirs_num else None,
+            'peso_medio': float(peso_medio),
+            'reps_media': float(reps_media),
+            'reps_min': int(min([x for x in reps_num if x is not None])) if reps_num else 0,
+            'reps_max': int(max([x for x in reps_num if x is not None])) if reps_num else 0,
+            'rirs_media': float(rir_media) if rir_media is not None else None,
             'n_sets': int(n_sets),
-            'pesos': pesos_num,
-            'reps': [int(round(x)) for x in reps_num],
-            'rirs': rirs_num,
+
+            # compat
+            'pesos': [w for w in pesos_num],
+            'reps': [int(x) for x in reps_num],
+            'rirs': [float(x) for x in rirs_num],
+
+            # novos sinais
+            'w_work': float(w_work),
+            'tonnage': float(tonnage),
+            'e1rm_simple': float(e1rm_simple),
+            'e1rm_rir': float(e1rm_rir),
+            'has_rir': bool(len(rirs_num) > 0),
         })
     return out
 
@@ -2732,6 +2842,68 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     latest = hist[0] if hist else None
     prev = hist[1] if len(hist) > 1 else None
     prev2 = hist[2] if len(hist) > 2 else None
+
+    # --- Tendência extra (e1RM EMA) + fase do ciclo (periodização) ---
+    n_hist = len(hist)
+
+    # Fase do ciclo (fora do deload explícito): mexe um pouco na agressividade da sugestão
+    phase = "build"
+    phase_bias = 0.0
+    try:
+        # GUI: estágio 1-5 (deload é tratado fora)
+        if 'GUI_PPLA_ID' in globals() and str(plano_id) == str(GUI_PPLA_ID):
+            try:
+                _stage = int(gui_stage_week(int(semana))) if 'gui_stage_week' in globals() else None
+            except Exception:
+                _stage = None
+            if _stage == 1:
+                phase = "build"
+                phase_bias -= 0.10
+            elif _stage == 5:
+                phase = "push"
+                phase_bias += 0.20
+        else:
+            # Base: semanas de "pico" (mais agressivas) e semanas de reentrada após deload
+            try:
+                if str(bloco) in ("Hipertrofia", "Força") and ('is_intensify_hypertrophy' in globals()) and bool(is_intensify_hypertrophy(int(semana))):
+                    phase = "push"
+                    phase_bias += 0.20
+            except Exception:
+                pass
+            try:
+                if int(semana) in (1, 5):
+                    phase_bias -= 0.08
+            except Exception:
+                pass
+    except Exception:
+        phase = "build"
+        phase_bias = 0.0
+
+    # EMA de e1RM (quanto mais sessões, mais fundamentada a progressão)
+    e1_vals = []
+    try:
+        for h in list(reversed(hist[:6])):  # oldest -> newest
+            v = float(h.get('e1rm_rir', 0.0) or 0.0)
+            if v > 0:
+                e1_vals.append(v)
+    except Exception:
+        e1_vals = []
+
+    def _ema(vals, alpha: float = 0.55) -> float:
+        try:
+            if not vals:
+                return 0.0
+            e = float(vals[0])
+            for x in vals[1:]:
+                e = (alpha * float(x)) + ((1.0 - alpha) * e)
+            return float(e)
+        except Exception:
+            return 0.0
+
+    ema_now = _ema(e1_vals, 0.55) if e1_vals else 0.0
+    ema_prev = _ema(e1_vals[:-1], 0.55) if len(e1_vals) >= 2 else 0.0
+    ema_delta_pct = ((ema_now - ema_prev) / ema_prev) if (ema_prev and ema_prev > 0) else 0.0
+
 
     is_lower = _is_lower_exercise(ex)
     is_comp = str(item.get('tipo', '')).lower() == 'composto'
@@ -2866,6 +3038,17 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         pass
 
+    # fase do ciclo (periodização): micro-inclinação, não magia
+    try:
+        if abs(float(phase_bias)) > 1e-9:
+            score += float(phase_bias)
+            if str(phase) == "push":
+                reasons.append("Fase do ciclo: semana mais agressiva → micro-subidas podem aparecer mais cedo.")
+            elif float(phase_bias) < 0:
+                reasons.append("Fase do ciclo: semana de (re)entrada → foco em técnica/consistência.")
+    except Exception:
+        pass
+
     if deload_now:
         p_sug = max(0.0, _round_to_nearest(p_atual * 0.88, rstep))
         delta = p_sug - p_atual
@@ -2945,6 +3128,18 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     score += trend_score
     if trend_bits:
         reasons.append('Tendência: ' + '; '.join(trend_bits) + '.')
+
+    # Tendência por e1RM (EMA): confirma se estás a subir/descansar ou a descarrilar
+    try:
+        if float(ema_now) > 0 and float(ema_prev) > 0:
+            if float(ema_delta_pct) >= 0.015:
+                score += 0.45
+                reasons.append(f"Tendência (e1RM): a subir (~{float(ema_delta_pct)*100:+.1f}%).")
+            elif float(ema_delta_pct) <= -0.015:
+                score -= 0.55
+                reasons.append(f"Tendência (e1RM): a cair (~{float(ema_delta_pct)*100:+.1f}%).")
+    except Exception:
+        pass
 
     if stall_flag:
         score -= 0.5
@@ -3072,6 +3267,37 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         pass
 
+    # Confiança afeta a agressividade (não é só cosmético)
+    try:
+        if str(conf) == 'baixa' and ('DELOAD' not in str(acao)):
+            # cap no quanto mexe na carga quando os dados ainda não são "limpos"
+            try:
+                max_move = float(inc_micro)
+            except Exception:
+                max_move = 0.5
+            cap_up = float(p_atual) + float(max_move)
+            cap_dn = float(p_atual) - float(max_move)
+            p_cap = float(p_sug)
+            if p_cap > cap_up:
+                p_cap = cap_up
+            if p_cap < cap_dn:
+                p_cap = cap_dn
+            p_cap = float(_round_to_nearest(p_cap, rstep))
+
+            if abs(float(p_cap) - float(p_sug)) >= 0.25:
+                p_sug = float(p_cap)
+                dcap = float(p_sug) - float(p_atual)
+                if abs(dcap) < 0.25:
+                    acao = "Mantém carga"
+                    p_sug = float(_round_to_nearest(p_atual, rstep))
+                elif dcap > 0:
+                    acao = f"+{_fmt_inc(dcap)}kg"
+                else:
+                    acao = f"Baixa {_fmt_inc(abs(dcap))}kg"
+                resumo = resumo + " (confiança baixa: mexo pouco)"
+    except Exception:
+        pass
+
     # "Porque" (1 linha)
     try:
         if deload_force:
@@ -3140,13 +3366,45 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     else:  # Brutal/Normal
         resumo = prefix + " " + resumo
 
-    # confiança
-    if sessao_incompleta or sets_ratio < 0.75 or latest.get('n_sets', 0) < max(1, min(series_alvo, 2)):
-        conf = 'baixa'
-    elif abs(score) >= 2 and (prev is not None):
+    # confiança (não é só um rótulo: vai mandar na agressividade)
+    conf_q = 0.0
+    try:
+        conf_q += 0.25 if int(n_hist or 0) >= 2 else 0.0
+        conf_q += 0.25 if int(n_hist or 0) >= 3 else 0.0
+    except Exception:
+        pass
+    try:
+        conf_q += 0.20 if (rir_eff is not None) else 0.0
+    except Exception:
+        pass
+    try:
+        conf_q += 0.20 if (not sessao_incompleta and float(sets_ratio) >= 0.85) else 0.0
+    except Exception:
+        pass
+    try:
+        conf_q += 0.10 if str(rep_kind) != 'special' else 0.0
+    except Exception:
+        pass
+    conf_q = max(0.0, min(1.0, float(conf_q)))
+
+    # penalidades rápidas (dados fracos)
+    try:
+        if sessao_incompleta and float(sets_ratio) < 0.67:
+            conf_q -= 0.25
+        if rir_eff is None:
+            conf_q -= 0.10
+        if int(n_hist or 0) < 2:
+            conf_q -= 0.10
+    except Exception:
+        pass
+    conf_q = max(0.0, min(1.0, float(conf_q)))
+
+    if conf_q >= 0.75 and (prev is not None):
         conf = 'alta'
-    else:
+    elif conf_q >= 0.45:
         conf = 'média'
+    else:
+        conf = 'baixa'
 
     # reduzir ruído
     reasons = [r for r in reasons if r]
@@ -3171,12 +3429,68 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         scale = min(scale, 0.92)
     w_work_sug = float(_round_to_nearest(max(0.0, w_work_last * scale), 0.5))
 
+    # Plano de execução (Top set + Back-off) — estrutura para tornar a sugestão acionável
+    plan = {}
+    try:
+        # reps alvo para o top set (heurística simples)
+        top_reps = int(high) if int(high or 0) > 0 else (int(low) if int(low or 0) > 0 else 0)
+        try:
+            if str(rep_kind) == 'fixed_seq':
+                seq = list(rep_info.get('expected') or [])
+                if seq:
+                    top_reps = int(float(seq[-1]) or top_reps)
+        except Exception:
+            pass
+        if top_reps <= 0:
+            try:
+                top_reps = int(round(float(reps_media))) if float(reps_media) > 0 else 0
+            except Exception:
+                top_reps = 0
+
+        # drop típico para back-offs (varia por bloco/tipo e por sinais do corpo)
+        drop = 0.06
+        try:
+            bl = str(bloco or '').lower()
+            if bl.startswith('for'):      # força
+                drop = 0.04 if bool(is_comp) else 0.06
+            elif bl.startswith('hip'):    # hipertrofia
+                drop = 0.06 if bool(is_comp) else 0.08
+            elif bl == 'abc':
+                drop = 0.06
+        except Exception:
+            pass
+        try:
+            if body_flags:
+                drop += 0.02
+        except Exception:
+            pass
+        try:
+            if str(read_label) in ("Baixa", "Média-baixa"):
+                drop += 0.01
+        except Exception:
+            pass
+        drop = max(0.03, min(0.12, float(drop)))
+
+        back_w = None
+        if int(series_alvo or 0) > 1:
+            back_w = float(_round_to_nearest(float(w_work_sug) * (1.0 - float(drop)), rstep))
+
+        plan = {
+            "phase": str(phase),
+            "top_set": {"peso": float(w_work_sug), "reps": (int(top_reps) if int(top_reps or 0) > 0 else None), "rir": float(rir_alvo_num_)},
+            "backoff": {"sets": int(max(0, int(series_alvo or 0) - 1)), "peso": (float(back_w) if back_w else None), "drop_pct": float(drop)},
+            "rule": "Se falhares reps mínimas ou RIR ficar ~1 abaixo do alvo, baixa micro na próxima série. Se estiver folgado (+1 RIR) com reps ok, sobe micro.",
+        }
+    except Exception:
+        plan = {}
+
     return {
         'acao': acao,
         'peso_sugerido': float(p_sug),
         'delta': float(p_sug - p_atual),
         'confianca': conf,
         'resumo': resumo,
+        'plan': plan,
         'porque': str(porque),
         'razoes': reasons,
         'deload_reco': bool(deload_reco),
@@ -4995,6 +5309,49 @@ Dor articular pontiaguda = troca variação no dia.
                                     st.caption(f"Por série: {_prof_txt}")
                             else:
                                 st.caption(f"Confiança: {yami.get('confianca', 'média')}")
+                            # Plano (Top set + Back-off) — opcional, só aparece quando há base
+                            try:
+                                _pl = yami.get('plan', {}) if isinstance(yami, dict) else {}
+                                if isinstance(_pl, dict) and _pl:
+                                    _ts = _pl.get('top_set', {}) or {}
+                                    _bo = _pl.get('backoff', {}) or {}
+
+                                    try:
+                                        _ts_w = float(_ts.get('peso', 0) or 0)
+                                    except Exception:
+                                        _ts_w = 0.0
+                                    _ts_reps = _ts.get('reps', None)
+                                    try:
+                                        _ts_rir = float(_ts.get('rir', 0) or 0)
+                                    except Exception:
+                                        _ts_rir = None
+
+                                    if _ts_w > 0:
+                                        _ts_reps_txt = f"{int(_ts_reps)} reps" if _ts_reps is not None else "reps alvo"
+                                        _ts_rir_txt = f"RIR {_ts_rir:.1f}" if _ts_rir is not None else ""
+                                        st.markdown(f"**Plano:** Top set ~{_ts_w:.1f} kg · {_ts_reps_txt} · {_ts_rir_txt}".strip())
+
+                                    try:
+                                        _bo_sets = int(_bo.get('sets', 0) or 0)
+                                    except Exception:
+                                        _bo_sets = 0
+                                    try:
+                                        _bo_w = float(_bo.get('peso', 0) or 0) if _bo.get('peso', None) is not None else 0.0
+                                    except Exception:
+                                        _bo_w = 0.0
+                                    try:
+                                        _drop_pct = float(_bo.get('drop_pct', 0) or 0)
+                                    except Exception:
+                                        _drop_pct = 0.0
+
+                                    if _bo_sets > 0 and _bo_w > 0:
+                                        st.caption(f"Back-off: {_bo_sets}× ~{_bo_w:.1f} kg (drop ~{_drop_pct*100:.0f}%).")
+
+                                    _rule = str(_pl.get('rule', '') or '').strip()
+                                    if _rule:
+                                        st.caption(_rule)
+                            except Exception:
+                                pass
                             for _r in list(yami.get('razoes', []) or []):
                                 st.markdown(f"- {_r}")
 
