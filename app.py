@@ -1,4 +1,4 @@
-import streamlit as st  
+import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -3997,7 +3997,114 @@ except Exception as _e:
 bk_df = _load_offline_backup()
 pass  # sidebar divider removido
 
-# SEMANA — varia por plano (Base 8 semanas / Gui 12 semanas / Ineix sem ciclo)
+# DIA
+# Plano ativo (preparado para suportar planos diferentes por perfil)
+plan_id_active = st.session_state.get("plano_id_sel", "Base")
+plan_obj = PLANOS.get(plan_id_active, treinos_base)
+
+# Se for o plano Ineix, escolhe "Ginásio" vs "Casa" e usa o sub-plano certo
+if plan_id_active == "INEIX_ABC_v1" and isinstance(plan_obj, dict):
+    ineix_local = st.sidebar.radio("Local de treino", ["Ginásio","Casa"], key="ineix_local", horizontal=True, on_change=_reset_daily_state)
+    treinos_dict = plan_obj.get(ineix_local, plan_obj.get("Ginásio", treinos_ineix_gym))
+else:
+    treinos_dict = plan_obj
+
+_treino_options = list(treinos_dict.keys())
+if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
+    _idx_today = _default_treino_index_for_today(_treino_options)
+    try:
+        st.session_state["dia_sel"] = _treino_options[_idx_today]
+    except Exception:
+        pass
+
+st.sidebar.markdown("<h3>Treino</h3>", unsafe_allow_html=True)
+dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
+st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- YAMI: prontidão (check-in rápido) ---
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Prontidão (Yami)</h3>", unsafe_allow_html=True)
+
+_y_sleep = st.sidebar.radio("Sono", ["Ruim", "OK", "Top"], horizontal=True, key="yami_sleep")
+_y_stress = st.sidebar.radio("Stress", ["Baixo", "Médio", "Alto"], horizontal=True, key="yami_stress")
+_y_doms = st.sidebar.slider("Dor muscular (DOMS)", 0, 3, value=int(st.session_state.get("yami_doms", 1) or 1), key="yami_doms")
+_y_joint = st.sidebar.slider("Dor articular (geral)", 0, 3, value=int(st.session_state.get("yami_joint", 0) or 0), key="yami_joint")
+
+_y_read = yami_compute_readiness(_y_sleep, _y_stress, int(_y_doms), int(_y_joint))
+st.session_state["yami_readiness"] = _y_read
+
+_adj_pct_txt = f"{float(_y_read.get('adj_load_pct', 0.0) or 0.0)*100:+.0f}%"
+_adj_rir_txt = f"{float(_y_read.get('adj_rir', 0.0) or 0.0):+.1f}"
+st.sidebar.caption(f"Yami: **{_y_read.get('label','Normal')}** · Ajuste: **{_adj_pct_txt}** carga · **RIR {_adj_rir_txt}**")
+
+
+if st.sidebar.button("💾 Guardar check-in", key="yami_save_checkin"):
+    _ck = dict(_y_read)
+    _ck["date"] = datetime.date.today().isoformat()
+    yami_log_checkin(perfil_sel, _ck)
+    st.sidebar.success("Check-in guardado.")
+
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+
+# FLAGS
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Sinais do corpo</h3>", unsafe_allow_html=True)
+dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
+dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
+dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
+dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+# guardar sinais no session_state (para o Yami usar nas sugestões)
+try:
+    st.session_state["sig_dor_joelho"] = bool(dor_joelho)
+    st.session_state["sig_dor_cotovelo"] = bool(dor_cotovelo)
+    st.session_state["sig_dor_ombro"] = bool(dor_ombro)
+    st.session_state["sig_dor_lombar"] = bool(dor_lombar)
+except Exception:
+    pass
+
+try:
+    _sig_on = []
+    if bool(st.session_state.get("sig_dor_joelho", False)): _sig_on.append("joelho")
+    if bool(st.session_state.get("sig_dor_cotovelo", False)): _sig_on.append("cotovelo")
+    if bool(st.session_state.get("sig_dor_ombro", False)): _sig_on.append("ombro")
+    if bool(st.session_state.get("sig_dor_lombar", False)): _sig_on.append("lombar")
+    if _sig_on:
+        st.sidebar.caption("⚠️ Sinais ativos: **" + ", ".join(_sig_on) + "**. O Yami vai ser mais conservador nos exercícios que batem aqui.")
+except Exception:
+    pass
+
+
+
+# TIMER
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Descanso</h3>", unsafe_allow_html=True)
+
+if "disable_rest_timer" not in st.session_state:
+    st.session_state["disable_rest_timer"] = False
+
+try:
+    disable_rest_timer = st.sidebar.toggle(
+        "Desligar timer de descanso",
+        value=bool(st.session_state.get("disable_rest_timer", False)),
+        key="disable_rest_timer",
+        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+    )
+except Exception:
+    disable_rest_timer = st.sidebar.checkbox(
+        "Desligar timer de descanso",
+        value=bool(st.session_state.get("disable_rest_timer", False)),
+        key="disable_rest_timer",
+        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+    )
+
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
+# PERIODIZAÇÃO (último na sidebar)
 plano_cycle = st.session_state.get("plano_id_sel","Base")
 is_ineix = (plano_cycle == "INEIX_ABC_v1")
 if not is_ineix:
@@ -4008,7 +4115,9 @@ if not is_ineix:
     if "auto_week" not in st.session_state:
         st.session_state["auto_week"] = bool(_cyc_cfg.get("auto", True))
 
+    st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
     st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
+
     try:
         auto_week = st.sidebar.toggle(
             "Semana automática",
@@ -4190,7 +4299,6 @@ if not is_ineix:
                     except Exception:
                         pass
                     st.rerun()
-        pass  # sidebar divider removido
     else:
         # modo manual (old-school)
         try:
@@ -4223,118 +4331,12 @@ if not is_ineix:
                 label_visibility="collapsed",
             )
         semana = int(semana_sel)
-        pass  # sidebar divider removido
+
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
 else:
     # Plano Ineix (A/B/C) não usa periodização por semanas
     semana = 1
-    pass  # sidebar divider removido
 
-# DIA
-# Plano ativo (preparado para suportar planos diferentes por perfil)
-plan_id_active = st.session_state.get("plano_id_sel", "Base")
-plan_obj = PLANOS.get(plan_id_active, treinos_base)
-
-# Se for o plano Ineix, escolhe "Ginásio" vs "Casa" e usa o sub-plano certo
-if plan_id_active == "INEIX_ABC_v1" and isinstance(plan_obj, dict):
-    ineix_local = st.sidebar.radio("Local de treino", ["Ginásio","Casa"], key="ineix_local", horizontal=True, on_change=_reset_daily_state)
-    treinos_dict = plan_obj.get(ineix_local, plan_obj.get("Ginásio", treinos_ineix_gym))
-else:
-    treinos_dict = plan_obj
-
-_treino_options = list(treinos_dict.keys())
-if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
-    _idx_today = _default_treino_index_for_today(_treino_options)
-    try:
-        st.session_state["dia_sel"] = _treino_options[_idx_today]
-    except Exception:
-        pass
-
-st.sidebar.markdown("<h3>Treino</h3>", unsafe_allow_html=True)
-dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
-st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
-
-
-# --- YAMI: prontidão (check-in rápido) ---
-st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>Prontidão (Yami)</h3>", unsafe_allow_html=True)
-
-_y_sleep = st.sidebar.radio("Sono", ["Ruim", "OK", "Top"], horizontal=True, key="yami_sleep")
-_y_stress = st.sidebar.radio("Stress", ["Baixo", "Médio", "Alto"], horizontal=True, key="yami_stress")
-_y_doms = st.sidebar.slider("Dor muscular (DOMS)", 0, 3, value=int(st.session_state.get("yami_doms", 1) or 1), key="yami_doms")
-_y_joint = st.sidebar.slider("Dor articular (geral)", 0, 3, value=int(st.session_state.get("yami_joint", 0) or 0), key="yami_joint")
-
-_y_read = yami_compute_readiness(_y_sleep, _y_stress, int(_y_doms), int(_y_joint))
-st.session_state["yami_readiness"] = _y_read
-
-_adj_pct_txt = f"{float(_y_read.get('adj_load_pct', 0.0) or 0.0)*100:+.0f}%"
-_adj_rir_txt = f"{float(_y_read.get('adj_rir', 0.0) or 0.0):+.1f}"
-st.sidebar.caption(f"Yami: **{_y_read.get('label','Normal')}** · Ajuste: **{_adj_pct_txt}** carga · **RIR {_adj_rir_txt}**")
-
-
-if st.sidebar.button("💾 Guardar check-in", key="yami_save_checkin"):
-    _ck = dict(_y_read)
-    _ck["date"] = datetime.date.today().isoformat()
-    yami_log_checkin(perfil_sel, _ck)
-    st.sidebar.success("Check-in guardado.")
-
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
-
-
-# FLAGS
-st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>Sinais do corpo</h3>", unsafe_allow_html=True)
-dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
-dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
-dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
-dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
-
-# guardar sinais no session_state (para o Yami usar nas sugestões)
-try:
-    st.session_state["sig_dor_joelho"] = bool(dor_joelho)
-    st.session_state["sig_dor_cotovelo"] = bool(dor_cotovelo)
-    st.session_state["sig_dor_ombro"] = bool(dor_ombro)
-    st.session_state["sig_dor_lombar"] = bool(dor_lombar)
-except Exception:
-    pass
-
-try:
-    _sig_on = []
-    if bool(st.session_state.get("sig_dor_joelho", False)): _sig_on.append("joelho")
-    if bool(st.session_state.get("sig_dor_cotovelo", False)): _sig_on.append("cotovelo")
-    if bool(st.session_state.get("sig_dor_ombro", False)): _sig_on.append("ombro")
-    if bool(st.session_state.get("sig_dor_lombar", False)): _sig_on.append("lombar")
-    if _sig_on:
-        st.sidebar.caption("⚠️ Sinais ativos: **" + ", ".join(_sig_on) + "**. O Yami vai ser mais conservador nos exercícios que batem aqui.")
-except Exception:
-    pass
-
-
-
-# TIMER
-st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>Descanso</h3>", unsafe_allow_html=True)
-
-if "disable_rest_timer" not in st.session_state:
-    st.session_state["disable_rest_timer"] = False
-
-try:
-    disable_rest_timer = st.sidebar.toggle(
-        "Desligar timer de descanso",
-        value=bool(st.session_state.get("disable_rest_timer", False)),
-        key="disable_rest_timer",
-        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
-    )
-except Exception:
-    disable_rest_timer = st.sidebar.checkbox(
-        "Desligar timer de descanso",
-        value=bool(st.session_state.get("disable_rest_timer", False)),
-        key="disable_rest_timer",
-        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
-    )
-
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 
 
@@ -4527,71 +4529,72 @@ with tab_treino:
 
 
 
-def _queue_auto_rest(seconds:int, ex_name:str=""):
-    try:
-        secs = max(1, int(seconds))
-    except Exception:
-        secs = 60
+    def _queue_auto_rest(seconds:int, ex_name:str=""):
+        try:
+            secs = max(1, int(seconds))
+        except Exception:
+            secs = 60
 
-    # Se o utilizador desligar o timer, não fazemos contagem; mostramos só a info.
-    if bool(st.session_state.get("disable_rest_timer", False)):
+        # Se o utilizador desligar o timer, não fazemos contagem; mostramos só a info.
+        if bool(st.session_state.get("disable_rest_timer", False)):
+            start_ts = float(time.time())
+            end_ts = float(start_ts) + float(secs)
+            st.session_state["rest_info_pending"] = True
+            st.session_state["rest_info_total_s"] = int(secs)
+            st.session_state["rest_info_start_ts"] = float(start_ts)
+            st.session_state["rest_info_end_ts"] = float(end_ts)
+            st.session_state["rest_info_ex"] = str(ex_name or "")
+            st.session_state["rest_auto_run"] = False
+            st.session_state["yami_last_rest_s"] = int(secs)
+            return
+
         start_ts = float(time.time())
-        end_ts = float(start_ts) + float(secs)
+        st.session_state["rest_auto_seconds"] = secs
+        st.session_state["rest_auto_from"] = str(ex_name or "")
+        st.session_state["rest_auto_start_ts"] = float(start_ts)
+        st.session_state["rest_auto_end_ts"] = float(start_ts) + float(secs)
+        st.session_state["rest_auto_run"] = True
+        st.session_state["rest_auto_notified"] = False
+        st.session_state["scroll_to_rest_timer"] = True
+        st.session_state["yami_last_rest_s"] = secs
+
+
+    # Timer desligado: se estava a correr, parar contagem ativa e mostrar só a janela com o descanso recomendado.
+    if bool(st.session_state.get("disable_rest_timer", False)) and bool(st.session_state.get("rest_auto_run", False)):
+        try:
+            total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
+            end_ts = float(st.session_state.get("rest_auto_end_ts", float(time.time()) + float(total_rest)) or (float(time.time()) + float(total_rest)))
+            start_ts = float(st.session_state.get("rest_auto_start_ts", float(end_ts) - float(total_rest)) or (float(end_ts) - float(total_rest)))
+            ex_rest = str(st.session_state.get("rest_auto_from", "") or "")
+        except Exception:
+            total_rest = 60
+            start_ts = float(time.time())
+            end_ts = float(start_ts) + float(total_rest)
+            ex_rest = ""
         st.session_state["rest_info_pending"] = True
-        st.session_state["rest_info_total_s"] = int(secs)
+        st.session_state["rest_info_total_s"] = int(total_rest)
         st.session_state["rest_info_start_ts"] = float(start_ts)
         st.session_state["rest_info_end_ts"] = float(end_ts)
-        st.session_state["rest_info_ex"] = str(ex_name or "")
+        st.session_state["rest_info_ex"] = str(ex_rest)
         st.session_state["rest_auto_run"] = False
-        st.session_state["yami_last_rest_s"] = int(secs)
-        return
 
-    start_ts = float(time.time())
-    st.session_state["rest_auto_seconds"] = secs
-    st.session_state["rest_auto_from"] = str(ex_name or "")
-    st.session_state["rest_auto_start_ts"] = float(start_ts)
-    st.session_state["rest_auto_end_ts"] = float(start_ts) + float(secs)
-    st.session_state["rest_auto_run"] = True
-    st.session_state["rest_auto_notified"] = False
-    st.session_state["scroll_to_rest_timer"] = True
-    st.session_state["yami_last_rest_s"] = secs
+    # Se houver info pendente (timer desligado), mostra uma janela com horas e mm:ss.
+    if bool(st.session_state.get("rest_info_pending", False)):
+        try:
+            total_rest = int(st.session_state.get("rest_info_total_s", 60) or 60)
+            start_ts = float(st.session_state.get("rest_info_start_ts", float(time.time())) or float(time.time()))
+            end_ts = float(st.session_state.get("rest_info_end_ts", float(start_ts) + float(total_rest)) or (float(start_ts) + float(total_rest)))
+            ex_rest = str(st.session_state.get("rest_info_ex", "") or "")
+        except Exception:
+            total_rest = 60
+            start_ts = float(time.time())
+            end_ts = float(start_ts) + float(total_rest)
+            ex_rest = ""
+        _bc_show_rest_info_window(total_rest, start_ts, end_ts, ex_rest)
+        st.session_state["rest_info_pending"] = False
 
-
-# Timer desligado: parar contagem ativa e mostrar só a janela com o descanso recomendado.
-if bool(st.session_state.get("disable_rest_timer", False)) and bool(st.session_state.get("rest_auto_run", False)):
-    try:
-        total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
-        end_ts = float(st.session_state.get("rest_auto_end_ts", float(time.time()) + float(total_rest)) or (float(time.time()) + float(total_rest)))
-        start_ts = float(st.session_state.get("rest_auto_start_ts", float(end_ts) - float(total_rest)) or (float(end_ts) - float(total_rest)))
-        ex_rest = str(st.session_state.get("rest_auto_from", "") or "")
-    except Exception:
-        total_rest = 60
-        start_ts = float(time.time())
-        end_ts = float(start_ts) + float(total_rest)
-        ex_rest = ""
-    st.session_state["rest_info_pending"] = True
-    st.session_state["rest_info_total_s"] = int(total_rest)
-    st.session_state["rest_info_start_ts"] = float(start_ts)
-    st.session_state["rest_info_end_ts"] = float(end_ts)
-    st.session_state["rest_info_ex"] = str(ex_rest)
-    st.session_state["rest_auto_run"] = False
-
-# Se houver info pendente (timer desligado), mostra uma janela com horas e mm:ss.
-if bool(st.session_state.get("rest_info_pending", False)):
-    try:
-        total_rest = int(st.session_state.get("rest_info_total_s", 60) or 60)
-        start_ts = float(st.session_state.get("rest_info_start_ts", float(time.time())) or float(time.time()))
-        end_ts = float(st.session_state.get("rest_info_end_ts", float(start_ts) + float(total_rest)) or (float(start_ts) + float(total_rest)))
-        ex_rest = str(st.session_state.get("rest_info_ex", "") or "")
-    except Exception:
-        total_rest = 60
-        start_ts = float(time.time())
-        end_ts = float(start_ts) + float(total_rest)
-        ex_rest = ""
-    _bc_show_rest_info_window(total_rest, start_ts, end_ts, ex_rest)
-    st.session_state["rest_info_pending"] = False
-
-    if st.session_state.get("rest_auto_run", False):
+    # Timer normal (contagem)
+    if bool(st.session_state.get("rest_auto_run", False)) and (not bool(st.session_state.get("disable_rest_timer", False))):
         st.markdown("<div id='rest-timer-anchor'></div>", unsafe_allow_html=True)
         total_rest = int(st.session_state.get("rest_auto_seconds", 60) or 60)
         ex_rest = str(st.session_state.get("rest_auto_from", ""))
@@ -4633,6 +4636,7 @@ if bool(st.session_state.get("rest_info_pending", False)):
         else:
             time.sleep(1)
             st.rerun()
+
     if show_rules:
         with st.expander("📜 Regras rápidas do plano"):
             _pid_rules = st.session_state.get("plano_id_sel","Base")
@@ -5674,4 +5678,14 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
+
+
+
+
+
+
+
+
+
 
