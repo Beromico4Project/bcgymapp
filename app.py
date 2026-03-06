@@ -24,7 +24,7 @@ BANNER_BLUR_PX = 1.5
 BANNER_BRIGHTNESS = 1.5
 CLOVER_OPACITY = 0.06
 
-st.set_page_config(page_title="Black Clover Training APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Black Clover APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
 # Keep screen awake on mobile (when supported)
 st.components.v1.html("""
@@ -5079,7 +5079,8 @@ st.markdown("""
 st.markdown("""
 <div class='bc-header-center'>
   <div class='bc-main-title'>Black Clover Training</div>
-  <div class='bc-subtitle'>A minha magia é não desistir 🗡️🖤</div>
+  <div class='bc-subtitle'>🗡️ A minha magia é não desistir 🖤</div>
+  <div class='bc-subtitle'>Powered by SOHCAHTOA & Ltd.</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -6386,6 +6387,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
