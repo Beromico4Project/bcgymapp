@@ -24,7 +24,7 @@ BANNER_BLUR_PX = 1.5
 BANNER_BRIGHTNESS = 1.5
 CLOVER_OPACITY = 0.06
 
-st.set_page_config(page_title="Black Clover APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Black Clover Training APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
 # Keep screen awake on mobile (when supported)
 st.components.v1.html("""
@@ -1323,69 +1323,6 @@ def clear_inprogress_session(key: str) -> None:
     except Exception:
         pass
 
-
-def _capture_inprogress_ui_state() -> dict:
-    """Captura estado leve de UI que queremos preservar entre reinícios (mobile/suspensão).
-    Mantém só valores JSON-safe e relevantes para o treino (checkboxes/toggles/sliders do Yami).
-    """
-    try:
-        ui: dict = {}
-        keep_prefix = ("chk_", "sig_dor_")
-        keep_exact = {"disable_rest_timer", "yami_sleep", "yami_stress", "yami_doms", "yami_joint"}
-        for k in list(st.session_state.keys()):
-            try:
-                ks = str(k)
-            except Exception:
-                continue
-            if (ks in keep_exact) or ks.startswith(keep_prefix):
-                try:
-                    v = st.session_state.get(ks)
-                except Exception:
-                    continue
-                # só escalares (json safe)
-                if v is None or isinstance(v, (bool, int, float, str)):
-                    ui[ks] = v
-        return ui
-    except Exception:
-        return {}
-
-def _apply_inprogress_ui_state(payload_or_ui) -> None:
-    """Restaura estado de UI a partir do payload (ou dict ui_state). Deve correr ANTES dos widgets existirem."""
-    try:
-        ui = None
-        if isinstance(payload_or_ui, dict) and ("ui_state" in payload_or_ui):
-            ui = payload_or_ui.get("ui_state")
-        elif isinstance(payload_or_ui, dict):
-            ui = payload_or_ui
-        if not isinstance(ui, dict):
-            return
-        for k, v in ui.items():
-            try:
-                ks = str(k)
-            except Exception:
-                continue
-            if v is None or isinstance(v, (bool, int, float, str)):
-                st.session_state[ks] = v
-    except Exception:
-        pass
-
-def _autosave_inprogress_session(perfil: str, dia: str, plano_id: str, semana: int, pure_nav_key: str, n_ex: int) -> None:
-    """Autosave leve (com throttle) para preservar checkboxes/toggles durante o treino."""
-    try:
-        now = float(time.time())
-        last = float(st.session_state.get("_inprogress_autosave_ts", 0.0) or 0.0)
-        # throttle para não martelar disco em cada micro interação
-        if (now - last) < 1.25:
-            return
-        st.session_state["_inprogress_autosave_ts"] = now
-
-        _ip_key = st.session_state.get("_inprogress_session_key") or _make_inprogress_key(perfil, plano_id, dia, int(semana), _inprogress_today_key_date())
-        _payload = _build_inprogress_payload(perfil, dia, plano_id, int(semana), pure_nav_key, int(n_ex))
-        save_inprogress_session(_ip_key, _payload)
-    except Exception:
-        pass
-
-
 def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int, pure_nav_key: str, n_ex: int) -> dict:
     payload = {
         "ts": time.time(),
@@ -1397,7 +1334,6 @@ def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int,
         "pt_idx": int(st.session_state.get(pure_nav_key, 0) or 0),
         "pt_done": {},
         "pt_sets": {},
-        "ui_state": _capture_inprogress_ui_state(),
     }
     for ix in range(int(n_ex)):
         dk = f"pt_done::{perfil}::{dia}::{ix}"
@@ -1441,13 +1377,6 @@ def _apply_inprogress_payload(payload: dict, perfil: str, dia: str, pure_nav_key
                     st.session_state[f"pt_sets::{perfil}::{dia}::{ix}"] = v
     except Exception:
         pass
-
-    # restaura estado leve de UI (checkboxes/toggles) se existir no payload
-    try:
-        _apply_inprogress_ui_state(payload)
-    except Exception:
-        pass
-
 
 def _pure_has_any_progress(perfil: str, dia: str, n_ex: int) -> bool:
     try:
@@ -2111,9 +2040,6 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
     if base <= 0:
         return [0.0 for _ in range(series_n)]
 
-    # passo realista (2/2.5) para evitar pesos 'impossíveis' (ex.: +0.5kg)
-    step = yami_infer_load_step(df_last=df_last, pending_sets=None, fallback=2.5)
-
     rep_info = _parse_rep_scheme(str(item.get("reps", "")), series_n)
     kind = str(rep_info.get("kind") or "")
 
@@ -2128,7 +2054,7 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 if w_max > 0:
                     padded = list(last_w) + [w_max] * max(0, series_n - len(last_w))
                     ratios = [max(0.20, min(1.05, float(w) / w_max)) for w in padded[:series_n]]
-                    out = [float(_round_to_nearest(base * ratios[s], step)) for s in range(series_n)]
+                    out = [float(_round_to_nearest(base * ratios[s], _yami_round_step())) for s in range(series_n)]
                     # monotonia não-decrescente (rampa)
                     for j in range(1, len(out)):
                         if out[j] < out[j-1]:
@@ -2157,11 +2083,11 @@ def _yami_weight_profile_for_item(ex: str, item: dict, peso_base: float, df_last
                 mean_mult = 1.0
             base_adj = (base / mean_mult) if mean_mult > 0 else base
 
-            out = [float(_round_to_nearest(base_adj * m, step)) for m in mults]
+            out = [float(_round_to_nearest(base_adj * m, _yami_round_step())) for m in mults]
             return out
 
     # 3) Default: constante (o ajuste série-a-série vem da performance real)
-    return [float(_round_to_nearest(base, step)) for _ in range(series_n)]
+    return [float(_round_to_nearest(base, _yami_round_step())) for _ in range(series_n)]
 
 
 def _yami_suggest_weight_for_series(
@@ -2212,13 +2138,6 @@ def _yami_suggest_weight_for_series(
     reps_high = int(rep_info.get("high") or 0) if kind in ("range", "fixed", "fixed_seq") else 0
 
     inc_up, inc_down = _yami_inc_steps(ex, item)
-
-    # Yami: só permite subir/descer em passos de 2kg ou 2,5kg (conforme último treino)
-    step = yami_infer_load_step(df_last=df_last, pending_sets=pending_sets, fallback=2.5)
-    try:
-        inc_up = inc_down = float(step)
-    except Exception:
-        inc_up = inc_down = 2.5
 
     # flags locais (evita NameError; usados em micro-steps)
     try:
@@ -2320,11 +2239,7 @@ def _yami_suggest_weight_for_series(
     except Exception:
         pass
 
-    try:
-        anchor = float(last_w) if float(last_w) > 0 else float(base)
-    except Exception:
-        anchor = float(base)
-    return float(yami_snap_to_load_grid(sug, anchor, step))
+    return float(_round_to_nearest(sug, _yami_round_step()))
 
 
 def _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact: bool = True):
@@ -2820,85 +2735,6 @@ def _round_to_nearest(x: float, step: float = 0.5) -> float:
         return 0.0
 
 
-def _yami_is_close_to_multiple(x: float, step: float, tol: float = 1e-6) -> bool:
-    try:
-        x = float(x)
-        step = float(step)
-        if step <= 0:
-            return False
-        q = x / step
-        return abs(q - round(q)) <= tol
-    except Exception:
-        return False
-
-
-def yami_load_step_from_weight(last_weight: float | None, default_step: float = 2.5) -> float:
-    """Escolhe o passo de carga (apenas 2.0 ou 2.5) com base no último peso do exercício.
-    - Se o último peso parece cair numa grelha de 2.5 (ex.: 17.5, 30.0, 72.5) -> 2.5
-    - Caso contrário -> 2.0
-    """
-    try:
-        w = float(last_weight) if last_weight is not None else 0.0
-    except Exception:
-        w = 0.0
-    if w > 0:
-        return 2.5 if (_yami_is_close_to_multiple(w, 2.5) or _yami_is_close_to_multiple(w * 2.0, 5.0)) else 2.0
-    # fallback: se não houver histórico, assume 2.5 (mais comum em halteres/máquinas)
-    try:
-        d = float(default_step)
-    except Exception:
-        d = 2.5
-    return 2.5 if d >= 2.5 else 2.0
-
-
-def yami_infer_load_step(df_last: pd.DataFrame | None = None, pending_sets: list | None = None, fallback: float = 2.5) -> float:
-    """Infere passo (2/2.5) do exercício a partir do último treino OU das séries já lançadas."""
-    # 1) prioridade: série já lançada neste exercício (mesma sessão)
-    try:
-        if isinstance(pending_sets, list) and pending_sets:
-            w = float(pending_sets[-1].get("peso", 0) or 0)
-            if w > 0:
-                return yami_load_step_from_weight(w, default_step=fallback)
-    except Exception:
-        pass
-
-    # 2) histórico do último treino do exercício
-    try:
-        if df_last is not None and (not df_last.empty) and ("Peso (kg)" in df_last.columns):
-            w_list = pd.to_numeric(df_last["Peso (kg)"], errors="coerce").dropna().astype(float).tolist()
-            if w_list:
-                # usa o top set como âncora (é o peso real que tu sentiste)
-                return yami_load_step_from_weight(max(w_list), default_step=fallback)
-    except Exception:
-        pass
-
-    # 3) fallback
-    return yami_load_step_from_weight(None, default_step=fallback)
-
-
-def yami_snap_to_load_grid(weight: float, anchor: float, step: float) -> float:
-    """Ajusta 'weight' para a grelha permitida (2/2.5) ancorada no último peso real."""
-    try:
-        w = float(weight or 0.0)
-        a = float(anchor or 0.0)
-        s = float(step or 0.0)
-    except Exception:
-        return 0.0
-    if w <= 0:
-        return 0.0
-    if s <= 0:
-        return float(round(w, 1))
-    if a <= 0:
-        # sem âncora, arredonda ao passo puro
-        return float(round(_round_to_nearest(w, s), 1))
-    k = round((w - a) / s)
-    out = a + (k * s)
-    out = max(0.0, out)
-    # limpeza de float: 72.499999 -> 72.5
-    return float(round(out, 1))
-
-
-
 def _parse_rep_scheme(rep_text: str, series_hint: int | None = None) -> dict:
     s = str(rep_text or '').strip()
     s_low = s.lower().replace(' ', '')
@@ -3238,20 +3074,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         }
 
     p_atual = float(latest.get('peso_medio', 0) or 0)
-    # passo de carga permitido (apenas 2/2.5) baseado no último treino deste exercício
-    try:
-        _w_anchor_tmp = list(latest.get('pesos', []) or [])
-        _w_anchor = float(max(_w_anchor_tmp)) if _w_anchor_tmp else float(p_atual)
-    except Exception:
-        _w_anchor = float(p_atual)
-    load_step = float(yami_load_step_from_weight(_w_anchor, default_step=2.5))
-    # forçar arredondamentos/alterações do Yami a este passo (evita sugestões "impossíveis" tipo +0.5)
-    rstep = float(load_step)
-    try:
-        inc_up = inc_down = float(load_step)
-    except Exception:
-        pass
-
     reps_list = list(latest.get('reps', []) or [])
     rirs_list = [float(x) for x in list(latest.get('rirs', []) or []) if x is not None]
     reps_media = float(latest.get('reps_media', 0) or 0)
@@ -3489,11 +3311,10 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     # Decisão final (mais granular + micro-ajustes)
     # Ideia: quando o sinal é "pequeno mas real", mexer pouco (microloading) em vez de só 0/+inc_up.
-    # micro-ajuste desativado: só 2kg ou 2.5kg (sem 0.5/1.25/etc.)
     try:
-        inc_micro = float(inc_up)
+        inc_micro = max(0.5, float(inc_up) / 2.0)
     except Exception:
-        inc_micro = float(2.5)
+        inc_micro = 0.5
 
     if score >= 2.25:
         acao = f"+{_fmt_inc(inc_up)}kg"
@@ -3733,7 +3554,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
         scale = 1.0
     if deload_now or deload_force or ('DELOAD' in str(acao)):
         scale = min(scale, 0.92)
-    w_work_sug = float(yami_snap_to_load_grid(max(0.0, w_work_last * scale), w_work_last, load_step))
+    w_work_sug = float(_round_to_nearest(max(0.0, w_work_last * scale), 0.5))
 
     # Plano de execução (Top set + Back-off) — estrutura para tornar a sugestão acionável
     plan = {}
@@ -4656,13 +4477,6 @@ try:
                 st.session_state["semana_sel"] = _p_sem
         except Exception:
             pass
-
-        # restaura UI state (checkboxes/toggles) antes dos widgets da sidebar existirem
-        try:
-            _apply_inprogress_ui_state(_p_ip)
-        except Exception:
-            pass
-
 except Exception:
     pass
 
@@ -4710,10 +4524,10 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 # FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>Sinais do corpo</h3>", unsafe_allow_html=True)
-dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", key="sig_dor_joelho", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
-dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", key="sig_dor_cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
-dor_ombro = st.sidebar.checkbox("Dor no ombro", key="sig_dor_ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
-dor_lombar = st.sidebar.checkbox("Dor na lombar", key="sig_dor_lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
+dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
+dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
+dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
+dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # guardar sinais no session_state (para o Yami usar nas sugestões)
@@ -5073,14 +4887,16 @@ st.markdown("""
 <style>
 .bc-header-center{ text-align:center; margin: 2px 0 10px 0; }
 .bc-subtitle{ margin-top: 4px; font-size: 1.5rem; color: rgba(232,226,226,0.90); }
+
+.bc-tagline{ margin-top: 2px; font-size: 0.75rem; color: rgba(232,226,226,0.70); }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class='bc-header-center'>
   <div class='bc-main-title'>Black Clover Training</div>
-  <div class='bc-subtitle'>🗡️ A minha magia é não desistir 🖤</div>
-  <div class='bc-subtitle'>Powered by SOHCAHTOA & Ltd.</div>
+  <div class='🗡️ bc-subtitle'>A minha magia é não desistir 🖤</div>
+  <div class='bc-tagline'>Powered by SOHCAHTOA & Ltd.</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -5456,9 +5272,6 @@ Dor articular pontiaguda = troca variação no dia.
             )
             mob = st.checkbox("Feito", key="chk_mobilidade")
             st.caption("✅ Marcado" if mob else " ")
-        # autosave leve para preservar estado (checkboxes/toggles) mesmo se a app suspender
-        _autosave_inprogress_session(perfil_sel, dia, str(st.session_state.get('plano_id_sel','Base')), int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-
 
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
@@ -5797,7 +5610,7 @@ Dor articular pontiaguda = troca variação no dia.
 
                     if current_s < total_series:
                         _apply_prefill_payload_if_any(i)
-                        kg_step = yami_infer_load_step(df_last=df_last, pending_sets=pending_sets, fallback=2.5)
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
                         s = current_s
                         with st.form(key=f"form_pure_{i}_{s}"):
                             st.markdown(f"### Série {s+1}/{total_series}")
@@ -5980,7 +5793,7 @@ Dor articular pontiaguda = troca variação no dia.
                     lista_sets = []
                     _apply_prefill_payload_if_any(i)
                     with st.form(key=f"form_{i}"):
-                        kg_step = yami_infer_load_step(df_last=df_last, pending_sets=None, fallback=2.5)
+                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
                         for s in range(item["series"]):
                             st.markdown(f"### Série {s+1}")
                             peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
@@ -6387,9 +6200,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
-
-
 
 
 
