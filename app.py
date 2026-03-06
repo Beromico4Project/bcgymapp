@@ -763,7 +763,7 @@ st.markdown("""
   text-transform: uppercase;
   color: #8C1D2C;
   text-shadow: 0 1px 10px rgba(0,0,0,.35);
-  font-size: clamp(1.72rem, 5.1vw, 2.35rem);
+  font-size: clamp(1.5rem, 5.1vw, 3rem);
   line-height: 1.05;
   letter-spacing: .02em;
   background: transparent !important;
@@ -6387,6 +6387,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
