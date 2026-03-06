@@ -4888,7 +4888,6 @@ st.markdown("""
 .bc-header-center{ text-align:center; margin: 2px 0 10px 0; }
 .bc-tagline{ margin-top: 2px; font-size: 1rem; color: rgba(232,226,226,0.70); }
 
-#.bc-subtitle{ margin-top: 4px; font-size: 1.5rem; color: rgba(232,226,226,0.90); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -4896,7 +4895,6 @@ st.markdown("""
 <div class='bc-header-center'>
   <div class='bc-tagline'>Powered by SOHCAHTOA & Ltd.</div>
   <div class='bc-main-title'>Black Clover Training</div>
-  #<div class='bc-subtitle'>🗡️ A minha magia é não desistir 🖤</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -6200,7 +6198,6 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
 
 
 
