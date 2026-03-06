@@ -4895,8 +4895,8 @@ st.markdown("""
 st.markdown("""
 <div class='bc-header-center'>
   <div class='bc-main-title'>Black Clover Training</div>
-  <div class='🗡️ bc-subtitle'>A minha magia é não desistir 🖤</div>
   <div class='bc-tagline'>Powered by SOHCAHTOA & Ltd.</div>
+  <div class='bc-subtitle'>🗡️ A minha magia é não desistir 🖤</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -6200,6 +6200,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
