@@ -770,7 +770,7 @@ st.markdown("""
 }
 
 .bc-main-title::after{
-  content:" ♣";
+  content:". ♣";
   position:absolute;
   right:-18px;
   top:-6px;
@@ -6200,6 +6200,7 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
 
 
 
