@@ -1323,6 +1323,69 @@ def clear_inprogress_session(key: str) -> None:
     except Exception:
         pass
 
+
+def _capture_inprogress_ui_state() -> dict:
+    """Captura estado leve de UI que queremos preservar entre reinícios (mobile/suspensão).
+    Mantém só valores JSON-safe e relevantes para o treino (checkboxes/toggles/sliders do Yami).
+    """
+    try:
+        ui: dict = {}
+        keep_prefix = ("chk_", "sig_dor_")
+        keep_exact = {"disable_rest_timer", "yami_sleep", "yami_stress", "yami_doms", "yami_joint"}
+        for k in list(st.session_state.keys()):
+            try:
+                ks = str(k)
+            except Exception:
+                continue
+            if (ks in keep_exact) or ks.startswith(keep_prefix):
+                try:
+                    v = st.session_state.get(ks)
+                except Exception:
+                    continue
+                # só escalares (json safe)
+                if v is None or isinstance(v, (bool, int, float, str)):
+                    ui[ks] = v
+        return ui
+    except Exception:
+        return {}
+
+def _apply_inprogress_ui_state(payload_or_ui) -> None:
+    """Restaura estado de UI a partir do payload (ou dict ui_state). Deve correr ANTES dos widgets existirem."""
+    try:
+        ui = None
+        if isinstance(payload_or_ui, dict) and ("ui_state" in payload_or_ui):
+            ui = payload_or_ui.get("ui_state")
+        elif isinstance(payload_or_ui, dict):
+            ui = payload_or_ui
+        if not isinstance(ui, dict):
+            return
+        for k, v in ui.items():
+            try:
+                ks = str(k)
+            except Exception:
+                continue
+            if v is None or isinstance(v, (bool, int, float, str)):
+                st.session_state[ks] = v
+    except Exception:
+        pass
+
+def _autosave_inprogress_session(perfil: str, dia: str, plano_id: str, semana: int, pure_nav_key: str, n_ex: int) -> None:
+    """Autosave leve (com throttle) para preservar checkboxes/toggles durante o treino."""
+    try:
+        now = float(time.time())
+        last = float(st.session_state.get("_inprogress_autosave_ts", 0.0) or 0.0)
+        # throttle para não martelar disco em cada micro interação
+        if (now - last) < 1.25:
+            return
+        st.session_state["_inprogress_autosave_ts"] = now
+
+        _ip_key = st.session_state.get("_inprogress_session_key") or _make_inprogress_key(perfil, plano_id, dia, int(semana), _inprogress_today_key_date())
+        _payload = _build_inprogress_payload(perfil, dia, plano_id, int(semana), pure_nav_key, int(n_ex))
+        save_inprogress_session(_ip_key, _payload)
+    except Exception:
+        pass
+
+
 def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int, pure_nav_key: str, n_ex: int) -> dict:
     payload = {
         "ts": time.time(),
@@ -1334,6 +1397,7 @@ def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int,
         "pt_idx": int(st.session_state.get(pure_nav_key, 0) or 0),
         "pt_done": {},
         "pt_sets": {},
+        "ui_state": _capture_inprogress_ui_state(),
     }
     for ix in range(int(n_ex)):
         dk = f"pt_done::{perfil}::{dia}::{ix}"
@@ -1377,6 +1441,13 @@ def _apply_inprogress_payload(payload: dict, perfil: str, dia: str, pure_nav_key
                     st.session_state[f"pt_sets::{perfil}::{dia}::{ix}"] = v
     except Exception:
         pass
+
+    # restaura estado leve de UI (checkboxes/toggles) se existir no payload
+    try:
+        _apply_inprogress_ui_state(payload)
+    except Exception:
+        pass
+
 
 def _pure_has_any_progress(perfil: str, dia: str, n_ex: int) -> bool:
     try:
@@ -4585,6 +4656,13 @@ try:
                 st.session_state["semana_sel"] = _p_sem
         except Exception:
             pass
+
+        # restaura UI state (checkboxes/toggles) antes dos widgets da sidebar existirem
+        try:
+            _apply_inprogress_ui_state(_p_ip)
+        except Exception:
+            pass
+
 except Exception:
     pass
 
@@ -4632,10 +4710,10 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 # FLAGS
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>Sinais do corpo</h3>", unsafe_allow_html=True)
-dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
-dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
-dor_ombro = st.sidebar.checkbox("Dor no ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
-dor_lombar = st.sidebar.checkbox("Dor na lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
+dor_joelho = st.sidebar.checkbox("Dor no joelho (pontiaguda)", key="sig_dor_joelho", help="Se for dor pontiaguda/articular, a app sugere substituições (não é para ‘aguentar’).")
+dor_cotovelo = st.sidebar.checkbox("Dor no cotovelo", key="sig_dor_cotovelo", help="Se o cotovelo estiver a reclamar, a app sugere variações mais amigáveis (ex.: pushdown barra V, amplitude menor).")
+dor_ombro = st.sidebar.checkbox("Dor no ombro", key="sig_dor_ombro", help="Se o ombro estiver sensível, a app sugere ajustes (pega neutra, inclinação menor, sem grind).")
+dor_lombar = st.sidebar.checkbox("Dor na lombar", key="sig_dor_lombar", help="Se a lombar estiver a dar sinal, a app sugere limitar amplitude e usar mais apoio/variações seguras.")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # guardar sinais no session_state (para o Yami usar nas sugestões)
@@ -5377,6 +5455,9 @@ Dor articular pontiaguda = troca variação no dia.
             )
             mob = st.checkbox("Feito", key="chk_mobilidade")
             st.caption("✅ Marcado" if mob else " ")
+        # autosave leve para preservar estado (checkboxes/toggles) mesmo se a app suspender
+        _autosave_inprogress_session(perfil_sel, dia, str(st.session_state.get('plano_id_sel','Base')), int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+
 
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
