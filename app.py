@@ -1428,7 +1428,6 @@ def _yami_profile_state(perfil: str) -> dict:
     # ciclos/periodização por plano (auto-semana)
     # estrutura: cycles[plano_id] = {"auto": bool, "start": "YYYY-MM-DD"}
     prof.setdefault("cycles", {})
-    prof.setdefault("weekly_schedule_overrides", {})
     return prof
 
 
@@ -1481,60 +1480,6 @@ def yami_set_cycle_cfg(perfil: str, plano_id: str, *, auto: bool | None = None, 
         return _yami_state_save(stt)
     except Exception:
         return False
-
-def yami_weekly_schedule_key(plano_id: str, local: str = "", week_key: str | None = None) -> str:
-    wk = str(week_key or _lisbon_iso_week_key()).strip()
-    pid = str(plano_id or "Base").strip()
-    loc = str(local or "").strip()
-    return f"{pid}||{loc}||{wk}"
-
-
-def yami_get_weekly_schedule_override(perfil: str, plano_id: str, local: str = "", week_key: str | None = None) -> dict:
-    """Mapa semanal de dias (calendário real) -> treino, válido só para esta semana."""
-    try:
-        prof = _yami_profile_state(perfil)
-        store = prof.setdefault("weekly_schedule_overrides", {})
-        key = yami_weekly_schedule_key(plano_id, local=local, week_key=week_key)
-        data = store.get(key, {})
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def yami_set_weekly_schedule_override(perfil: str, plano_id: str, mapping: dict, local: str = "", week_key: str | None = None) -> bool:
-    try:
-        stt = _yami_state_load()
-        prof = stt.setdefault("profiles", {}).setdefault(str(perfil), {})
-        store = prof.setdefault("weekly_schedule_overrides", {})
-        key = yami_weekly_schedule_key(plano_id, local=local, week_key=week_key)
-        clean = {}
-        if isinstance(mapping, dict):
-            for k, v in mapping.items():
-                sk = str(k or "").strip()
-                sv = str(v or "").strip()
-                if sk and sv:
-                    clean[sk] = sv
-        if clean:
-            store[key] = clean
-        elif key in store:
-            del store[key]
-        return _yami_state_save(stt)
-    except Exception:
-        return False
-
-
-def yami_clear_weekly_schedule_override(perfil: str, plano_id: str, local: str = "", week_key: str | None = None) -> bool:
-    try:
-        stt = _yami_state_load()
-        prof = stt.setdefault("profiles", {}).setdefault(str(perfil), {})
-        store = prof.setdefault("weekly_schedule_overrides", {})
-        key = yami_weekly_schedule_key(plano_id, local=local, week_key=week_key)
-        if key in store:
-            del store[key]
-        return _yami_state_save(stt)
-    except Exception:
-        return False
-
 
 def yami_get_rir_bias(perfil: str, ex: str) -> float:
     try:
@@ -4409,81 +4354,12 @@ def _get_today_weekday_pt():
     return nomes[now_local.weekday()], now_local.weekday()
 
 
-_WEEKDAY_ORDER_PT = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
-
-
-def _lisbon_iso_week_key(d: datetime.date | None = None) -> str:
-    try:
-        dd = d if isinstance(d, datetime.date) else _lisbon_today_date()
-    except Exception:
-        dd = datetime.date.today()
-    try:
-        iso = dd.isocalendar()
-        return f"{int(iso.year)}-W{int(iso.week):02d}"
-    except Exception:
-        return dd.strftime("%Y-W%W")
-
-
-def _extract_weekday_name_pt(text: str) -> str:
-    s = str(text or "").strip()
-    for nome in _WEEKDAY_ORDER_PT:
-        if s.startswith(nome) or nome in s:
-            return nome
-    return ""
-
-
-def _default_weekly_schedule_map(options) -> dict:
-    mapping = {}
-    for op in list(options or []):
-        wd = _extract_weekday_name_pt(str(op))
-        if wd and wd not in mapping:
-            mapping[wd] = str(op)
-    return mapping if len(mapping) >= 2 else {}
-
-
-def _sanitize_weekly_schedule_map(mapping: dict, options) -> dict:
-    valid = {str(x) for x in list(options or [])}
-    clean = {}
-    if isinstance(mapping, dict):
-        for k, v in mapping.items():
-            sk = str(k or "").strip()
-            sv = str(v or "").strip()
-            if sk in _WEEKDAY_ORDER_PT and sv in valid:
-                clean[sk] = sv
-    return clean
-
-
-def _treino_option_label(opt: str, current_map: dict | None = None) -> str:
-    raw = str(opt or "")
-    if not isinstance(current_map, dict) or not current_map:
-        return raw
-    assigned = ""
-    for wd in _WEEKDAY_ORDER_PT:
-        if str(current_map.get(wd, "")) == raw:
-            assigned = wd
-            break
-    original = _extract_weekday_name_pt(raw)
-    if assigned and original and assigned != original:
-        return f"{assigned} • {raw}"
-    return raw
-
-
-def _default_treino_index_for_today(options, weekly_map: dict | None = None):
-    """Escolhe o treino do dia atual.
-
-    Se existir um mapa semanal desta semana (ex.: Quarta -> treino de Terça), ele tem prioridade.
-    """
+def _default_treino_index_for_today(options):
+    """Escolhe o treino correspondente ao dia atual; se não existir, pega no próximo treino da semana."""
     if not options:
         return 0
     dia_nome, dia_idx = _get_today_weekday_pt()
     opts = [str(o) for o in options]
-
-    try:
-        chosen = str((weekly_map or {}).get(dia_nome, "") or "").strip()
-        if chosen in opts:
-            return opts.index(chosen)
-    except Exception:
-        pass
 
     # 1) Match direto por nome do dia no início (Segunda, Terça, ...)
     for i, op in enumerate(opts):
@@ -4496,10 +4372,11 @@ def _default_treino_index_for_today(options, weekly_map: dict | None = None):
             return i
 
     # 3) Se os treinos têm dias PT no nome, escolhe o próximo dia disponível a partir de hoje
+    ordem = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
     dias_presentes = []
     for i, op in enumerate(opts):
         idx = None
-        for j, nome in enumerate(_WEEKDAY_ORDER_PT):
+        for j, nome in enumerate(ordem):
             if op.startswith(nome) or nome in op:
                 idx = j
                 break
@@ -4604,54 +4481,16 @@ except Exception:
     pass
 
 
-_schedule_local = str(st.session_state.get("ineix_local", "")) if plan_id_active == "INEIX_ABC_v1" else ""
-_weekly_day_defaults = _default_weekly_schedule_map(list(treinos_dict.keys()))
-_weekly_day_override = {}
-if _weekly_day_defaults and plan_id_active != "INEIX_ABC_v1":
-    try:
-        _weekly_day_override = yami_get_weekly_schedule_override(perfil_sel, plan_id_active, local=_schedule_local, week_key=_lisbon_iso_week_key())
-    except Exception:
-        _weekly_day_override = {}
-_weekly_day_map = dict(_weekly_day_defaults)
-try:
-    _weekly_day_map.update(_sanitize_weekly_schedule_map(_weekly_day_override, list(treinos_dict.keys())))
-except Exception:
-    pass
-st.session_state["_weekly_day_defaults"] = dict(_weekly_day_defaults)
-st.session_state["_weekly_day_map"] = dict(_weekly_day_map)
-st.session_state["_weekly_day_iso_key"] = _lisbon_iso_week_key()
-
-try:
-    _prev_week_iso = str(st.session_state.get("_last_weekly_iso_key", "") or "")
-    _curr_week_iso = str(_lisbon_iso_week_key() or "")
-    if _prev_week_iso != _curr_week_iso:
-        st.session_state["_last_weekly_iso_key"] = _curr_week_iso
-        if not bool(st.session_state.get("_inprogress_active", False)) and _weekly_day_defaults:
-            try:
-                _idx_new_week = _default_treino_index_for_today(list(treinos_dict.keys()), weekly_map=_weekly_day_map if _weekly_day_map else None)
-                st.session_state["dia_sel"] = list(treinos_dict.keys())[_idx_new_week]
-                _reset_daily_state()
-            except Exception:
-                pass
-except Exception:
-    pass
-
 _treino_options = list(treinos_dict.keys())
-_pending_dia_sel = st.session_state.pop("_pending_dia_sel", None)
-if _pending_dia_sel in _treino_options:
-    try:
-        st.session_state["dia_sel"] = _pending_dia_sel
-    except Exception:
-        pass
 if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
-    _idx_today = _default_treino_index_for_today(_treino_options, weekly_map=_weekly_day_map if _weekly_day_map else None)
+    _idx_today = _default_treino_index_for_today(_treino_options)
     try:
         st.session_state["dia_sel"] = _treino_options[_idx_today]
     except Exception:
         pass
 
 st.sidebar.markdown("<h3>Treino</h3>", unsafe_allow_html=True)
-dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed", format_func=lambda opt: _treino_option_label(opt, _weekly_day_map))
+dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
@@ -4968,73 +4807,6 @@ if not is_ineix:
                 label_visibility="collapsed",
             )
         semana = int(semana_sel)
-
-    if _weekly_day_defaults:
-        with st.sidebar.expander("Alterar dias desta semana", expanded=False):
-            _week_iso = _lisbon_iso_week_key()
-            st.caption(f"Válido só para **{_week_iso}**. Na próxima semana volta ao plano original.")
-
-            _weekdays_in_plan = [wd for wd in _WEEKDAY_ORDER_PT if wd in _weekly_day_defaults]
-            _slot_keys = {}
-            for _wd in _weekdays_in_plan:
-                _slot_key = f"weekly_day_slot::{perfil_sel}::{plano_cycle}::{_week_iso}::{_wd}"
-                _slot_keys[_wd] = _slot_key
-                _base_val = _weekly_day_map.get(_wd, _weekly_day_defaults.get(_wd, ""))
-                if st.session_state.get(_slot_key) not in _treino_options:
-                    st.session_state[_slot_key] = _base_val if _base_val in _treino_options else _weekly_day_defaults.get(_wd, _treino_options[0])
-                st.selectbox(
-                    _wd,
-                    _treino_options,
-                    key=_slot_key,
-                    format_func=lambda opt: str(opt),
-                    disabled=bool(st.session_state.get("_inprogress_active", False)),
-                )
-
-            if bool(st.session_state.get("_inprogress_active", False)):
-                st.info("Com um treino em curso, este mapa da semana fica bloqueado até terminares ou fazeres reset.")
-
-            _b1, _b2 = st.columns(2)
-            if _b1.button("Guardar semana", key=f"save_weekly_days::{perfil_sel}::{plano_cycle}::{_week_iso}", width='stretch', disabled=bool(st.session_state.get("_inprogress_active", False))):
-                _new_map = {wd: str(st.session_state.get(_slot_keys[wd], "") or "") for wd in _weekdays_in_plan}
-                _vals = [v for v in _new_map.values() if v]
-                if len(_vals) != len(_weekdays_in_plan) or len(set(_vals)) != len(_vals):
-                    st.warning("Cada dia tem de ter um treino único nesta semana. Sem duplicados.")
-                else:
-                    _changed = any(str(_weekly_day_defaults.get(wd, "")) != str(_new_map.get(wd, "")) for wd in _weekdays_in_plan)
-                    if _changed:
-                        yami_set_weekly_schedule_override(perfil_sel, plano_cycle, _new_map, local=_schedule_local, week_key=_week_iso)
-                    else:
-                        yami_clear_weekly_schedule_override(perfil_sel, plano_cycle, local=_schedule_local, week_key=_week_iso)
-                    if not bool(st.session_state.get("_inprogress_active", False)):
-                        _today_name, _ = _get_today_weekday_pt()
-                        _today_pick = str(_new_map.get(_today_name, _weekly_day_defaults.get(_today_name, st.session_state.get("dia_sel", ""))) or "")
-                        if _today_pick in _treino_options:
-                            st.session_state["_pending_dia_sel"] = _today_pick
-                    try:
-                        _reset_daily_state()
-                    except Exception:
-                        pass
-                    st.toast("Dias desta semana atualizados ✅")
-                    st.rerun()
-
-            if _b2.button("Repor original", key=f"reset_weekly_days::{perfil_sel}::{plano_cycle}::{_week_iso}", width='stretch', disabled=bool(st.session_state.get("_inprogress_active", False))):
-                yami_clear_weekly_schedule_override(perfil_sel, plano_cycle, local=_schedule_local, week_key=_week_iso)
-                for _wd in _weekdays_in_plan:
-                    try:
-                        st.session_state[_slot_keys[_wd]] = _weekly_day_defaults.get(_wd, st.session_state.get(_slot_keys[_wd]))
-                    except Exception:
-                        pass
-                if not bool(st.session_state.get("_inprogress_active", False)):
-                    _today_name, _ = _get_today_weekday_pt()
-                    _today_pick = str(_weekly_day_defaults.get(_today_name, st.session_state.get("dia_sel", "")) or "")
-                    if _today_pick in _treino_options:
-                        st.session_state["_pending_dia_sel"] = _today_pick
-                try:
-                    _reset_daily_state()
-                except Exception:
-                    pass
-                st.toast("Plano semanal reposto ao original ✅")
-                st.rerun()
 
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
 else:
