@@ -1334,16 +1334,30 @@ def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int,
         "pt_idx": int(st.session_state.get(pure_nav_key, 0) or 0),
         "pt_done": {},
         "pt_sets": {},
+        "rest": {},
+        "checks": {
+            "chk_aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
+            "chk_mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
+            "chk_cardio": bool(st.session_state.get("chk_cardio", False)),
+            "chk_tendoes": bool(st.session_state.get("chk_tendoes", False)),
+            "chk_core": bool(st.session_state.get("chk_core", False)),
+            "chk_cooldown": bool(st.session_state.get("chk_cooldown", False)),
+        },
     }
     for ix in range(int(n_ex)):
         dk = f"pt_done::{perfil}::{dia}::{ix}"
         sk = f"pt_sets::{perfil}::{dia}::{ix}"
+        rk = f"rest_{ix}"
         try:
             payload["pt_done"][str(ix)] = int(st.session_state.get(dk, 0) or 0)
         except Exception:
             payload["pt_done"][str(ix)] = 0
         sets = st.session_state.get(sk, [])
         payload["pt_sets"][str(ix)] = sets if isinstance(sets, list) else []
+        try:
+            payload["rest"][str(ix)] = int(st.session_state.get(rk, 0) or 0)
+        except Exception:
+            payload["rest"][str(ix)] = 0
     return payload
 
 def _apply_inprogress_payload(payload: dict, perfil: str, dia: str, pure_nav_key: str) -> None:
@@ -1375,6 +1389,25 @@ def _apply_inprogress_payload(payload: dict, perfil: str, dia: str, pure_nav_key
                     continue
                 if isinstance(v, list):
                     st.session_state[f"pt_sets::{perfil}::{dia}::{ix}"] = v
+    except Exception:
+        pass
+    try:
+        prest = payload.get("rest", {})
+        if isinstance(prest, dict):
+            for k, v in prest.items():
+                try:
+                    ix = int(k)
+                    st.session_state[f"rest_{ix}"] = int(v or 0)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    try:
+        pchecks = payload.get("checks", {})
+        if isinstance(pchecks, dict):
+            for k, v in pchecks.items():
+                if str(k).startswith("chk_"):
+                    st.session_state[str(k)] = bool(v)
     except Exception:
         pass
 
@@ -4584,8 +4617,10 @@ if not is_ineix:
 
     # --- Semana automática (não tens de te lembrar de mexer) ---
     _cyc_cfg = yami_get_cycle_cfg(perfil_sel, plano_cycle)
-    if "auto_week" not in st.session_state:
-        st.session_state["auto_week"] = bool(_cyc_cfg.get("auto", True))
+    _cyc_key = hashlib.md5(f"{perfil_sel}|{plano_cycle}".encode("utf-8")).hexdigest()[:8]
+    _auto_week_key = f"auto_week::{_cyc_key}"
+    if _auto_week_key not in st.session_state:
+        st.session_state[_auto_week_key] = bool(_cyc_cfg.get("auto", True))
 
     st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
     st.sidebar.markdown("<h3>Periodização</h3>", unsafe_allow_html=True)
@@ -4593,16 +4628,16 @@ if not is_ineix:
     try:
         auto_week = st.sidebar.toggle(
             "Semana automática",
-            value=bool(st.session_state.get("auto_week", True)),
-            key="auto_week",
+            value=bool(st.session_state.get(_auto_week_key, True)),
+            key=_auto_week_key,
             help="Calcula a semana pelo calendário a partir da data de início do ciclo.",
             on_change=_reset_daily_state,
         )
     except Exception:
         auto_week = st.sidebar.checkbox(
             "Semana automática",
-            value=bool(st.session_state.get("auto_week", True)),
-            key="auto_week",
+            value=bool(st.session_state.get(_auto_week_key, True)),
+            key=_auto_week_key,
             help="Calcula a semana pelo calendário a partir da data de início do ciclo.",
             on_change=_reset_daily_state,
         )
@@ -4619,32 +4654,43 @@ if not is_ineix:
             dfh = df_all
         except Exception:
             return ""
+
         if dfh is None or dfh.empty:
             return ""
+
         try:
-            dfh = dfh[(dfh["Perfil"].astype(str) == str(perfil_sel)) & (dfh["Plano_ID"].astype(str) == str(plano_cycle))]
+            dfh = dfh[
+                (dfh["Perfil"].astype(str) == str(perfil_sel)) &
+                (dfh["Plano_ID"].astype(str) == str(plano_cycle))
+            ].copy()
         except Exception:
             return ""
-        if dfh is None or dfh.empty or ("Data" not in dfh.columns):
+
+        if dfh.empty or ("Data" not in dfh.columns):
             return ""
+
+        try:
+            dfh["_data_dt"] = pd.to_datetime(dfh["Data"], dayfirst=True, errors="coerce")
+            dfh = dfh.dropna(subset=["_data_dt"])
+        except Exception:
+            return ""
+
+        if dfh.empty:
+            return ""
+
         today = _lisbon_today_date()
-        ds: list[datetime.date] = []
-        for x in dfh["Data"].astype(str).tolist():
-            s = str(x or "").strip()
-            if not s:
-                continue
+        ds = []
+        for d in dfh["_data_dt"].dt.date.tolist():
             try:
-                d = datetime.date.fromisoformat(s[:10])
+                if 0 <= (today - d).days <= 21:
+                    ds.append(d)
             except Exception:
-                continue
-            if 0 <= (today - d).days <= 21:
-                ds.append(d)
+                pass
+
         if not ds:
             return ""
-        return min(ds).isoformat()
 
-    # chave segura por perfil+plano (para não colidir)
-    _cyc_key = hashlib.md5(f"{perfil_sel}|{plano_cycle}".encode("utf-8")).hexdigest()[:8]
+        return min(ds).isoformat()
 
     if bool(auto_week):
         start_iso = str(_cyc_cfg.get("start", "") or "").strip()
@@ -6199,23 +6245,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
