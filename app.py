@@ -4637,6 +4637,12 @@ except Exception:
     pass
 
 _treino_options = list(treinos_dict.keys())
+_pending_dia_sel = st.session_state.pop("_pending_dia_sel", None)
+if _pending_dia_sel in _treino_options:
+    try:
+        st.session_state["dia_sel"] = _pending_dia_sel
+    except Exception:
+        pass
 if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
     _idx_today = _default_treino_index_for_today(_treino_options, weekly_map=_weekly_day_map if _weekly_day_map else None)
     try:
@@ -5003,7 +5009,7 @@ if not is_ineix:
                         _today_name, _ = _get_today_weekday_pt()
                         _today_pick = str(_new_map.get(_today_name, _weekly_day_defaults.get(_today_name, st.session_state.get("dia_sel", ""))) or "")
                         if _today_pick in _treino_options:
-                            st.session_state["dia_sel"] = _today_pick
+                            st.session_state["_pending_dia_sel"] = _today_pick
                     try:
                         _reset_daily_state()
                     except Exception:
@@ -5022,7 +5028,7 @@ if not is_ineix:
                     _today_name, _ = _get_today_weekday_pt()
                     _today_pick = str(_weekly_day_defaults.get(_today_name, st.session_state.get("dia_sel", "")) or "")
                     if _today_pick in _treino_options:
-                        st.session_state["dia_sel"] = _today_pick
+                        st.session_state["_pending_dia_sel"] = _today_pick
                 try:
                     _reset_daily_state()
                 except Exception:
