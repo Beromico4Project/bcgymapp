@@ -1343,6 +1343,9 @@ def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int,
             "chk_core": bool(st.session_state.get("chk_core", False)),
             "chk_cooldown": bool(st.session_state.get("chk_cooldown", False)),
         },
+        "ui": {
+            "disable_rest_timer": bool(st.session_state.get("disable_rest_timer", False)),
+        },
     }
     for ix in range(int(n_ex)):
         dk = f"pt_done::{perfil}::{dia}::{ix}"
@@ -1359,6 +1362,19 @@ def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int,
         except Exception:
             payload["rest"][str(ix)] = 0
     return payload
+
+def _persist_disable_rest_timer_for_active_session(perfil: str, plano_id: str) -> None:
+    try:
+        skey, payload = get_active_inprogress_session(str(perfil), str(plano_id), INPROGRESS_MAX_AGE_HOURS)
+        if not (isinstance(skey, str) and isinstance(payload, dict)):
+            return
+        ui = payload.get("ui", {}) if isinstance(payload.get("ui", {}), dict) else {}
+        ui["disable_rest_timer"] = bool(st.session_state.get("disable_rest_timer", False))
+        payload["ui"] = ui
+        payload["ts"] = time.time()
+        save_inprogress_session(skey, payload)
+    except Exception:
+        pass
 
 def _apply_inprogress_payload(payload: dict, perfil: str, dia: str, pure_nav_key: str) -> None:
     try:
@@ -4510,6 +4526,13 @@ try:
                 st.session_state["semana_sel"] = _p_sem
         except Exception:
             pass
+
+        try:
+            _p_ui = _p_ip.get("ui", {}) if isinstance(_p_ip.get("ui", {}), dict) else {}
+            if "disable_rest_timer" in _p_ui:
+                st.session_state["disable_rest_timer"] = bool(_p_ui.get("disable_rest_timer", False))
+        except Exception:
+            pass
 except Exception:
     pass
 
@@ -4589,6 +4612,12 @@ except Exception:
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.markdown("<h3>Descanso</h3>", unsafe_allow_html=True)
 
+def _on_disable_rest_timer_change():
+    try:
+        _persist_disable_rest_timer_for_active_session(perfil_sel, st.session_state.get("plano_id_sel", "Base"))
+    except Exception:
+        pass
+
 if "disable_rest_timer" not in st.session_state:
     st.session_state["disable_rest_timer"] = False
 
@@ -4598,6 +4627,7 @@ try:
         value=bool(st.session_state.get("disable_rest_timer", False)),
         key="disable_rest_timer",
         help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+        on_change=_on_disable_rest_timer_change,
     )
 except Exception:
     disable_rest_timer = st.sidebar.checkbox(
@@ -4605,6 +4635,7 @@ except Exception:
         value=bool(st.session_state.get("disable_rest_timer", False)),
         key="disable_rest_timer",
         help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+        on_change=_on_disable_rest_timer_change,
     )
 
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
@@ -5462,11 +5493,9 @@ Dor articular pontiaguda = troca variação no dia.
                 series_txt = str(item.get('series',''))
                 reps_txt = str(item.get('reps',''))
                 meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR esperado: {rir_target_str}"
-                sub_line = f"⏱️ Tempo {item['tempo']} · Descanso ~{item['descanso_s']}s"
                 st.markdown(
                     f"""<div class='bc-meta-card'>
   <div class='bc-meta-top'>{html.escape(meta_line)}</div>
-  <div class='bc-meta-sub'>{html.escape(sub_line)}</div>
 </div>""",
                     unsafe_allow_html=True
                 )
@@ -5568,11 +5597,21 @@ Dor articular pontiaguda = troca variação no dia.
                 _last_chip = _latest_set_summary_from_df_last(df_last)
                 if _last_chip:
                     _tempo = str(item.get("tempo", "") or "").strip()
+                    try:
+                        _descanso_s = int(item.get("descanso_s", 0) or 0)
+                    except Exception:
+                        _descanso_s = 0
+                    _tempo_parts = []
                     if _tempo:
+                        _tempo_parts.append(f"⏱️ Tempo {_tempo}")
+                    if _descanso_s > 0:
+                        _tempo_parts.append(f"Descanso ~{_descanso_s}s")
+                    _tempo_txt = " · ".join(_tempo_parts)
+                    if _tempo_txt:
                         st.markdown(
                             f"<div class='bc-last-chip'>"
                             f"<span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span>"
-                            f"<span class='bc-tempo'>⏱️ Tempo {html.escape(_tempo)}</span>"
+                            f"<span class='bc-tempo'>{html.escape(_tempo_txt)}</span>"
                             f"</div>",
                             unsafe_allow_html=True,
                         )
