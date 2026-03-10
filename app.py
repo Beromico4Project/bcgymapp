@@ -4023,9 +4023,9 @@ treinos_base = {
         "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
         "exercicios": [
             {"ex":"Deadlift", "series":4, "reps":"3-5", "tipo":"composto"},
-            {"ex":"Bulgarian Split Squat (passo longo)", "series":3, "reps":"5-6", "tipo":"composto"},
+            {"ex":"Bulgarian Split Squat (quad-biased / passo curto)", "series":3, "reps":"5-6", "tipo":"composto"},
             {"ex":"Hip Thrust (máquina)", "series":4, "reps":"5", "tipo":"composto"},
-            {"ex":"Nordic (amplitude controlada)", "series":3, "reps":"5-6", "tipo":"isolado"},
+            {"ex":"Flexora (leg curl)", "series":3, "reps":"6-8", "tipo":"isolado"},
             {"ex":"Panturrilha em pé (pesado)", "series":3, "reps":"6-8", "tipo":"isolado"},
         ]
     },
@@ -4049,16 +4049,17 @@ treinos_base = {
             {"ex":"Tríceps corda (ou barra V se cotovelo)", "series":3, "reps":"12-15", "tipo":"isolado"},
         ]
     },
-    "Sexta — LOWER HIPERTROFIA (glúteo dominante)": {
+    "Sexta — LOWER HIPERTROFIA (glúteo + quadríceps)": {
         "bloco": "Hipertrofia",
         "sessao": "90–110 min",
         "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
         "exercicios": [
             {"ex":"Hip Thrust (barra)", "series":4, "reps":"8-10", "tipo":"composto"},
             {"ex":"Leg Press (pés altos e abertos)", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Extensora", "series":3, "reps":"12-15", "tipo":"isolado"},
             {"ex":"RDL (halter/barra até neutro perfeito)", "series":3, "reps":"8-10", "tipo":"composto"},
             {"ex":"Back extension 45° (glúteo bias)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Abdução máquina", "series":4, "reps":"15-25", "tipo":"isolado"},
+            {"ex":"Abdução máquina", "series":2, "reps":"15-25", "tipo":"isolado"},
             {"ex":"Panturrilha sentado", "series":3, "reps":"12-15", "tipo":"isolado"},
         ]
     },
@@ -4360,7 +4361,7 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
         return {"bloco":"—","sessao":"","protocolos":{}, "exercicios":[]}
     bloco = cfg["bloco"]
     treino_final = []
-    for item in cfg["exercicios"]:
+    for i, item in enumerate(cfg["exercicios"]):
         novo = dict(item)
         if ((plan_id == "Base" and is_deload(week) and bloco in ["Força","Hipertrofia"]) or (plan_id == GUI_PPLA_ID and is_gui_deload_week(week) and bloco in GUI_BLOCOS)):
             base_series = int(item["series"])
@@ -4370,6 +4371,8 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
                 novo["series"] = max(1, int(round(base_series*0.6)))
         if week == 7 and bloco == "Hipertrofia" and item["tipo"] == "composto":
             novo["nota_semana"] = "Semana 7: 1ª série como TOP SET (RIR 1) + restantes back-off controlado."
+        elif week == 7 and bloco == "Força" and i == 0 and item["tipo"] == "composto":
+            novo["nota_semana"] = "Semana 7: antes das séries de trabalho, faz 1 top single técnico @8–8.5 para aferição submáxima; depois cumpre o plano normal."
         novo["rir_alvo"] = rir_alvo(item["tipo"], bloco, week)
         novo["tempo"] = tempo_exec(item["tipo"])
         novo["descanso_s"] = descanso_recomendado_s(item["tipo"], bloco)
@@ -5447,6 +5450,8 @@ Dor articular pontiaguda = troca variação no dia.
                 st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
             if semana == 7 and bloco == "Hipertrofia":
                 st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
+            if semana == 7 and bloco == "Força":
+                st.info("Semana 7: aferição submáxima no 1º lift do dia com top single técnico @8–8.5, depois séries de trabalho normais.")
         elif bloco in GUI_BLOCOS:
             if is_gui_deload_week(semana):
                 st.warning("DELOAD GUI: ~50–60% das séries, -10 a -15% carga, sem drop e sem mini-sets.")
