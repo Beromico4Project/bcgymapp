@@ -4541,15 +4541,48 @@ except Exception:
 
 
 _treino_options = list(treinos_dict.keys())
+_idx_today = _default_treino_index_for_today(_treino_options)
+_today_option = _treino_options[_idx_today] if _treino_options else None
+_manual_day_key = f"manual_treino_day::{perfil_sel}::{plan_id_active}"
+
+if _manual_day_key not in st.session_state:
+    st.session_state[_manual_day_key] = False
+
 if ("dia_sel" not in st.session_state) or (st.session_state.get("dia_sel") not in _treino_options):
-    _idx_today = _default_treino_index_for_today(_treino_options)
     try:
-        st.session_state["dia_sel"] = _treino_options[_idx_today]
+        if _today_option is not None:
+            st.session_state["dia_sel"] = _today_option
     except Exception:
         pass
 
 st.sidebar.markdown("<h3>Treino</h3>", unsafe_allow_html=True)
-dia = st.sidebar.selectbox("Treino", _treino_options, key="dia_sel", on_change=_reset_daily_state, label_visibility="collapsed")
+
+_inprogress_locked_day = bool(st.session_state.get("_inprogress_active"))
+if not _inprogress_locked_day:
+    _manual_day = st.sidebar.toggle(
+        "Escolher outro dia",
+        value=bool(st.session_state.get(_manual_day_key, False)),
+        key=_manual_day_key,
+        help="Ativa para fazer, por exemplo, o treino de sábado na quinta.",
+    )
+    if not _manual_day and _today_option is not None and st.session_state.get("dia_sel") != _today_option:
+        st.session_state["dia_sel"] = _today_option
+        try:
+            _reset_daily_state()
+        except Exception:
+            pass
+else:
+    st.session_state[_manual_day_key] = True
+    st.sidebar.caption("🔒 Sessão em curso ativa — o dia do treino fica preso até terminares ou fizeres reset do treino.")
+
+dia = st.sidebar.selectbox(
+    "Treino",
+    _treino_options,
+    key="dia_sel",
+    on_change=_reset_daily_state,
+    label_visibility="collapsed",
+    disabled=_inprogress_locked_day,
+)
 st.sidebar.caption(f"⏱️ Sessão-alvo: **{treinos_dict[dia]['sessao']}**")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
