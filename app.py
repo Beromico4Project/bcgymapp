@@ -2830,7 +2830,9 @@ def _parse_rep_scheme(rep_text: str, series_hint: int | None = None) -> dict:
     return out
 
 
-def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list:
+def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str,
+                                 bloco: str | None = None,
+                                 plano_id: str | None = None) -> list:
     """Resumo histórico por sessão para um exercício.
 
     Mantém chaves existentes (compat) e adiciona métricas úteis para o Yami:
@@ -2838,6 +2840,11 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
     - tonnage: tonelagem total (peso * reps)
     - e1rm_simple: melhor 1RM estimado (Epley) só com reps
     - e1rm_rir: melhor 1RM estimado (Epley) usando reps + RIR quando existe
+
+    Preferência de escopo para evitar misturar contextos demasiado diferentes:
+    1) mesmo Plano_ID + Bloco
+    2) mesmo Plano_ID
+    3) mesmo exercício no perfil (fallback)
     """
     if df is None or getattr(df, 'empty', True):
         return []
@@ -2845,6 +2852,41 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
     if 'Perfil' not in d.columns or 'Exercício' not in d.columns:
         return []
     d = d[(d['Perfil'].astype(str) == str(perfil)) & (d['Exercício'].astype(str) == str(ex))].copy()
+    if d.empty:
+        return []
+
+    has_plan = 'Plano_ID' in d.columns
+    has_block = 'Bloco' in d.columns
+    plano_id = None if plano_id is None else str(plano_id)
+    bloco = None if bloco is None else str(bloco)
+
+    d_scope = d
+    try:
+        if has_plan and plano_id:
+            d_plan_block = d[(d['Plano_ID'].astype(str) == plano_id)].copy()
+            if has_block and bloco:
+                d_plan_block = d_plan_block[d_plan_block['Bloco'].astype(str) == bloco].copy()
+            if len(d_plan_block) >= 2:
+                d_scope = d_plan_block
+            elif len(d_plan_block) == 1:
+                d_plan = d[(d['Plano_ID'].astype(str) == plano_id)].copy()
+                d_scope = d_plan if len(d_plan) >= 2 else d_plan_block
+            else:
+                d_plan = d[(d['Plano_ID'].astype(str) == plano_id)].copy()
+                if len(d_plan) >= 2:
+                    d_scope = d_plan
+                elif has_block and bloco:
+                    d_block = d[d['Bloco'].astype(str) == bloco].copy()
+                    if len(d_block) >= 2:
+                        d_scope = d_block
+        elif has_block and bloco:
+            d_block = d[d['Bloco'].astype(str) == bloco].copy()
+            if len(d_block) >= 2:
+                d_scope = d_block
+    except Exception:
+        d_scope = d
+
+    d = d_scope.copy()
     if d.empty:
         return []
     d['_dt'] = pd.to_datetime(d.get('Data'), dayfirst=True, errors='coerce')
@@ -2969,6 +3011,10 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
             'reps': [int(x) for x in reps_num],
             'rirs': [float(x) for x in rirs_num],
 
+            # contexto
+            'bloco': str(row.get('Bloco', '') or ''),
+            'plano_id': str(row.get('Plano_ID', '') or ''),
+
             # novos sinais
             'w_work': float(w_work),
             'tonnage': float(tonnage),
@@ -2977,7 +3023,6 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str) -> list
             'has_rir': bool(len(rirs_num) > 0),
         })
     return out
-
 
 def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict, bloco: str, semana: int, plano_id: str) -> dict:
     """Coach de progressão ('Yami'): sugere carga e explica o porquê, com heurística mais robusta."""
@@ -3014,7 +3059,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     body_block_up = bool(body.get('block_up', False)) and bool(ctrl.get('pain_blocks_up', True))
 
 
-    hist = _historico_resumos_exercicio(df_hist, perfil, ex)
+    hist = _historico_resumos_exercicio(df_hist, perfil, ex, bloco=bloco, plano_id=plano_id)
     latest = hist[0] if hist else None
     prev = hist[1] if len(hist) > 1 else None
     prev2 = hist[2] if len(hist) > 2 else None
@@ -3108,7 +3153,8 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     def _fmt_inc(v: float) -> str:
         return str(int(v)) if float(v).is_integer() else str(v)
 
-    if not latest or float(latest.get('peso_medio', 0) or 0) <= 0:
+    latest_work = float(latest.get('w_work', latest.get('peso_medio', 0)) or 0) if latest else 0.0
+    if not latest or float(latest_work) <= 0:
         return {
             'acao': 'Sem base suficiente',
             'peso_sugerido': 0.0,
@@ -3122,7 +3168,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
             ]
         }
 
-    p_atual = float(latest.get('peso_medio', 0) or 0)
+    p_atual = float(latest.get('w_work', latest.get('peso_medio', 0)) or 0)
     reps_list = list(latest.get('reps', []) or [])
     rirs_list = [float(x) for x in list(latest.get('rirs', []) or []) if x is not None]
     reps_media = float(latest.get('reps_media', 0) or 0)
@@ -3144,7 +3190,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
 
     reasons = []
     reasons.append(
-        f"Último treino ({latest.get('data','—')}): {latest.get('n_sets',0)}/{series_alvo or latest.get('n_sets',0)} séries · média {p_atual:.1f} kg · {reps_media:.1f} reps"
+        f"Último treino ({latest.get('data','—')}): {latest.get('n_sets',0)}/{series_alvo or latest.get('n_sets',0)} séries · top set {p_atual:.1f} kg · média {reps_media:.1f} reps"
         + (f" · RIR {rir_media:.1f}" if rir_media is not None else "")
     )
     if low and high and rep_kind in ('range', 'fixed', 'fixed_seq'):
@@ -3159,13 +3205,13 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     for h in [latest, prev, prev2]:
         if not h:
             continue
-        same_load_streak.append(float(h.get('peso_medio', 0) or 0))
+        same_load_streak.append(float(h.get('w_work', h.get('peso_medio', 0)) or 0))
     stable_load = False
     if len(same_load_streak) >= 2:
         stable_load = (max(same_load_streak[:2]) - min(same_load_streak[:2])) <= max(0.5, p_atual * 0.01)
 
-    if prev and float(prev.get('peso_medio', 0) or 0) > 0:
-        p_prev = float(prev.get('peso_medio', 0) or 0)
+    if prev and float(prev.get('w_work', prev.get('peso_medio', 0)) or 0) > 0:
+        p_prev = float(prev.get('w_work', prev.get('peso_medio', 0)) or 0)
         reps_prev = float(prev.get('reps_media', 0) or 0)
         rir_prev = prev.get('rirs_media')
         same_load = abs(p_atual - p_prev) <= max(0.5, p_prev * 0.01)
@@ -3197,7 +3243,7 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     overload_flag = False
     if len(hist) >= 3:
         trio = hist[:3]
-        pesos_trio = [float(h.get('peso_medio', 0) or 0) for h in trio]
+        pesos_trio = [float(h.get('w_work', h.get('peso_medio', 0)) or 0) for h in trio]
         same_load_3 = (max(pesos_trio) - min(pesos_trio)) <= max(0.5, p_atual * 0.01)
         if same_load_3:
             reps_trio = [float(h.get('reps_media', 0) or 0) for h in trio]
@@ -3443,19 +3489,58 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
     except Exception:
         pass
 
+    # Confiança preliminar para governar guardrails antes do return final
+    conf_q = 0.0
+    try:
+        conf_q += 0.25 if int(n_hist or 0) >= 2 else 0.0
+        conf_q += 0.25 if int(n_hist or 0) >= 3 else 0.0
+    except Exception:
+        pass
+    try:
+        conf_q += 0.20 if (rir_eff is not None) else 0.0
+    except Exception:
+        pass
+    try:
+        conf_q += 0.20 if (not sessao_incompleta and float(sets_ratio) >= 0.85) else 0.0
+    except Exception:
+        pass
+    try:
+        conf_q += 0.10 if str(rep_kind) != 'special' else 0.0
+    except Exception:
+        pass
+    conf_q = max(0.0, min(1.0, float(conf_q)))
+    try:
+        if sessao_incompleta and float(sets_ratio) < 0.67:
+            conf_q -= 0.25
+        if rir_eff is None:
+            conf_q -= 0.10
+        if int(n_hist or 0) < 2:
+            conf_q -= 0.10
+    except Exception:
+        pass
+    conf_q = max(0.0, min(1.0, float(conf_q)))
+    if conf_q >= 0.75 and (prev is not None):
+        conf = 'alta'
+    elif conf_q >= 0.45:
+        conf = 'média'
+    else:
+        conf = 'baixa'
+
     # Confiança afeta a agressividade (não é só cosmético)
     try:
         if str(conf) == 'baixa' and ('DELOAD' not in str(acao)):
-            # cap no quanto mexe na carga quando os dados ainda não são "limpos"
+            # com confiança baixa, o Yami não ganha direito a subir carga
+            if float(p_sug) > float(p_atual):
+                p_sug = float(_round_to_nearest(p_atual, rstep))
+                acao = "Mantém carga"
+                resumo = resumo + " (confiança baixa: não subo carga)"
+            # e qualquer descida fica limitada a micro-ajuste
             try:
                 max_move = float(inc_micro)
             except Exception:
                 max_move = 0.5
-            cap_up = float(p_atual) + float(max_move)
             cap_dn = float(p_atual) - float(max_move)
             p_cap = float(p_sug)
-            if p_cap > cap_up:
-                p_cap = cap_up
             if p_cap < cap_dn:
                 p_cap = cap_dn
             p_cap = float(_round_to_nearest(p_cap, rstep))
@@ -3466,8 +3551,6 @@ def yami_coach_sugestao(df_hist: pd.DataFrame, perfil: str, ex: str, item: dict,
                 if abs(dcap) < 0.25:
                     acao = "Mantém carga"
                     p_sug = float(_round_to_nearest(p_atual, rstep))
-                elif dcap > 0:
-                    acao = f"+{_fmt_inc(dcap)}kg"
                 else:
                     acao = f"Baixa {_fmt_inc(abs(dcap))}kg"
                 resumo = resumo + " (confiança baixa: mexo pouco)"
