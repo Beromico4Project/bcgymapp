@@ -5368,521 +5368,509 @@ Dor articular pontiaguda = troca variação no dia.
     )
     prot = cfg["protocolos"]
 
-    pure_nav_key = None
-    pure_idx = 0
-    if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
-        ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
-        pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
-        # AUTO-RESTORE: em mobile o browser pode suspender e a sessão do Streamlit recomeça (session_state limpa).
-        # Se houver snapshot recente para este perfil/dia/plano/semana, restaura progresso e séries pendentes.
-        try:
-            _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-            _ip_key = st.session_state.get("_inprogress_session_key") or _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-            if not _pure_has_any_progress(perfil_sel, dia, len(cfg.get('exercicios', []))):
-                _payload = load_inprogress_session(_ip_key)
-                if isinstance(_payload, dict):
-                    _apply_inprogress_payload(_payload, perfil_sel, dia, pure_nav_key)
-                    try:
-                        st.toast("Sessão restaurada ✅")
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    treino_exec_tab, treino_tabela_tab = st.tabs(["🎯 Executar", "📋 Tabela do dia"])
 
-
-        if pure_nav_key not in st.session_state:
-            st.session_state[pure_nav_key] = 0
-        max_idx = max(0, len(ex_names)-1)
-        try:
-            st.session_state[pure_nav_key] = int(st.session_state.get(pure_nav_key, 0))
-        except Exception:
-            st.session_state[pure_nav_key] = 0
-        st.session_state[pure_nav_key] = max(0, min(max_idx, st.session_state[pure_nav_key]))
-        pure_idx = int(st.session_state[pure_nav_key])
-
-        def _set_pure_idx(_ix:int):
-            _ix = max(0, min(max_idx, int(_ix)))
-            st.session_state[pure_nav_key] = _ix
-            # NÃO escrever diretamente no widget key depois do selectbox existir (StreamlitAPIException).
-            # Em vez disso, agenda a sincronização para o próximo rerun.
-            st.session_state[f"pt_pick_pending_{pure_nav_key}"] = _ix
-            st.session_state["scroll_to_ex_nav"] = True
-
-        _pick_key = f"pt_pick_{pure_nav_key}"
-        _pick_pending_key = f"pt_pick_pending_{pure_nav_key}"
-        if _pick_pending_key in st.session_state:
+    def _build_tabela_treino_dia(_cfg, _perfil, _dia, _bloco, _semana, _df_hist):
+        _rows = []
+        if not isinstance(_cfg, dict):
+            return pd.DataFrame()
+        _plan_id = str(st.session_state.get("plano_id_sel", "Base"))
+        for _i, _item in enumerate(list(_cfg.get("exercicios", []) or [])):
+            _ex = str(_item.get("ex", "") or "")
             try:
-                st.session_state[_pick_key] = int(st.session_state.get(_pick_pending_key, pure_idx))
+                _series = int(_item.get("series", 0) or 0)
             except Exception:
-                st.session_state[_pick_key] = int(pure_idx)
+                _series = 0
+            _reps = str(_item.get("reps", "") or "")
+            _rir_txt = str(_item.get("rir_alvo", "") or "")
+            _tempo = str(_item.get("tempo", "") or "")
+            _tipo = str(_item.get("tipo", "") or "")
             try:
-                del st.session_state[_pick_pending_key]
+                _desc = int(_item.get("descanso_s", 0) or 0)
             except Exception:
-                pass
+                _desc = 0
+            try:
+                _done_sets = int(st.session_state.get(f"pt_done::{_perfil}::{_dia}::{_i}", 0) or 0)
+            except Exception:
+                _done_sets = 0
+
+            try:
+                _df_last, _peso_medio, _rir_medio, _data_ultima = get_historico_detalhado(_df_hist, _perfil, _ex)
+            except Exception:
+                _df_last, _peso_medio, _rir_medio, _data_ultima = pd.DataFrame(), 0.0, None, None
+
+            _ultimo = _latest_set_summary_from_df_last(_df_last) or "—"
+            if _data_ultima:
+                try:
+                    _ultimo = f"{_ultimo} · {_data_ultima}"
+                except Exception:
+                    pass
+
+            _peso_txt = "—"
+            try:
+                _yami_tbl = yami_coach_sugestao(_df_hist, _perfil, _ex, _item, _bloco, _semana, _plan_id)
+                _peso_sug_tbl = float((_yami_tbl or {}).get('peso_work_sugerido', (_yami_tbl or {}).get('peso_sugerido', 0.0)) or 0.0)
+                if _peso_sug_tbl > 0:
+                    _peso_txt = f"{_peso_sug_tbl:.1f} kg"
+            except Exception:
+                _peso_txt = "—"
+
+            _rows.append({
+                "#": _i + 1,
+                "Exercício": _ex,
+                "Tipo": _tipo or "—",
+                "Feitas": f"{min(_done_sets, _series)}/{_series}" if _series > 0 else str(_done_sets),
+                "Séries": _series,
+                "Reps": _reps or "—",
+                "RIR": _rir_txt or "—",
+                "Carga sugerida": _peso_txt,
+                "Tempo": _tempo or "—",
+                "Descanso": f"{_desc}s" if _desc > 0 else "—",
+                "Último registo": _ultimo,
+            })
+        return pd.DataFrame(_rows)
+
+    with treino_tabela_tab:
+        _df_tabela_dia = _build_tabela_treino_dia(cfg, perfil_sel, dia, bloco, semana, df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data())
+        if _df_tabela_dia.empty:
+            st.info("Sem exercícios para mostrar neste dia.")
         else:
-            st.session_state.setdefault(_pick_key, pure_idx)
-            # sincronização segura ANTES do widget ser instanciado neste rerun
+            _tot_ex = int(len(_df_tabela_dia))
             try:
-                st.session_state[_pick_key] = int(st.session_state.get(pure_nav_key, pure_idx))
+                _tot_series = int(pd.to_numeric(_df_tabela_dia["Séries"], errors="coerce").fillna(0).sum())
             except Exception:
-                st.session_state[_pick_key] = int(pure_idx)
-
-        _done_ex = 0
-        for _ix, _it in enumerate(cfg["exercicios"]):
-            _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
+                _tot_series = 0
             try:
-                _done_val = int(st.session_state.get(_done_key, 0) or 0)
+                _tot_feitas = int(sum(int(str(x).split('/')[0]) for x in _df_tabela_dia["Feitas"].tolist()))
             except Exception:
-                _done_val = 0
-            if _done_val >= int(_it.get("series", 0) or 0):
-                _done_ex += 1
-        # --- Aquecimento/Mobilidade (mais destacado, antes do progresso) ---
-        st.markdown(
-            "<div class='bc-prep-head'>"
-            "<div class='bc-prep-title'>Preparação</div>"
-            "<div class='bc-prep-sub'>Marca antes de começar (qualidade do treino &gt; ego).</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+                _tot_feitas = 0
+            tm1, tm2, tm3 = st.columns(3)
+            tm1.metric("Exercícios", f"{_tot_ex}")
+            tm2.metric("Séries totais", f"{_tot_series}")
+            tm3.metric("Séries feitas", f"{_tot_feitas}")
+            st.caption("Vista rápida do treino completo do dia. Atualiza com o plano e com o progresso guardado na sessão.")
+            st.dataframe(_df_tabela_dia, hide_index=True, width='stretch')
 
-        w1, w2 = st.columns(2, gap="large")
-        with w1:
-            st.markdown(
-                "<div class='bc-prep-card'>"
-                "<div class='t'>🔥 Aquecimento</div>"
-                "<div class='s'>4–5 min leves + ramp-up do 1º exercício.</div>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            aq = st.checkbox("Feito", key="chk_aquecimento")
-            st.caption("✅ Marcado" if aq else " ")
+    with treino_exec_tab:
 
-        with w2:
-            st.markdown(
-                "<div class='bc-prep-card'>"
-                "<div class='t'>🧘 Mobilidade</div>"
-                "<div class='s'>Ativação: ombros, anca, escápulas (2–4 min).</div>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            mob = st.checkbox("Feito", key="chk_mobilidade")
-            st.caption("✅ Marcado" if mob else " ")
-
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
-        render_progress_compact(_done_ex, len(cfg["exercicios"]))
-
-        st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
-        _opt_ix = list(range(len(ex_names)))
-        _sel_ix = st.selectbox(
-            "Exercício atual",
-            options=_opt_ix,
-            index=int(max(0, min(max_idx, pure_idx))),
-            key=_pick_key,
-            format_func=lambda _x: _format_ex_select_label(cfg['exercicios'][int(_x)], int(_x), len(ex_names), bloco=str(bloco), semana=int(semana)),
-            label_visibility="collapsed",
-        )
-        try:
-            _sel_ix = int(_sel_ix)
-        except Exception:
-            _sel_ix = int(pure_idx)
-        _sel_ix = max(0, min(max_idx, _sel_ix))
-        if _sel_ix != int(st.session_state.get(pure_nav_key, pure_idx)):
-            st.session_state[pure_nav_key] = _sel_ix
-            pure_idx = _sel_ix
-            st.session_state["scroll_to_ex_nav"] = True
-        else:
-            pure_idx = max(0, min(max_idx, int(st.session_state.get(pure_nav_key, pure_idx))))
-            st.session_state[pure_nav_key] = pure_idx
-        if bool(st.session_state.pop("scroll_to_ex_nav", False)):
-            scroll_to_dom_id("exercise-current-anchor")
-        try:
-            _pt_pending = st.session_state.get(f"pt_sets::{perfil_sel}::{dia}::{pure_idx}", [])
-            if not isinstance(_pt_pending, list):
-                _pt_pending = []
-            done_now = len(_pt_pending)
-        except Exception:
-            done_now = 0
-        total_series_cur = int(cfg["exercicios"][pure_idx]["series"])
-        serie_txt = "Concluído ✅" if done_now >= total_series_cur else f"Série {done_now+1}/{total_series_cur}"
-        st.markdown(f"""
-        <div class='bc-float-bar bc-float-status'>
-          <b style='color:#E8E2E2;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])} · {serie_txt}
-        </div>
-        """, unsafe_allow_html=True)
-
-    def _get_req_state_from_session():
-        return {
-            "aquecimento_req": True,
-            "mobilidade_req": True,
-            "cardio_req": bool(prot.get("cardio", False)),
-            "tendoes_req": bool(prot.get("tendoes", False)),
-            "core_req": bool(prot.get("core", False)),
-            "cooldown_req": bool(prot.get("cooldown", True)),
-            "aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
-            "mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
-            "cardio": bool(st.session_state.get("chk_cardio", False)),
-            "tendoes": bool(st.session_state.get("chk_tendoes", False)),
-            "core": bool(st.session_state.get("chk_core", False)),
-            "cooldown": bool(st.session_state.get("chk_cooldown", False)),
-        }
-
-    req = _get_req_state_from_session()
-    justificativa = ""
-    _save_status = st.session_state.get("last_save_status")
-    if _save_status == "error":
-        _save_err_msg = str(st.session_state.get("last_save_error_msg", "") or "")
-        msg = "Último exercício não foi para a Google Sheet (ficou em backup local)."
-        if ("429" in _save_err_msg) or ("RATE_LIMIT" in _save_err_msg):
-            msg += " Quota do Google Sheets excedida (espera ~1 min)."
-        st.warning(msg)
-    elif _save_status == "ok":
-        st.caption("✅ Último exercício guardado na Google Sheet.")
-    elif _save_status == "warn_duplicate":
-        st.caption("⚠️ Toque duplicado bloqueado (não gravou de novo).")
-
-    pass  # divider removed
-
-    if bloco == "Fisio":
-        st.subheader("🏠 Fisio / Recuperação")
-        if "Quarta" in dia:
-            st.markdown("""
-**12–20 min (opcional):**
-- Bird dog 2×6/lado (pausa 2s)
-- Side plank 2×30–45s (+1 lado fraco)
-- McGill curl-up 2×8–10 (pausa 2s)
-- Dead hang 2×20–30s
-- Respiração 90/90 2 min
-- Caminhada 15–30 min
-""")
-        else:
-            st.markdown("Caminhada leve + mobilidade.")
-    else:
-
-        if bloco in ["Força","Hipertrofia"]:
-            if semana in [2,6]:
-                st.info("Progressão: +1 rep por série OU +2,5–5% carga mantendo o RIR alvo.")
-            if semana in [4,8]:
-                st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
-            if semana == 7 and bloco == "Hipertrofia":
-                st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
-            if semana == 7 and bloco == "Força":
-                st.info("Semana 7: aferição submáxima no 1º lift do dia com top single técnico @8–8.5, depois séries de trabalho normais.")
-        elif bloco in GUI_BLOCOS:
-            if is_gui_deload_week(semana):
-                st.warning("DELOAD GUI: ~50–60% das séries, -10 a -15% carga, sem drop e sem mini-sets.")
-            elif semana >= 7:
-                st.info("Gui: repetição do mesociclo (semanas 7–11). Tenta +2,5 kg ou +1–2 reps mantendo RIR 2.")
-            else:
-                st.info("Gui: progressão semanal da sheet (Mesociclos 1→5). Mantém descanso 60–90s e RIR 2.")
-        df_now = df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data()
-        for i,item in enumerate(cfg["exercicios"]):
-            if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
-                continue
-            ex = item["ex"]
-            rir_target_str = item["rir_alvo"]
-            rir_target_num = rir_alvo_num(item["tipo"], bloco, semana)
-
-            df_last, peso_medio, rir_medio, data_ultima = get_historico_detalhado(df_now, perfil_sel, ex)
-
-            passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
-            plano_atual_id = str(st.session_state.get('plano_id_sel', 'Base'))
-            yami = yami_coach_sugestao(df_now, perfil_sel, ex, item, bloco, semana, plano_atual_id)
-            peso_sug = float(yami.get('peso_work_sugerido', yami.get('peso_sugerido', 0.0)) or 0.0)
-            if peso_sug <= 0:
-                peso_sug = sugerir_carga(peso_medio, rir_medio, float(yami.get('rir_alvo', rir_target_num) or rir_target_num), passo_up, 0.05)
-
-            # RIR esperado hoje (alvo ajustado por prontidão/sinais/estilo/controlo)
+        pure_nav_key = None
+        pure_idx = 0
+        if pure_workout_mode and bloco != "Fisio" and len(cfg.get("exercicios", [])) > 0:
+            ex_names = [str(it.get("ex","")) for it in cfg["exercicios"]]
+            pure_nav_key = f"pt_idx::{perfil_sel}::{st.session_state.get('plano_id_sel','Base')}::{dia}::{semana}"
+            # AUTO-RESTORE: em mobile o browser pode suspender e a sessão do Streamlit recomeça (session_state limpa).
+            # Se houver snapshot recente para este perfil/dia/plano/semana, restaura progresso e séries pendentes.
             try:
-                rir_expect = float(yami.get('rir_alvo', rir_target_num) or rir_target_num) if isinstance(yami, dict) else float(rir_target_num)
-            except Exception:
-                rir_expect = float(rir_target_num)
-            try:
-                rir_expect = max(0.0, min(6.0, float(round(float(rir_expect) * 2.0) / 2.0)))
-            except Exception:
-                rir_expect = float(rir_target_num)
-
-            rep_info_ui = _parse_rep_scheme(str(item.get("reps", "")), int(item.get("series", 0) or 0))
-            reps_low = int(rep_info_ui.get("low") or 0) or 8
-            reps_high = int(rep_info_ui.get("high") or 0) or reps_low
-            reps_default = int(reps_high) if int(reps_high) > 0 else int(reps_low)
-
-
-            with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
-                if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
-                    st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
-                series_txt = str(item.get('series',''))
-                reps_txt = str(item.get('reps',''))
-                meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR esperado: {rir_target_str}"
-                st.markdown(
-                    f"""<div class='bc-meta-card'>
-  <div class='bc-meta-top'>{html.escape(meta_line)}</div>
-</div>""",
-                    unsafe_allow_html=True
-                )
-
-
-                if isinstance(yami, dict) and yami:
-                    _y_action = str(yami.get('acao', 'Mantém carga'))
-                    _y_resumo = str(yami.get('resumo', '') or '')
-                    _ya = _y_action.lower()
-                    if "deload" in _ya:
-                        _y_cls = "y-deload"
-                    elif ("+" in _ya) or ("sobe" in _ya):
-                        _y_cls = "y-up"
-                    elif ("baixa" in _ya) or ("reduz" in _ya):
-                        _y_cls = "y-down"
-                    else:
-                        _y_cls = "y-hold"
-                    ycol1, ycol2 = st.columns([4.8, 1.7], gap="small")
-                    _y_conf = str(yami.get('confianca', 'média') or 'média')
-                    _y_pq = str(yami.get('porque', '') or '')
-                    with ycol1:
-                        _pq_html = html.escape(_y_pq) if _y_pq else ""
-                        _res_html = html.escape(str(_y_resumo or "")) if _y_resumo else ""
-                        _mid = (f"{_pq_html} · " if _pq_html else "")
-                        st.markdown(
-                            f"<div class='bc-yami-chip {_y_cls}'>🧠 <b>Yami</b> — {_y_action} <span class='muted' style='font-weight:700;'>({_y_conf})</span><br><span class='muted'>{_mid}{_res_html}</span></div>",
-                            unsafe_allow_html=True
-                        )
-                    with ycol2:
-                        with st.popover("🧠 Yami explica", width="stretch"):
-                            st.markdown(f"**Sugestão do Yami:** {_y_action}")
-                            try:
-                                st.caption(
-                                    f"Prontidão: {yami.get('readiness','Normal')} · RIR esperado: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f}" + (f" · Sinais: {', '.join(list(yami.get('signals', []) or []))}" if (yami.get('signals') if isinstance(yami, dict) else None) else "")
-                                )
-                            except Exception:
-                                pass
-                            if bool(yami.get('deload_reco', False)):
-                                st.warning("Yami: deload recomendado (1 semana) para baixar fadiga e voltar a progredir.")
-
-                            _py = float(yami.get('peso_sugerido', 0) or 0)
-                            if _py > 0:
-                                st.caption(f"Carga sugerida: {_py:.1f} kg · Confiança: {yami.get('confianca', 'média')}")
-                                try:
-                                    _prof = _yami_weight_profile_for_item(ex, item, float(_py), df_last)
-                                except Exception:
-                                    _prof = []
-                                if _prof:
-                                    _prof_txt = ' · '.join([f"S{ix+1}:{float(w):.1f}" for ix,w in enumerate(_prof)])
-                                    st.caption(f"Por série: {_prof_txt}")
-                            else:
-                                st.caption(f"Confiança: {yami.get('confianca', 'média')}")
-                            # Plano (Top set + Back-off) — opcional, só aparece quando há base
-                            try:
-                                _pl = yami.get('plan', {}) if isinstance(yami, dict) else {}
-                                if isinstance(_pl, dict) and _pl:
-                                    _ts = _pl.get('top_set', {}) or {}
-                                    _bo = _pl.get('backoff', {}) or {}
-
-                                    try:
-                                        _ts_w = float(_ts.get('peso', 0) or 0)
-                                    except Exception:
-                                        _ts_w = 0.0
-                                    _ts_reps = _ts.get('reps', None)
-                                    try:
-                                        _ts_rir = float(_ts.get('rir', 0) or 0)
-                                    except Exception:
-                                        _ts_rir = None
-
-                                    if _ts_w > 0:
-                                        _ts_reps_txt = f"{int(_ts_reps)} reps" if _ts_reps is not None else "reps alvo"
-                                        _ts_rir_txt = f"RIR {_ts_rir:.1f}" if _ts_rir is not None else ""
-                                        st.markdown(f"**Plano:** Top set ~{_ts_w:.1f} kg · {_ts_reps_txt} · {_ts_rir_txt}".strip())
-
-                                    try:
-                                        _bo_sets = int(_bo.get('sets', 0) or 0)
-                                    except Exception:
-                                        _bo_sets = 0
-                                    try:
-                                        _bo_w = float(_bo.get('peso', 0) or 0) if _bo.get('peso', None) is not None else 0.0
-                                    except Exception:
-                                        _bo_w = 0.0
-                                    try:
-                                        _drop_pct = float(_bo.get('drop_pct', 0) or 0)
-                                    except Exception:
-                                        _drop_pct = 0.0
-
-                                    if _bo_sets > 0 and _bo_w > 0:
-                                        st.caption(f"Back-off: {_bo_sets}× ~{_bo_w:.1f} kg (drop ~{_drop_pct*100:.0f}%).")
-
-                                    _rule = str(_pl.get('rule', '') or '').strip()
-                                    if _rule:
-                                        st.caption(_rule)
-                            except Exception:
-                                pass
-                            for _r in list(yami.get('razoes', []) or []):
-                                st.markdown(f"- {_r}")
-
-                _last_chip = _latest_set_summary_from_df_last(df_last)
-                if _last_chip:
-                    _tempo = str(item.get("tempo", "") or "").strip()
-                    try:
-                        _descanso_s = int(item.get("descanso_s", 0) or 0)
-                    except Exception:
-                        _descanso_s = 0
-                    _tempo_parts = []
-                    if _tempo:
-                        _tempo_parts.append(f"⏱️ Tempo {_tempo}")
-                    if _descanso_s > 0:
-                        _tempo_parts.append(f"Descanso ~{_descanso_s}s")
-                    _tempo_txt = " · ".join(_tempo_parts)
-                    if _tempo_txt:
-                        st.markdown(
-                            f"<div class='bc-last-chip'>"
-                            f"<span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span>"
-                            f"<span class='bc-tempo'>{html.escape(_tempo_txt)}</span>"
-                            f"</div>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown(
-                            f"<div class='bc-last-chip'><span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span></div>",
-                            unsafe_allow_html=True,
-                        )
-
-                if pure_workout_mode and pure_nav_key is not None:
-                    done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
-                    series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
-                    pending_sets = st.session_state.get(series_key, [])
-                    if not isinstance(pending_sets, list):
-                        pending_sets = []
-                    done_series = len(pending_sets)
-                    total_series = int(item["series"])
-                    done_series = max(0, min(total_series, done_series))
-                    st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
-
-                art = sugestao_articular(ex)
-                if art:
-                    st.warning(art)
-                if item.get("nota_semana"):
-                    st.info(item["nota_semana"])
-
-                ui_compact = bool(st.session_state.get("ui_compact_mode", True))
-                ui_show_last_table = bool(st.session_state.get("ui_show_last_table", False))
-
-                def _render_ultimo_registo_block():
-                    if df_last is not None:
-                        st.markdown(f"📜 **Último registo ({data_ultima})**")
-                        _peso_lbl = "kg/lado" if _is_per_side_exercise(ex) else "kg"
-                        st.caption(f"Último: peso médio ~ {peso_medio:.1f} {_peso_lbl} | RIR médio ~ {rir_medio:.1f}")
-                        if (not ui_compact) or ui_show_last_table:
-                            st.dataframe(df_last, hide_index=True, width='stretch')
-                    else:
-                        st.caption("Sem registos anteriores para este exercício (neste perfil).")
-
-                def _render_prefill_buttons_block():
-                    p1, p2 = st.columns(2)
-                    if p1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
-                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact=True)
-                        st.rerun()
-                    if p2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
-                        _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact=False)
-                        st.rerun()
-                    if pure_workout_mode and pure_nav_key is not None:
-                        series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
-                        done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
-                        if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
-                            st.session_state[series_key] = []
-                            st.session_state[done_key] = 0
-                            # snapshot (para não perder estado em mobile)
-                            try:
-                                _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-                                _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                                _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-                                save_inprogress_session(_ip_key, _payload)
-                            except Exception:
-                                pass
-                            st.rerun()
-
-                if pure_workout_mode and pure_nav_key is not None:
-                    series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
-                    pending_sets = st.session_state.get(series_key, [])
-                    if not isinstance(pending_sets, list):
-                        pending_sets = []
-                    total_series = int(item["series"])
-                    current_s = len(pending_sets)
-
-                    if pending_sets:
-                        st.caption("Séries já lançadas neste exercício:")
+                _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                _ip_key = st.session_state.get("_inprogress_session_key") or _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                if not _pure_has_any_progress(perfil_sel, dia, len(cfg.get('exercicios', []))):
+                    _payload = load_inprogress_session(_ip_key)
+                    if isinstance(_payload, dict):
+                        _apply_inprogress_payload(_payload, perfil_sel, dia, pure_nav_key)
                         try:
-                            _df_pending = pd.DataFrame(pending_sets)
-                            _df_pending.index = [f"S{ix+1}" for ix in range(len(_df_pending))]
-                            st.dataframe(_df_pending, width='stretch')
+                            st.toast("Sessão restaurada ✅")
                         except Exception:
                             pass
+            except Exception:
+                pass
 
-                    if current_s < total_series:
-                        _apply_prefill_payload_if_any(i)
-                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
-                        s = current_s
-                        with st.form(key=f"form_pure_{i}_{s}"):
-                            st.markdown(f"### Série {s+1}/{total_series}")
-                            default_peso = _yami_suggest_weight_for_series(ex, item, float(peso_sug), df_last, pending_sets, s, float(rir_expect))
-                            if default_peso <= 0 and pending_sets:
+
+            if pure_nav_key not in st.session_state:
+                st.session_state[pure_nav_key] = 0
+            max_idx = max(0, len(ex_names)-1)
+            try:
+                st.session_state[pure_nav_key] = int(st.session_state.get(pure_nav_key, 0))
+            except Exception:
+                st.session_state[pure_nav_key] = 0
+            st.session_state[pure_nav_key] = max(0, min(max_idx, st.session_state[pure_nav_key]))
+            pure_idx = int(st.session_state[pure_nav_key])
+
+            def _set_pure_idx(_ix:int):
+                _ix = max(0, min(max_idx, int(_ix)))
+                st.session_state[pure_nav_key] = _ix
+                # NÃO escrever diretamente no widget key depois do selectbox existir (StreamlitAPIException).
+                # Em vez disso, agenda a sincronização para o próximo rerun.
+                st.session_state[f"pt_pick_pending_{pure_nav_key}"] = _ix
+                st.session_state["scroll_to_ex_nav"] = True
+
+            _pick_key = f"pt_pick_{pure_nav_key}"
+            _pick_pending_key = f"pt_pick_pending_{pure_nav_key}"
+            if _pick_pending_key in st.session_state:
+                try:
+                    st.session_state[_pick_key] = int(st.session_state.get(_pick_pending_key, pure_idx))
+                except Exception:
+                    st.session_state[_pick_key] = int(pure_idx)
+                try:
+                    del st.session_state[_pick_pending_key]
+                except Exception:
+                    pass
+            else:
+                st.session_state.setdefault(_pick_key, pure_idx)
+                # sincronização segura ANTES do widget ser instanciado neste rerun
+                try:
+                    st.session_state[_pick_key] = int(st.session_state.get(pure_nav_key, pure_idx))
+                except Exception:
+                    st.session_state[_pick_key] = int(pure_idx)
+
+            _done_ex = 0
+            for _ix, _it in enumerate(cfg["exercicios"]):
+                _done_key = f"pt_done::{perfil_sel}::{dia}::{_ix}"
+                try:
+                    _done_val = int(st.session_state.get(_done_key, 0) or 0)
+                except Exception:
+                    _done_val = 0
+                if _done_val >= int(_it.get("series", 0) or 0):
+                    _done_ex += 1
+            # --- Aquecimento/Mobilidade (mais destacado, antes do progresso) ---
+            st.markdown(
+                "<div class='bc-prep-head'>"
+                "<div class='bc-prep-title'>Preparação</div>"
+                "<div class='bc-prep-sub'>Marca antes de começar (qualidade do treino &gt; ego).</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            w1, w2 = st.columns(2, gap="large")
+            with w1:
+                st.markdown(
+                    "<div class='bc-prep-card'>"
+                    "<div class='t'>🔥 Aquecimento</div>"
+                    "<div class='s'>4–5 min leves + ramp-up do 1º exercício.</div>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+                aq = st.checkbox("Feito", key="chk_aquecimento")
+                st.caption("✅ Marcado" if aq else " ")
+
+            with w2:
+                st.markdown(
+                    "<div class='bc-prep-card'>"
+                    "<div class='t'>🧘 Mobilidade</div>"
+                    "<div class='s'>Ativação: ombros, anca, escápulas (2–4 min).</div>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+                mob = st.checkbox("Feito", key="chk_mobilidade")
+                st.caption("✅ Marcado" if mob else " ")
+
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+            render_progress_compact(_done_ex, len(cfg["exercicios"]))
+
+            st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
+            _opt_ix = list(range(len(ex_names)))
+            _sel_ix = st.selectbox(
+                "Exercício atual",
+                options=_opt_ix,
+                index=int(max(0, min(max_idx, pure_idx))),
+                key=_pick_key,
+                format_func=lambda _x: _format_ex_select_label(cfg['exercicios'][int(_x)], int(_x), len(ex_names), bloco=str(bloco), semana=int(semana)),
+                label_visibility="collapsed",
+            )
+            try:
+                _sel_ix = int(_sel_ix)
+            except Exception:
+                _sel_ix = int(pure_idx)
+            _sel_ix = max(0, min(max_idx, _sel_ix))
+            if _sel_ix != int(st.session_state.get(pure_nav_key, pure_idx)):
+                st.session_state[pure_nav_key] = _sel_ix
+                pure_idx = _sel_ix
+                st.session_state["scroll_to_ex_nav"] = True
+            else:
+                pure_idx = max(0, min(max_idx, int(st.session_state.get(pure_nav_key, pure_idx))))
+                st.session_state[pure_nav_key] = pure_idx
+            if bool(st.session_state.pop("scroll_to_ex_nav", False)):
+                scroll_to_dom_id("exercise-current-anchor")
+            try:
+                _pt_pending = st.session_state.get(f"pt_sets::{perfil_sel}::{dia}::{pure_idx}", [])
+                if not isinstance(_pt_pending, list):
+                    _pt_pending = []
+                done_now = len(_pt_pending)
+            except Exception:
+                done_now = 0
+            total_series_cur = int(cfg["exercicios"][pure_idx]["series"])
+            serie_txt = "Concluído ✅" if done_now >= total_series_cur else f"Série {done_now+1}/{total_series_cur}"
+            st.markdown(f"""
+            <div class='bc-float-bar bc-float-status'>
+              <b style='color:#E8E2E2;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])} · {serie_txt}
+            </div>
+            """, unsafe_allow_html=True)
+
+        def _get_req_state_from_session():
+            return {
+                "aquecimento_req": True,
+                "mobilidade_req": True,
+                "cardio_req": bool(prot.get("cardio", False)),
+                "tendoes_req": bool(prot.get("tendoes", False)),
+                "core_req": bool(prot.get("core", False)),
+                "cooldown_req": bool(prot.get("cooldown", True)),
+                "aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
+                "mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
+                "cardio": bool(st.session_state.get("chk_cardio", False)),
+                "tendoes": bool(st.session_state.get("chk_tendoes", False)),
+                "core": bool(st.session_state.get("chk_core", False)),
+                "cooldown": bool(st.session_state.get("chk_cooldown", False)),
+            }
+
+        req = _get_req_state_from_session()
+        justificativa = ""
+        _save_status = st.session_state.get("last_save_status")
+        if _save_status == "error":
+            _save_err_msg = str(st.session_state.get("last_save_error_msg", "") or "")
+            msg = "Último exercício não foi para a Google Sheet (ficou em backup local)."
+            if ("429" in _save_err_msg) or ("RATE_LIMIT" in _save_err_msg):
+                msg += " Quota do Google Sheets excedida (espera ~1 min)."
+            st.warning(msg)
+        elif _save_status == "ok":
+            st.caption("✅ Último exercício guardado na Google Sheet.")
+        elif _save_status == "warn_duplicate":
+            st.caption("⚠️ Toque duplicado bloqueado (não gravou de novo).")
+
+        pass  # divider removed
+
+        if bloco == "Fisio":
+            st.subheader("🏠 Fisio / Recuperação")
+            if "Quarta" in dia:
+                st.markdown("""
+    **12–20 min (opcional):**
+    - Bird dog 2×6/lado (pausa 2s)
+    - Side plank 2×30–45s (+1 lado fraco)
+    - McGill curl-up 2×8–10 (pausa 2s)
+    - Dead hang 2×20–30s
+    - Respiração 90/90 2 min
+    - Caminhada 15–30 min
+    """)
+            else:
+                st.markdown("Caminhada leve + mobilidade.")
+        else:
+
+            if bloco in ["Força","Hipertrofia"]:
+                if semana in [2,6]:
+                    st.info("Progressão: +1 rep por série OU +2,5–5% carga mantendo o RIR alvo.")
+                if semana in [4,8]:
+                    st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
+                if semana == 7 and bloco == "Hipertrofia":
+                    st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
+                if semana == 7 and bloco == "Força":
+                    st.info("Semana 7: aferição submáxima no 1º lift do dia com top single técnico @8–8.5, depois séries de trabalho normais.")
+            elif bloco in GUI_BLOCOS:
+                if is_gui_deload_week(semana):
+                    st.warning("DELOAD GUI: ~50–60% das séries, -10 a -15% carga, sem drop e sem mini-sets.")
+                elif semana >= 7:
+                    st.info("Gui: repetição do mesociclo (semanas 7–11). Tenta +2,5 kg ou +1–2 reps mantendo RIR 2.")
+                else:
+                    st.info("Gui: progressão semanal da sheet (Mesociclos 1→5). Mantém descanso 60–90s e RIR 2.")
+            df_now = df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data()
+            for i,item in enumerate(cfg["exercicios"]):
+                if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
+                    continue
+                ex = item["ex"]
+                rir_target_str = item["rir_alvo"]
+                rir_target_num = rir_alvo_num(item["tipo"], bloco, semana)
+
+                df_last, peso_medio, rir_medio, data_ultima = get_historico_detalhado(df_now, perfil_sel, ex)
+
+                passo_up = 0.05 if ("Deadlift" in ex or "Leg Press" in ex or "Hip Thrust" in ex) else 0.025
+                plano_atual_id = str(st.session_state.get('plano_id_sel', 'Base'))
+                yami = yami_coach_sugestao(df_now, perfil_sel, ex, item, bloco, semana, plano_atual_id)
+                peso_sug = float(yami.get('peso_work_sugerido', yami.get('peso_sugerido', 0.0)) or 0.0)
+                if peso_sug <= 0:
+                    peso_sug = sugerir_carga(peso_medio, rir_medio, float(yami.get('rir_alvo', rir_target_num) or rir_target_num), passo_up, 0.05)
+
+                # RIR esperado hoje (alvo ajustado por prontidão/sinais/estilo/controlo)
+                try:
+                    rir_expect = float(yami.get('rir_alvo', rir_target_num) or rir_target_num) if isinstance(yami, dict) else float(rir_target_num)
+                except Exception:
+                    rir_expect = float(rir_target_num)
+                try:
+                    rir_expect = max(0.0, min(6.0, float(round(float(rir_expect) * 2.0) / 2.0)))
+                except Exception:
+                    rir_expect = float(rir_target_num)
+
+                rep_info_ui = _parse_rep_scheme(str(item.get("reps", "")), int(item.get("series", 0) or 0))
+                reps_low = int(rep_info_ui.get("low") or 0) or 8
+                reps_high = int(rep_info_ui.get("high") or 0) or reps_low
+                reps_default = int(reps_high) if int(reps_high) > 0 else int(reps_low)
+
+
+                with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
+                    if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
+                        st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
+                    series_txt = str(item.get('series',''))
+                    reps_txt = str(item.get('reps',''))
+                    meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR esperado: {rir_target_str}"
+                    st.markdown(
+                        f"""<div class='bc-meta-card'>
+      <div class='bc-meta-top'>{html.escape(meta_line)}</div>
+    </div>""",
+                        unsafe_allow_html=True
+                    )
+
+
+                    if isinstance(yami, dict) and yami:
+                        _y_action = str(yami.get('acao', 'Mantém carga'))
+                        _y_resumo = str(yami.get('resumo', '') or '')
+                        _ya = _y_action.lower()
+                        if "deload" in _ya:
+                            _y_cls = "y-deload"
+                        elif ("+" in _ya) or ("sobe" in _ya):
+                            _y_cls = "y-up"
+                        elif ("baixa" in _ya) or ("reduz" in _ya):
+                            _y_cls = "y-down"
+                        else:
+                            _y_cls = "y-hold"
+                        ycol1, ycol2 = st.columns([4.8, 1.7], gap="small")
+                        _y_conf = str(yami.get('confianca', 'média') or 'média')
+                        _y_pq = str(yami.get('porque', '') or '')
+                        with ycol1:
+                            _pq_html = html.escape(_y_pq) if _y_pq else ""
+                            _res_html = html.escape(str(_y_resumo or "")) if _y_resumo else ""
+                            _mid = (f"{_pq_html} · " if _pq_html else "")
+                            st.markdown(
+                                f"<div class='bc-yami-chip {_y_cls}'>🧠 <b>Yami</b> — {_y_action} <span class='muted' style='font-weight:700;'>({_y_conf})</span><br><span class='muted'>{_mid}{_res_html}</span></div>",
+                                unsafe_allow_html=True
+                            )
+                        with ycol2:
+                            with st.popover("🧠 Yami explica", width="stretch"):
+                                st.markdown(f"**Sugestão do Yami:** {_y_action}")
                                 try:
-                                    default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
+                                    st.caption(
+                                        f"Prontidão: {yami.get('readiness','Normal')} · RIR esperado: {float(yami.get('rir_alvo', rir_target_num) or rir_target_num):.1f}" + (f" · Sinais: {', '.join(list(yami.get('signals', []) or []))}" if (yami.get('signals') if isinstance(yami, dict) else None) else "")
+                                    )
                                 except Exception:
                                     pass
-                            peso = st.number_input(
-                                _peso_label_para_ex(ex, s), min_value=0.0,
-                                value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
-                            )
-                            rcol1, rcol2 = st.columns(2)
-                            reps = rcol1.number_input(
-                                f"Reps • S{s+1}", min_value=0, value=int(reps_default), step=1, key=f"reps_{i}_{s}"
-                            )
-                            rir = rcol2.number_input(
-                                f"RIR (esp. {rir_expect:.1f}) • S{s+1}", min_value=0.0, max_value=6.0,
-                                value=float(rir_expect), step=0.5, key=f"rir_{i}_{s}"
-                            )
+                                if bool(yami.get('deload_reco', False)):
+                                    st.warning("Yami: deload recomendado (1 semana) para baixar fadiga e voltar a progredir.")
 
-                            is_last = (s == total_series - 1)
-                            is_last_ex = (i == len(cfg["exercicios"]) - 1)
-                            if not is_last:
-                                btn_label = "Próxima série"
-                                _btn_kind = "series"
-                            elif not is_last_ex:
-                                btn_label = "Próximo exercício"
-                                _btn_kind = "exercise"
-                            else:
-                                btn_label = "🏁 Terminar treino"
-                                _btn_kind = "finish"
-                            
-                            # estilo do botão (cores por contexto)
-                            try:
-                                if _btn_kind == "series":
-                                    _bg, _fg, _bd = "#0B3D2E", "#FFFFFF", "#0B3D2E"
-                                    _hover_css = "filter: brightness(1.08);"
-                                elif _btn_kind == "exercise":
-                                    _bg, _fg, _bd = "#5B2B82", "#FFFFFF", "#5B2B82"
-                                    _hover_css = "filter: brightness(1.08);"
+                                _py = float(yami.get('peso_sugerido', 0) or 0)
+                                if _py > 0:
+                                    st.caption(f"Carga sugerida: {_py:.1f} kg · Confiança: {yami.get('confianca', 'média')}")
+                                    try:
+                                        _prof = _yami_weight_profile_for_item(ex, item, float(_py), df_last)
+                                    except Exception:
+                                        _prof = []
+                                    if _prof:
+                                        _prof_txt = ' · '.join([f"S{ix+1}:{float(w):.1f}" for ix,w in enumerate(_prof)])
+                                        st.caption(f"Por série: {_prof_txt}")
                                 else:
-                                    _bg, _fg, _bd = "transparent", "#FF3B30", "#FF3B30"
-                                    _hover_css = "background-color: rgba(255, 59, 48, 0.10);"
-                                st.markdown(f"""
-                                <style>
-                                div[data-testid=\"stMarkdownContainer\"]:has(span.bc-nextbtn-marker) + div[data-testid=\"stFormSubmitButton\"] button {
-                                    background-color: {_bg} !important;
-                                    color: {_fg} !important;
-                                    border: 1px solid {_bd} !important;
-                                }
-                                div[data-testid=\"stMarkdownContainer\"]:has(span.bc-nextbtn-marker) + div[data-testid=\"stFormSubmitButton\"] button:hover {
-                                    {_hover_css}
-                                }
-                                </style>
-                                <span class=\"bc-nextbtn-marker\"></span>
-                                """, unsafe_allow_html=True)
-                            except Exception:
-                                pass
-                            
-                            submitted = st.form_submit_button(btn_label, width='stretch')
-                            if submitted:
-                                novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
-                                st.session_state[series_key] = novos_sets
-                                st.session_state[f"rest_{i}"] = int(item["descanso_s"])
+                                    st.caption(f"Confiança: {yami.get('confianca', 'média')}")
+                                # Plano (Top set + Back-off) — opcional, só aparece quando há base
+                                try:
+                                    _pl = yami.get('plan', {}) if isinstance(yami, dict) else {}
+                                    if isinstance(_pl, dict) and _pl:
+                                        _ts = _pl.get('top_set', {}) or {}
+                                        _bo = _pl.get('backoff', {}) or {}
 
+                                        try:
+                                            _ts_w = float(_ts.get('peso', 0) or 0)
+                                        except Exception:
+                                            _ts_w = 0.0
+                                        _ts_reps = _ts.get('reps', None)
+                                        try:
+                                            _ts_rir = float(_ts.get('rir', 0) or 0)
+                                        except Exception:
+                                            _ts_rir = None
+
+                                        if _ts_w > 0:
+                                            _ts_reps_txt = f"{int(_ts_reps)} reps" if _ts_reps is not None else "reps alvo"
+                                            _ts_rir_txt = f"RIR {_ts_rir:.1f}" if _ts_rir is not None else ""
+                                            st.markdown(f"**Plano:** Top set ~{_ts_w:.1f} kg · {_ts_reps_txt} · {_ts_rir_txt}".strip())
+
+                                        try:
+                                            _bo_sets = int(_bo.get('sets', 0) or 0)
+                                        except Exception:
+                                            _bo_sets = 0
+                                        try:
+                                            _bo_w = float(_bo.get('peso', 0) or 0) if _bo.get('peso', None) is not None else 0.0
+                                        except Exception:
+                                            _bo_w = 0.0
+                                        try:
+                                            _drop_pct = float(_bo.get('drop_pct', 0) or 0)
+                                        except Exception:
+                                            _drop_pct = 0.0
+
+                                        if _bo_sets > 0 and _bo_w > 0:
+                                            st.caption(f"Back-off: {_bo_sets}× ~{_bo_w:.1f} kg (drop ~{_drop_pct*100:.0f}%).")
+
+                                        _rule = str(_pl.get('rule', '') or '').strip()
+                                        if _rule:
+                                            st.caption(_rule)
+                                except Exception:
+                                    pass
+                                for _r in list(yami.get('razoes', []) or []):
+                                    st.markdown(f"- {_r}")
+
+                    _last_chip = _latest_set_summary_from_df_last(df_last)
+                    if _last_chip:
+                        _tempo = str(item.get("tempo", "") or "").strip()
+                        try:
+                            _descanso_s = int(item.get("descanso_s", 0) or 0)
+                        except Exception:
+                            _descanso_s = 0
+                        _tempo_parts = []
+                        if _tempo:
+                            _tempo_parts.append(f"⏱️ Tempo {_tempo}")
+                        if _descanso_s > 0:
+                            _tempo_parts.append(f"Descanso ~{_descanso_s}s")
+                        _tempo_txt = " · ".join(_tempo_parts)
+                        if _tempo_txt:
+                            st.markdown(
+                                f"<div class='bc-last-chip'>"
+                                f"<span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span>"
+                                f"<span class='bc-tempo'>{html.escape(_tempo_txt)}</span>"
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                f"<div class='bc-last-chip'><span class='bc-lastset'>⏮️ {html.escape(str(_last_chip))}</span></div>",
+                                unsafe_allow_html=True,
+                            )
+
+                    if pure_workout_mode and pure_nav_key is not None:
+                        done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
+                        series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                        pending_sets = st.session_state.get(series_key, [])
+                        if not isinstance(pending_sets, list):
+                            pending_sets = []
+                        done_series = len(pending_sets)
+                        total_series = int(item["series"])
+                        done_series = max(0, min(total_series, done_series))
+                        st.progress(done_series / max(1, total_series), text=f"Séries feitas: {done_series}/{total_series}")
+
+                    art = sugestao_articular(ex)
+                    if art:
+                        st.warning(art)
+                    if item.get("nota_semana"):
+                        st.info(item["nota_semana"])
+
+                    ui_compact = bool(st.session_state.get("ui_compact_mode", True))
+                    ui_show_last_table = bool(st.session_state.get("ui_show_last_table", False))
+
+                    def _render_ultimo_registo_block():
+                        if df_last is not None:
+                            st.markdown(f"📜 **Último registo ({data_ultima})**")
+                            _peso_lbl = "kg/lado" if _is_per_side_exercise(ex) else "kg"
+                            st.caption(f"Último: peso médio ~ {peso_medio:.1f} {_peso_lbl} | RIR médio ~ {rir_medio:.1f}")
+                            if (not ui_compact) or ui_show_last_table:
+                                st.dataframe(df_last, hide_index=True, width='stretch')
+                        else:
+                            st.caption("Sem registos anteriores para este exercício (neste perfil).")
+
+                    def _render_prefill_buttons_block():
+                        p1, p2 = st.columns(2)
+                        if p1.button("↺ Usar último", key=f"pref_last_{i}", width='stretch'):
+                            _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact=True)
+                            st.rerun()
+                        if p2.button("🎯 Usar sugestão do Yami", key=f"pref_sug_{i}", width='stretch'):
+                            _prefill_sets_from_last(i, item, df_last, peso_sug, reps_default, rir_expect, use_df_exact=False)
+                            st.rerun()
+                        if pure_workout_mode and pure_nav_key is not None:
+                            series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                            done_key = f"pt_done::{perfil_sel}::{dia}::{i}"
+                            if st.button("↺ Reset séries", key=f"pt_reset_{i}", width='stretch'):
+                                st.session_state[series_key] = []
+                                st.session_state[done_key] = 0
                                 # snapshot (para não perder estado em mobile)
                                 try:
                                     _plano_active = str(st.session_state.get('plano_id_sel','Base'))
@@ -5891,318 +5879,415 @@ Dor articular pontiaguda = troca variação no dia.
                                     save_inprogress_session(_ip_key, _payload)
                                 except Exception:
                                     pass
-
-                                if is_last:
-                                    ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa)
-                                    if ok_gravou:
-                                        st.session_state[series_key] = []
-                                        try:
-                                            st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
-                                        except Exception:
-                                            pass
-                                        if is_last_ex:
-                                            st.session_state["session_finished_flash"] = True
-                                            st.success("Último exercício guardado. Treino pronto ✅")
-                                        else:
-                                            _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                            st.success("Exercício guardado. A seguir…")
-                                        
-                                        # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
-                                        try:
-                                            _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-                                            _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                                            if is_last_ex:
-                                                clear_inprogress_session(_ip_key)
-                                            else:
-                                                _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-                                                save_inprogress_session(_ip_key, _payload)
-                                        except Exception:
-                                            pass
-
-                                        time.sleep(0.35)
-                                        st.rerun()
-                                else:
-                                    # descanso definido pelo Yami para a PRÓXIMA série
-                                    try:
-                                        _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
-                                    except Exception:
-                                        _prev_reps = None
-                                    _rir_eff = float(rir) if rir is not None else None
-
-                                    _rest_yami = yami_definir_descanso_s(
-                                        int(item.get('descanso_s', 75)),
-                                        _rir_eff, float(rir_expect),
-                                        int(reps), reps_low, (lambda _ri: int(_ri.get('high') or 0) if str(_ri.get('kind') or '') in ('range','fixed','fixed_seq') else None)(_parse_rep_scheme(item.get('reps',''), int(item.get('series',0) or 0))),
-                                        _prev_reps,
-                                        is_composto=(str(item.get('tipo','')).lower()=='composto')
-                                    )
-                                    _queue_auto_rest(int(_rest_yami), ex)
-                                    try:
-                                        # comentário curto "ao vivo" (Yami)
-                                        if (_rir_eff is not None) and float(_rir_eff) <= max(0.5, float(rir_expect) - 1.0):
-                                            st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Isso foi pesado — limpa a próxima.")
-                                        elif (_rir_eff is not None) and float(_rir_eff) >= float(rir_expect) + 1.0:
-                                            st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Estava folgado — prepara-te para subir.")
-                                        else:
-                                            st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Mantém a lâmina afiada.")
-                                    except Exception:
-                                        pass
-
-                                    # Política de falha (aviso rápido em compostos)
-                                    try:
-                                        if (str(item.get('tipo','')).lower() == 'composto') and (_rir_eff is not None) and float(_rir_eff) <= 0.5:
-                                            st.toast("⚠️ Yami: isso foi à falha/quase. Em compostos, mantém 1–3 RIR para técnica e recuperação.")
-                                    except Exception:
-                                        pass
-
-
-                                    st.rerun()
-                    else:
-                        st.success("Exercício concluído.")
-                        if st.button("Tentar guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
-                            ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
-                            if ok_gravou:
-                                st.session_state[series_key] = []
-                                try:
-                                    st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
-                                except Exception:
-                                    pass
-                                is_last_ex2 = (i == len(cfg["exercicios"]) - 1)
-                                if is_last_ex2:
-                                    st.session_state["session_finished_flash"] = True
-                                    st.success("Último exercício guardado. Treino pronto ✅")
-                                else:
-                                    _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                    st.success("Exercício guardado. A seguir…")
-                                
-                                # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
-                                try:
-                                    _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-                                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                                    if is_last_ex2:
-                                        clear_inprogress_session(_ip_key)
-                                    else:
-                                        _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-                                        save_inprogress_session(_ip_key, _payload)
-                                except Exception:
-                                    pass
-
-                                time.sleep(0.35)
                                 st.rerun()
 
-                    st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
-                    _render_prefill_buttons_block()
-                    st.markdown("<div style='margin-top:.2rem'></div>", unsafe_allow_html=True)
-                    _render_ultimo_registo_block()
-                else:
-                    lista_sets = []
-                    _apply_prefill_payload_if_any(i)
-                    with st.form(key=f"form_{i}"):
-                        kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
-                        for s in range(item["series"]):
-                            st.markdown(f"### Série {s+1}")
-                            peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
-                                                   value=float(peso_sug) if peso_sug>0 else 0.0,
-                                                   step=float(kg_step), key=f"peso_{i}_{s}")
-                            rcol1, rcol2 = st.columns(2)
-                            reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_default),
-                                                      step=1, key=f"reps_{i}_{s}")
-                            rir = rcol2.number_input(f"RIR (esp. {rir_expect:.1f}) • S{s+1}", min_value=0.0, max_value=6.0,
-                                                     value=float(rir_expect), step=0.5, key=f"rir_{i}_{s}")
-                            lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
+                    if pure_workout_mode and pure_nav_key is not None:
+                        series_key = f"pt_sets::{perfil_sel}::{dia}::{i}"
+                        pending_sets = st.session_state.get(series_key, [])
+                        if not isinstance(pending_sets, list):
+                            pending_sets = []
+                        total_series = int(item["series"])
+                        current_s = len(pending_sets)
 
-                        if st.form_submit_button("💾 Gravar exercício", width='stretch'):
-                            ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
-                            if ok_gravou:
-                                if pure_workout_mode and pure_nav_key is not None:
+                        if pending_sets:
+                            st.caption("Séries já lançadas neste exercício:")
+                            try:
+                                _df_pending = pd.DataFrame(pending_sets)
+                                _df_pending.index = [f"S{ix+1}" for ix in range(len(_df_pending))]
+                                st.dataframe(_df_pending, width='stretch')
+                            except Exception:
+                                pass
+
+                        if current_s < total_series:
+                            _apply_prefill_payload_if_any(i)
+                            kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
+                            s = current_s
+                            with st.form(key=f"form_pure_{i}_{s}"):
+                                st.markdown(f"### Série {s+1}/{total_series}")
+                                default_peso = _yami_suggest_weight_for_series(ex, item, float(peso_sug), df_last, pending_sets, s, float(rir_expect))
+                                if default_peso <= 0 and pending_sets:
+                                    try:
+                                        default_peso = float(pending_sets[-1].get("peso", default_peso) or default_peso)
+                                    except Exception:
+                                        pass
+                                peso = st.number_input(
+                                    _peso_label_para_ex(ex, s), min_value=0.0,
+                                    value=float(default_peso), step=float(kg_step), key=f"peso_{i}_{s}"
+                                )
+                                rcol1, rcol2 = st.columns(2)
+                                reps = rcol1.number_input(
+                                    f"Reps • S{s+1}", min_value=0, value=int(reps_default), step=1, key=f"reps_{i}_{s}"
+                                )
+                                rir = rcol2.number_input(
+                                    f"RIR (esp. {rir_expect:.1f}) • S{s+1}", min_value=0.0, max_value=6.0,
+                                    value=float(rir_expect), step=0.5, key=f"rir_{i}_{s}"
+                                )
+
+                                is_last = (s == total_series - 1)
+                                is_last_ex = (i == len(cfg["exercicios"]) - 1)
+                                if not is_last:
+                                    btn_label = "Próxima série"
+                                    _btn_kind = "series"
+                                elif not is_last_ex:
+                                    btn_label = "Próximo exercício"
+                                    _btn_kind = "exercise"
+                                else:
+                                    btn_label = "🏁 Terminar treino"
+                                    _btn_kind = "finish"
+                            
+                                # estilo do botão (cores por contexto)
+                                try:
+                                    if _btn_kind == "series":
+                                        _bg, _fg, _bd = "#0B3D2E", "#FFFFFF", "#0B3D2E"
+                                        _hover_css = "filter: brightness(1.08);"
+                                    elif _btn_kind == "exercise":
+                                        _bg, _fg, _bd = "#5B2B82", "#FFFFFF", "#5B2B82"
+                                        _hover_css = "filter: brightness(1.08);"
+                                    else:
+                                        _bg, _fg, _bd = "transparent", "#FF3B30", "#FF3B30"
+                                        _hover_css = "background-color: rgba(255, 59, 48, 0.10);"
+                                    st.markdown(f"""
+                                    <style>
+                                    div[data-testid=\"stMarkdownContainer\"]:has(span.bc-nextbtn-marker) + div[data-testid=\"stFormSubmitButton\"] button {
+                                        background-color: {_bg} !important;
+                                        color: {_fg} !important;
+                                        border: 1px solid {_bd} !important;
+                                    }
+                                    div[data-testid=\"stMarkdownContainer\"]:has(span.bc-nextbtn-marker) + div[data-testid=\"stFormSubmitButton\"] button:hover {
+                                        {_hover_css}
+                                    }
+                                    </style>
+                                    <span class=\"bc-nextbtn-marker\"></span>
+                                    """, unsafe_allow_html=True)
+                                except Exception:
+                                    pass
+                            
+                                submitted = st.form_submit_button(btn_label, width='stretch')
+                                if submitted:
+                                    novos_sets = list(pending_sets) + [{"peso": peso, "reps": reps, "rir": rir}]
+                                    st.session_state[series_key] = novos_sets
+                                    st.session_state[f"rest_{i}"] = int(item["descanso_s"])
+
+                                    # snapshot (para não perder estado em mobile)
+                                    try:
+                                        _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                        _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                        _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                        save_inprogress_session(_ip_key, _payload)
+                                    except Exception:
+                                        pass
+
+                                    if is_last:
+                                        ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa)
+                                        if ok_gravou:
+                                            st.session_state[series_key] = []
+                                            try:
+                                                st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
+                                            except Exception:
+                                                pass
+                                            if is_last_ex:
+                                                st.session_state["session_finished_flash"] = True
+                                                st.success("Último exercício guardado. Treino pronto ✅")
+                                            else:
+                                                _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                                st.success("Exercício guardado. A seguir…")
+                                        
+                                            # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
+                                            try:
+                                                _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                                _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                                if is_last_ex:
+                                                    clear_inprogress_session(_ip_key)
+                                                else:
+                                                    _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                                    save_inprogress_session(_ip_key, _payload)
+                                            except Exception:
+                                                pass
+
+                                            time.sleep(0.35)
+                                            st.rerun()
+                                    else:
+                                        # descanso definido pelo Yami para a PRÓXIMA série
+                                        try:
+                                            _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
+                                        except Exception:
+                                            _prev_reps = None
+                                        _rir_eff = float(rir) if rir is not None else None
+
+                                        _rest_yami = yami_definir_descanso_s(
+                                            int(item.get('descanso_s', 75)),
+                                            _rir_eff, float(rir_expect),
+                                            int(reps), reps_low, (lambda _ri: int(_ri.get('high') or 0) if str(_ri.get('kind') or '') in ('range','fixed','fixed_seq') else None)(_parse_rep_scheme(item.get('reps',''), int(item.get('series',0) or 0))),
+                                            _prev_reps,
+                                            is_composto=(str(item.get('tipo','')).lower()=='composto')
+                                        )
+                                        _queue_auto_rest(int(_rest_yami), ex)
+                                        try:
+                                            # comentário curto "ao vivo" (Yami)
+                                            if (_rir_eff is not None) and float(_rir_eff) <= max(0.5, float(rir_expect) - 1.0):
+                                                st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Isso foi pesado — limpa a próxima.")
+                                            elif (_rir_eff is not None) and float(_rir_eff) >= float(rir_expect) + 1.0:
+                                                st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Estava folgado — prepara-te para subir.")
+                                            else:
+                                                st.toast(f"🧠 Yami: Descansa {_rest_yami}s. Mantém a lâmina afiada.")
+                                        except Exception:
+                                            pass
+
+                                        # Política de falha (aviso rápido em compostos)
+                                        try:
+                                            if (str(item.get('tipo','')).lower() == 'composto') and (_rir_eff is not None) and float(_rir_eff) <= 0.5:
+                                                st.toast("⚠️ Yami: isso foi à falha/quase. Em compostos, mantém 1–3 RIR para técnica e recuperação.")
+                                        except Exception:
+                                            pass
+
+
+                                        st.rerun()
+                        else:
+                            st.success("Exercício concluído.")
+                            if st.button("Tentar guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
+                                ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, pending_sets, req, justificativa)
+                                if ok_gravou:
+                                    st.session_state[series_key] = []
                                     try:
                                         st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                     except Exception:
                                         pass
-                                    _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                st.success("Exercício gravado!")
-                                time.sleep(0.4)
-                                st.rerun()
+                                    is_last_ex2 = (i == len(cfg["exercicios"]) - 1)
+                                    if is_last_ex2:
+                                        st.session_state["session_finished_flash"] = True
+                                        st.success("Último exercício guardado. Treino pronto ✅")
+                                    else:
+                                        _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                        st.success("Exercício guardado. A seguir…")
+                                
+                                    # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
+                                    try:
+                                        _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                        _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                        if is_last_ex2:
+                                            clear_inprogress_session(_ip_key)
+                                        else:
+                                            _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                            save_inprogress_session(_ip_key, _payload)
+                                    except Exception:
+                                        pass
 
-                    st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
-                    _render_prefill_buttons_block()
-                    st.markdown("<div style='margin-top:.2rem'></div>", unsafe_allow_html=True)
-                    _render_ultimo_registo_block()
+                                    time.sleep(0.35)
+                                    st.rerun()
 
-        pass  # divider removed
+                        st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
+                        _render_prefill_buttons_block()
+                        st.markdown("<div style='margin-top:.2rem'></div>", unsafe_allow_html=True)
+                        _render_ultimo_registo_block()
+                    else:
+                        lista_sets = []
+                        _apply_prefill_payload_if_any(i)
+                        with st.form(key=f"form_{i}"):
+                            kg_step = 5.0 if _is_lower_exercise(ex) else 2.5
+                            for s in range(item["series"]):
+                                st.markdown(f"### Série {s+1}")
+                                peso = st.number_input(_peso_label_para_ex(ex, s), min_value=0.0,
+                                                       value=float(peso_sug) if peso_sug>0 else 0.0,
+                                                       step=float(kg_step), key=f"peso_{i}_{s}")
+                                rcol1, rcol2 = st.columns(2)
+                                reps = rcol1.number_input(f"Reps • S{s+1}", min_value=0, value=int(reps_default),
+                                                          step=1, key=f"reps_{i}_{s}")
+                                rir = rcol2.number_input(f"RIR (esp. {rir_expect:.1f}) • S{s+1}", min_value=0.0, max_value=6.0,
+                                                         value=float(rir_expect), step=0.5, key=f"rir_{i}_{s}")
+                                lista_sets.append({"peso":peso,"reps":reps,"rir":rir})
 
-        if prot.get("tendoes", False):
-            with st.expander("🦾 Protocolo de tendões (8–12 min)"):
-                st.markdown("""
-**Isométricos**
-- Tríceps isométrico na polia: 2×30–45s  
-- External rotation isométrico: 2×30s/lado  
-- (Joelho) Spanish squat: 2–3×30–45s  
+                            if st.form_submit_button("💾 Gravar exercício", width='stretch'):
+                                ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, lista_sets, req, justificativa)
+                                if ok_gravou:
+                                    if pure_workout_mode and pure_nav_key is not None:
+                                        try:
+                                            st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
+                                        except Exception:
+                                            pass
+                                        _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                    st.success("Exercício gravado!")
+                                    time.sleep(0.4)
+                                    st.rerun()
 
-**Excêntricos**
-- Wrist extension excêntrico: 2×12 (3–4s descida)  
-- Tibial raises: 2×15–20
-""")
-        if prot.get("core", False):
-            with st.expander("🧱 Core escoliose (6–10 min)"):
-                st.markdown("""
-- McGill curl-up 2×8–10 (pausa 2s)
-- Side plank 2×25–40s (+1 série lado fraco)
-- Bird dog 2×6–8/lado (pausa 2s)
-- Suitcase carry 2×20–30m/lado (se houver espaço)
-""")
+                        st.markdown("<div style='margin-top:.35rem'></div>", unsafe_allow_html=True)
+                        _render_prefill_buttons_block()
+                        st.markdown("<div style='margin-top:.2rem'></div>", unsafe_allow_html=True)
+                        _render_ultimo_registo_block()
 
-        req = _get_req_state_from_session()
+            pass  # divider removed
 
-        c3, c4 = st.columns(2)
-        c3.checkbox(
-            "🏃 Cardio Zona 2",
-            value=False,
-            key="chk_cardio",
-            disabled=(not req.get("cardio_req", False)),
-            help="Marca se fizeste cardio Zona 2 (ritmo em que ainda consegues falar)."
-        )
-        c4.checkbox(
-            "🦾 Tendões",
-            value=False,
-            key="chk_tendoes",
-            disabled=(not req.get("tendoes_req", False)),
-            help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos)."
-        )
+            if prot.get("tendoes", False):
+                with st.expander("🦾 Protocolo de tendões (8–12 min)"):
+                    st.markdown("""
+    **Isométricos**
+    - Tríceps isométrico na polia: 2×30–45s  
+    - External rotation isométrico: 2×30s/lado  
+    - (Joelho) Spanish squat: 2–3×30–45s  
 
-        c5, c6 = st.columns(2)
-        c5.checkbox(
-            "🧱 Core escoliose",
-            value=False,
-            key="chk_core",
-            disabled=(not req.get("core_req", False)),
-            help="Marca se fizeste o core anti-rotação (McGill curl-up, side plank, bird dog, suitcase carry)."
-        )
-        c6.checkbox(
-            "😮‍💨 Cool-down",
-            value=False,
-            key="chk_cooldown",
-            help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves)."
-        )
+    **Excêntricos**
+    - Wrist extension excêntrico: 2×12 (3–4s descida)  
+    - Tibial raises: 2×15–20
+    """)
+            if prot.get("core", False):
+                with st.expander("🧱 Core escoliose (6–10 min)"):
+                    st.markdown("""
+    - McGill curl-up 2×8–10 (pausa 2s)
+    - Side plank 2×25–40s (+1 série lado fraco)
+    - Bird dog 2×6–8/lado (pausa 2s)
+    - Suitcase carry 2×20–30m/lado (se houver espaço)
+    """)
 
-        req = _get_req_state_from_session()
-        justificativa = ""
-        xp_pre, ok_checklist = checklist_xp(req, justificativa="")
+            req = _get_req_state_from_session()
 
-        df_now = get_data()
-        streak_atual = get_last_streak(df_now, perfil_sel)
-
-        m1,m2,m3 = st.columns(3)
-        m1.metric("XP previsto", f"{xp_pre}")
-        m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
-        m3.metric("Streak", f"{streak_atual}")
-
-        # resumo final (aparece quando todos os exercícios estão concluídos)
-        _done_ex_final = 0
-        for _ix, _it in enumerate(cfg.get("exercicios", [])):
-            try:
-                _dv = int(st.session_state.get(f"pt_done::{perfil_sel}::{dia}::{_ix}", 0) or 0)
-            except Exception:
-                _dv = 0
-            if _dv >= int(_it.get("series", 0) or 0):
-                _done_ex_final += 1
-        _total_ex_final = len(cfg.get("exercicios", []))
-        _all_done = (_total_ex_final > 0 and _done_ex_final >= _total_ex_final)
-        if _all_done:
-            st.markdown(
-                f"""
-                <div class='bc-final-summary'>
-                  <div class='ttl'>✅ Treino pronto</div>
-                  <div class='sub'>Exercícios concluídos: <b>{_done_ex_final}/{_total_ex_final}</b> · Sessão alvo: <b>{html.escape(str(_sessao_alvo))}</b> · XP previsto: <b>{xp_pre}</b></div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            c3, c4 = st.columns(2)
+            c3.checkbox(
+                "🏃 Cardio Zona 2",
+                value=False,
+                key="chk_cardio",
+                disabled=(not req.get("cardio_req", False)),
+                help="Marca se fizeste cardio Zona 2 (ritmo em que ainda consegues falar)."
             )
-            if bool(st.session_state.pop("session_finished_flash", False)):
-                st.toast("Treino concluído ✅")
+            c4.checkbox(
+                "🦾 Tendões",
+                value=False,
+                key="chk_tendoes",
+                disabled=(not req.get("tendoes_req", False)),
+                help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos)."
+            )
 
-        req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
-        done_req = sum(1 for k in req_keys if req.get(k, False))
-        total_req = max(1, len(req_keys))
-        st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
+            c5, c6 = st.columns(2)
+            c5.checkbox(
+                "🧱 Core escoliose",
+                value=False,
+                key="chk_core",
+                disabled=(not req.get("core_req", False)),
+                help="Marca se fizeste o core anti-rotação (McGill curl-up, side plank, bird dog, suitcase carry)."
+            )
+            c6.checkbox(
+                "😮‍💨 Cool-down",
+                value=False,
+                key="chk_cooldown",
+                help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves)."
+            )
+
+            req = _get_req_state_from_session()
+            justificativa = ""
+            xp_pre, ok_checklist = checklist_xp(req, justificativa="")
+
+            df_now = get_data()
+            streak_atual = get_last_streak(df_now, perfil_sel)
+
+            m1,m2,m3 = st.columns(3)
+            m1.metric("XP previsto", f"{xp_pre}")
+            m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
+            m3.metric("Streak", f"{streak_atual}")
+
+            # resumo final (aparece quando todos os exercícios estão concluídos)
+            _done_ex_final = 0
+            for _ix, _it in enumerate(cfg.get("exercicios", [])):
+                try:
+                    _dv = int(st.session_state.get(f"pt_done::{perfil_sel}::{dia}::{_ix}", 0) or 0)
+                except Exception:
+                    _dv = 0
+                if _dv >= int(_it.get("series", 0) or 0):
+                    _done_ex_final += 1
+            _total_ex_final = len(cfg.get("exercicios", []))
+            _all_done = (_total_ex_final > 0 and _done_ex_final >= _total_ex_final)
+            if _all_done:
+                st.markdown(
+                    f"""
+                    <div class='bc-final-summary'>
+                      <div class='ttl'>✅ Treino pronto</div>
+                      <div class='sub'>Exercícios concluídos: <b>{_done_ex_final}/{_total_ex_final}</b> · Sessão alvo: <b>{html.escape(str(_sessao_alvo))}</b> · XP previsto: <b>{xp_pre}</b></div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if bool(st.session_state.pop("session_finished_flash", False)):
+                    st.toast("Treino concluído ✅")
+
+            req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
+            done_req = sum(1 for k in req_keys if req.get(k, False))
+            total_req = max(1, len(req_keys))
+            st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
 
 
-        _finish_label = "🏁 Terminar treino" if not _all_done else "🏁 Terminar treino (concluído)"
+            _finish_label = "🏁 Terminar treino" if not _all_done else "🏁 Terminar treino (concluído)"
         
-        # estilo: Terminar treino (vermelho)
-        try:
-            st.markdown("""
-            <style>
-            div[data-testid=\"stMarkdownContainer\"]:has(span.bc-finishbtn-marker) + div[data-testid=\"stButton\"] button {
-                background-color: transparent !important;
-                color: #FF3B30 !important;
-                border: 1px solid #FF3B30 !important;
-            }
-            div[data-testid=\"stMarkdownContainer\"]:has(span.bc-finishbtn-marker) + div[data-testid=\"stButton\"] button:hover {
-                background-color: rgba(255, 59, 48, 0.10) !important;
-            }
-            </style>
-            <span class=\"bc-finishbtn-marker\"></span>
-            """, unsafe_allow_html=True)
-        except Exception:
-            pass
+            # estilo: Terminar treino (vermelho)
+            try:
+                st.markdown("""
+                <style>
+                div[data-testid=\"stMarkdownContainer\"]:has(span.bc-finishbtn-marker) + div[data-testid=\"stButton\"] button {
+                    background-color: transparent !important;
+                    color: #FF3B30 !important;
+                    border: 1px solid #FF3B30 !important;
+                }
+                div[data-testid=\"stMarkdownContainer\"]:has(span.bc-finishbtn-marker) + div[data-testid=\"stButton\"] button:hover {
+                    background-color: rgba(255, 59, 48, 0.10) !important;
+                }
+                </style>
+                <span class=\"bc-finishbtn-marker\"></span>
+                """, unsafe_allow_html=True)
+            except Exception:
+                pass
 
-        if st.button(_finish_label):
-            st.balloons()
-            time.sleep(1.2)
-            st.rerun()
-
-        st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
-        st.markdown("---")
-        _rst_flag = f"reset_treino_confirm::{perfil_sel}::{dia}"
-        if not bool(st.session_state.get(_rst_flag, False)):
-            if st.button("🧨 Reset treino", key=f"reset_treino_btn::{perfil_sel}::{dia}", width='stretch'):
-                st.session_state[_rst_flag] = True
+            if st.button(_finish_label):
+                st.balloons()
+                time.sleep(1.2)
                 st.rerun()
-        else:
-            st.warning("Isto vai reiniciar o progresso do treino atual (volta a 0/7).")
-            cr1, cr2 = st.columns(2)
-            if cr1.button("✅ Confirmar reset", key=f"reset_treino_yes::{perfil_sel}::{dia}", width='stretch'):
-                # parar descanso automático (se estiver a correr)
-                st.session_state["rest_auto_run"] = False
-                # limpar progresso do treino em memória
-                try:
-                    _nex = len(cfg.get("exercicios", []))
-                except Exception:
-                    _nex = 0
-                for _ix in range(int(_nex)):
-                    for _k in [f"pt_done::{perfil_sel}::{dia}::{_ix}", f"pt_sets::{perfil_sel}::{dia}::{_ix}", f"rest_{_ix}"]:
-                        if _k in st.session_state:
-                            del st.session_state[_k]
-                # limpar inputs (peso/reps/rir) para não reaparecerem valores antigos
-                try:
-                    for _k in list(st.session_state.keys()):
-                        if re.match(r"^(peso|reps|rir)_\d+_\d+$", str(_k)):
-                            del st.session_state[_k]
-                except Exception:
-                    pass
-                # voltar ao 1º exercício
-                try:
-                    _set_pure_idx(0)
-                except Exception:
+
+            st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+            st.markdown("---")
+            _rst_flag = f"reset_treino_confirm::{perfil_sel}::{dia}"
+            if not bool(st.session_state.get(_rst_flag, False)):
+                if st.button("🧨 Reset treino", key=f"reset_treino_btn::{perfil_sel}::{dia}", width='stretch'):
+                    st.session_state[_rst_flag] = True
+                    st.rerun()
+            else:
+                st.warning("Isto vai reiniciar o progresso do treino atual (volta a 0/7).")
+                cr1, cr2 = st.columns(2)
+                if cr1.button("✅ Confirmar reset", key=f"reset_treino_yes::{perfil_sel}::{dia}", width='stretch'):
+                    # parar descanso automático (se estiver a correr)
+                    st.session_state["rest_auto_run"] = False
+                    # limpar progresso do treino em memória
                     try:
-                        st.session_state.pop(f"pure_idx::{pure_nav_key}", None)
+                        _nex = len(cfg.get("exercicios", []))
+                    except Exception:
+                        _nex = 0
+                    for _ix in range(int(_nex)):
+                        for _k in [f"pt_done::{perfil_sel}::{dia}::{_ix}", f"pt_sets::{perfil_sel}::{dia}::{_ix}", f"rest_{_ix}"]:
+                            if _k in st.session_state:
+                                del st.session_state[_k]
+                    # limpar inputs (peso/reps/rir) para não reaparecerem valores antigos
+                    try:
+                        for _k in list(st.session_state.keys()):
+                            if re.match(r"^(peso|reps|rir)_\d+_\d+$", str(_k)):
+                                del st.session_state[_k]
                     except Exception:
                         pass
-                # apagar snapshot persistido (mobile restore)
-                try:
-                    _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                    clear_inprogress_session(_ip_key)
-                except Exception:
-                    pass
-                st.session_state[_rst_flag] = False
-                st.toast("Treino reiniciado.")
-                time.sleep(0.25)
-                st.rerun()
-            if cr2.button("Cancelar", key=f"reset_treino_no::{perfil_sel}::{dia}", width='stretch'):
-                st.session_state[_rst_flag] = False
-                st.rerun()
+                    # voltar ao 1º exercício
+                    try:
+                        _set_pure_idx(0)
+                    except Exception:
+                        try:
+                            st.session_state.pop(f"pure_idx::{pure_nav_key}", None)
+                        except Exception:
+                            pass
+                    # apagar snapshot persistido (mobile restore)
+                    try:
+                        _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                        _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                        clear_inprogress_session(_ip_key)
+                    except Exception:
+                        pass
+                    st.session_state[_rst_flag] = False
+                    st.toast("Treino reiniciado.")
+                    time.sleep(0.25)
+                    st.rerun()
+                if cr2.button("Cancelar", key=f"reset_treino_no::{perfil_sel}::{dia}", width='stretch'):
+                    st.session_state[_rst_flag] = False
+                    st.rerun()
         
 with tab_historico:
     st.header("Histórico do perfil 📊")
