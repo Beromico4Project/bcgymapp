@@ -4288,15 +4288,47 @@ treinos_base = {
     "Segunda — UPPER HIPERTROFIA A": {
         "bloco": "Hipertrofia",
         "sessao": "80–100 min",
-        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": False},
         "prep": [
-            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "4 min + 2–3 séries de aproximação", "items": ["Elíptica ou bike: 4 min", "Dead hang: 1×20–30 s", "Séries de aproximação do 1.º exercício: 2–3"], "button": "✅ Aquecimento feito"},
-            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "3 movimentos", "items": ["Rotação torácica: 1×8/lado", "Band pull-aparts: 1×15", "Rotação externa leve: 1×12–15"], "button": "✅ Mobilidade feita"},
+            {
+                "key": "aquecimento",
+                "title": "Aquecimento",
+                "icon": "🔥",
+                "duration": "4 min + mobilidade + 2–3 séries de aproximação",
+                "items": [
+                    "Elíptica ou bike: 4 min",
+                    "Dead hang: 1 x 20–30 s",
+                    "Rotação torácica: 1 x 8/lado",
+                    "Band pull-aparts: 1 x 15",
+                    "Rotação externa leve: 1 x 12–15",
+                    "Séries de aproximação do 1.º exercício: 2–3",
+                ],
+                "button": "✅ Aquecimento feito",
+            },
         ],
         "post": [
-            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "2–3 blocos", "items": ["Pressdown isométrico: 2×30–45 s", "Wrist extension excêntrico: 2×12", "Rotação externa isométrica: 1–2×30 s/lado"], "button": "✅ Tendões feitos"},
-            {"key": "cardio", "title": "Cardio", "icon": "🏃", "duration": "12–15 min", "items": ["Zona 2 em elíptica ou bike: 12–15 min"], "button": "✅ Cardio feito"},
-            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90: 1–2 min", "Alongamento leve de peitoral ou dorsal: 30–45 s"], "button": "✅ Cool-down feito"},
+            {
+                "key": "tendoes",
+                "title": "Protocolo",
+                "icon": "🦾",
+                "duration": "3 linhas",
+                "items": [
+                    "Pressdown isométrico: 2 x 30–45 s",
+                    "Wrist extension excêntrico: 2 x 12",
+                    "Rotação externa isométrica: 1–2 x 30 s/lado",
+                ],
+                "button": "✅ Protocolo feito",
+            },
+            {
+                "key": "cardio",
+                "title": "Cardio",
+                "icon": "🏃",
+                "duration": "12–15 min",
+                "items": [
+                    "Zona 2 em elíptica ou bike: 12–15 min",
+                ],
+                "button": "✅ Cardio feito",
+            },
         ],
         "exercicios": [
             {"ex":"Remada apoiada no peito", "series":3, "reps":"8-10", "tipo":"composto"},
@@ -4310,15 +4342,48 @@ treinos_base = {
     "Terça — LOWER HIPERTROFIA": {
         "bloco": "Hipertrofia",
         "sessao": "90–110 min",
-        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": True},
+        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": False},
         "prep": [
-            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "5 min + 2–4 séries de aproximação", "items": ["Bike: 5 min", "Séries de aproximação do 1.º exercício: 2–4"], "button": "✅ Aquecimento feito"},
-            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "3 movimentos", "items": ["Spanish squat: 2×30–45 s", "Glute bridge com pausa: 2×10", "Hip hinge drill: 1×8"], "button": "✅ Mobilidade feita"},
+            {
+                "key": "aquecimento",
+                "title": "Aquecimento",
+                "icon": "🔥",
+                "duration": "5 min + ativação + 2–4 séries de aproximação",
+                "items": [
+                    "Bike: 5 min",
+                    "Spanish squat: 2 x 30–45 s",
+                    "Glute bridge com pausa: 2 x 10",
+                    "Hip hinge drill: 1 x 8",
+                    "Séries de aproximação do 1.º exercício: 2–4",
+                ],
+                "button": "✅ Aquecimento feito",
+            },
         ],
         "post": [
-            {"key": "core", "title": "Core escoliose", "icon": "🧱", "duration": "4 exercícios", "items": ["McGill curl-up: 2×8", "Side plank: 2×30–45 s", "Bird dog: 2×6/lado", "Suitcase carry: 2×20–30 m/lado"], "button": "✅ Core feito"},
-            {"key": "tendoes", "title": "Protocolo", "icon": "🦾", "duration": "2 exercícios", "items": ["Spanish squat: 2×30–45 s", "Tibial raise: 2×15–20"], "button": "✅ Protocolo feito"},
-            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90: 1–2 min", "Alongamento leve de flexor da anca ou glúteo: 30–45 s"], "button": "✅ Cool-down feito"},
+            {
+                "key": "core",
+                "title": "Core",
+                "icon": "🧱",
+                "duration": "4 exercícios",
+                "items": [
+                    "McGill curl-up: 2 x 8",
+                    "Side plank: 2 x 30–45 s",
+                    "Bird dog: 2 x 6/lado",
+                    "Suitcase carry: 2 x 20–30 m/lado",
+                ],
+                "button": "✅ Core feito",
+            },
+            {
+                "key": "tendoes",
+                "title": "Protocolo",
+                "icon": "🦾",
+                "duration": "2 exercícios",
+                "items": [
+                    "Spanish squat: 2 x 30–45 s",
+                    "Tibial raise: 2 x 15–20",
+                ],
+                "button": "✅ Protocolo feito",
+            },
         ],
         "exercicios": [
             {"ex":"Hack squat ou belt squat", "series":3, "reps":"6-10", "tipo":"composto"},
@@ -4332,15 +4397,46 @@ treinos_base = {
     "Quarta — UPPER HIPERTROFIA B": {
         "bloco": "Hipertrofia",
         "sessao": "85–105 min",
-        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": False},
         "prep": [
-            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "4 min + 2–3 séries de aproximação", "items": ["Elíptica ou caminhada: 4 min", "Séries de aproximação do 1.º exercício: 2–3"], "button": "✅ Aquecimento feito"},
-            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "3 movimentos", "items": ["Scap push-up: 1×10", "Face pull leve: 1×15", "Rotação externa leve: 1×12–15"], "button": "✅ Mobilidade feita"},
+            {
+                "key": "aquecimento",
+                "title": "Aquecimento",
+                "icon": "🔥",
+                "duration": "4 min + ativação + 2–3 séries de aproximação",
+                "items": [
+                    "Elíptica ou caminhada: 4 min",
+                    "Scap push-up: 1 x 10",
+                    "Face pull leve: 1 x 15",
+                    "Rotação externa leve: 1 x 12–15",
+                    "Séries de aproximação do 1.º exercício: 2–3",
+                ],
+                "button": "✅ Aquecimento feito",
+            },
         ],
         "post": [
-            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "2–3 blocos", "items": ["Pressdown isométrico: 2×30–45 s", "Wrist extension excêntrico: 2×12", "Rotação externa isométrica: 1–2×30 s/lado"], "button": "✅ Tendões feitos"},
-            {"key": "cardio", "title": "Cardio", "icon": "🏃", "duration": "10–12 min", "items": ["Zona 2: 10–12 min"], "button": "✅ Cardio feito"},
-            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90: 1–2 min", "Alongamento leve de peitoral ou ombro: 30–45 s"], "button": "✅ Cool-down feito"},
+            {
+                "key": "tendoes",
+                "title": "Protocolo",
+                "icon": "🦾",
+                "duration": "3 linhas",
+                "items": [
+                    "Pressdown isométrico: 2 x 30–45 s",
+                    "Wrist extension excêntrico: 2 x 12",
+                    "Rotação externa isométrica: 1–2 x 30 s/lado",
+                ],
+                "button": "✅ Protocolo feito",
+            },
+            {
+                "key": "cardio",
+                "title": "Cardio",
+                "icon": "🏃",
+                "duration": "10–12 min",
+                "items": [
+                    "Zona 2: 10–12 min",
+                ],
+                "button": "✅ Cardio feito",
+            },
         ],
         "exercicios": [
             {"ex":"Supino inclinado com halteres", "series":4, "reps":"6-10", "tipo":"composto"},
@@ -4360,11 +4456,11 @@ treinos_base = {
         "recovery_title": "Core / mobilidade",
         "recovery_items": [
             "Respiração 90/90: 2 min",
-            "Side plank: 2×30–45 s",
-            "Bird dog: 2×6/lado",
-            "Dead hang: 2×20–30 s",
-            "Alongamento peitoral na porta: 1×45 s/lado",
-            "Alongamento flexor da anca: 1×45 s/lado",
+            "Side plank: 2 x 30–45 s",
+            "Bird dog: 2 x 6/lado",
+            "Dead hang: 2 x 20–30 s",
+            "Alongamento peitoral na porta: 1 x 45 s/lado",
+            "Alongamento flexor da anca: 1 x 45 s/lado",
         ],
         "recovery_note": "Dia livre.",
         "exercicios": []
@@ -4372,15 +4468,46 @@ treinos_base = {
     "Sexta — UPPER FORÇA": {
         "bloco": "Força",
         "sessao": "75–95 min",
-        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": False},
         "prep": [
-            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "4 min + 3–5 séries de aproximação", "items": ["Bike ou elíptica: 4 min", "Dead hang: 1×20–30 s", "Séries de aproximação do supino: 3–5"], "button": "✅ Aquecimento feito"},
-            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "2 movimentos", "items": ["Band pull-aparts: 1×15", "Rotação externa leve: 1×12–15"], "button": "✅ Mobilidade feita"},
+            {
+                "key": "aquecimento",
+                "title": "Aquecimento",
+                "icon": "🔥",
+                "duration": "4 min + ativação + 3–5 séries de aproximação",
+                "items": [
+                    "Bike ou elíptica: 4 min",
+                    "Dead hang: 1 x 20–30 s",
+                    "Band pull-aparts: 1 x 15",
+                    "Rotação externa leve: 1 x 12–15",
+                    "Séries de aproximação do supino: 3–5",
+                ],
+                "button": "✅ Aquecimento feito",
+            },
         ],
         "post": [
-            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "2–3 blocos", "items": ["Pressdown isométrico: 2×30–45 s", "Wrist extension excêntrico: 2×12", "Rotação externa isométrica: 1–2×30 s/lado"], "button": "✅ Tendões feitos"},
-            {"key": "cardio", "title": "Cardio", "icon": "🏃", "duration": "10–12 min", "items": ["Zona 2: 10–12 min"], "button": "✅ Cardio feito"},
-            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90: 1–2 min", "Alongamento leve de peitoral ou lat: 30–45 s"], "button": "✅ Cool-down feito"},
+            {
+                "key": "tendoes",
+                "title": "Protocolo",
+                "icon": "🦾",
+                "duration": "3 linhas",
+                "items": [
+                    "Pressdown isométrico: 2 x 30–45 s",
+                    "Wrist extension excêntrico: 2 x 12",
+                    "Rotação externa isométrica: 1–2 x 30 s/lado",
+                ],
+                "button": "✅ Protocolo feito",
+            },
+            {
+                "key": "cardio",
+                "title": "Cardio",
+                "icon": "🏃",
+                "duration": "10–12 min",
+                "items": [
+                    "Zona 2: 10–12 min",
+                ],
+                "button": "✅ Cardio feito",
+            },
         ],
         "exercicios": [
             {"ex":"Supino inclinado baixo com pausa", "series":4, "reps":"4-6", "tipo":"composto"},
@@ -4393,15 +4520,48 @@ treinos_base = {
     "Sábado — LOWER FORÇA": {
         "bloco": "Força",
         "sessao": "85–105 min",
-        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": True},
+        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": False},
         "prep": [
-            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "5 min + 3–5 séries de aproximação", "items": ["Bike: 5 min", "Séries de aproximação do 1.º exercício: 3–5"], "button": "✅ Aquecimento feito"},
-            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "3 movimentos", "items": ["Spanish squat: 2×30–45 s", "Glute bridge com pausa: 2×10", "Hip hinge drill: 1×8"], "button": "✅ Mobilidade feita"},
+            {
+                "key": "aquecimento",
+                "title": "Aquecimento",
+                "icon": "🔥",
+                "duration": "5 min + ativação + 3–5 séries de aproximação",
+                "items": [
+                    "Bike: 5 min",
+                    "Spanish squat: 2 x 30–45 s",
+                    "Glute bridge com pausa: 2 x 10",
+                    "Hip hinge drill: 1 x 8",
+                    "Séries de aproximação do 1.º exercício: 3–5",
+                ],
+                "button": "✅ Aquecimento feito",
+            },
         ],
         "post": [
-            {"key": "core", "title": "Core escoliose", "icon": "🧱", "duration": "4 exercícios", "items": ["McGill curl-up: 2×8", "Side plank: 2×30–45 s", "Bird dog: 2×6/lado", "Suitcase carry: 2×20–30 m/lado"], "button": "✅ Core feito"},
-            {"key": "tendoes", "title": "Protocolo", "icon": "🦾", "duration": "2 exercícios", "items": ["Spanish squat: 2×30–45 s", "Tibial raise: 2×15–20"], "button": "✅ Protocolo feito"},
-            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90: 1–2 min", "Alongamento leve de posterior ou flexor da anca: 30–45 s"], "button": "✅ Cool-down feito"},
+            {
+                "key": "core",
+                "title": "Core",
+                "icon": "🧱",
+                "duration": "4 exercícios",
+                "items": [
+                    "McGill curl-up: 2 x 8",
+                    "Side plank: 2 x 30–45 s",
+                    "Bird dog: 2 x 6/lado",
+                    "Suitcase carry: 2 x 20–30 m/lado",
+                ],
+                "button": "✅ Core feito",
+            },
+            {
+                "key": "tendoes",
+                "title": "Protocolo",
+                "icon": "🦾",
+                "duration": "2 exercícios",
+                "items": [
+                    "Spanish squat: 2 x 30–45 s",
+                    "Tibial raise: 2 x 15–20",
+                ],
+                "button": "✅ Protocolo feito",
+            },
         ],
         "exercicios": [
             {"ex":"Trap bar deadlift", "series":4, "reps":"3-5", "tipo":"composto"},
@@ -4413,17 +4573,16 @@ treinos_base = {
     },
     "Domingo — DESCANSO": {
         "bloco": "Fisio",
-        "sessao": "off",
+        "sessao": "Descanso",
         "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": False},
         "recovery_title": "Descanso",
         "recovery_items": [
-            "Descanso.",
+            "Descanso total.",
         ],
-        "recovery_note": "",
+        "recovery_note": "Sem treino hoje.",
         "exercicios": []
     },
 }
-
 
 # --- PLANO INEIX (A/B/C 3x por semana — RIR 2 fixo, descanso 60–90s) ---
 treinos_ineix_gym = {
@@ -5910,13 +6069,21 @@ Dor articular pontiaguda = troca variação no dia.
             """, unsafe_allow_html=True)
 
         def _get_req_state_from_session():
+            _present_keys = set()
+            try:
+                for _blk in list(_cfg_prep_blocks(cfg)) + list(_cfg_post_blocks(cfg, prot)):
+                    _k = str(_blk.get("key", "") or "").strip().lower()
+                    if _k:
+                        _present_keys.add(_k)
+            except Exception:
+                _present_keys = set()
             return {
-                "aquecimento_req": True,
-                "mobilidade_req": True,
-                "cardio_req": bool(prot.get("cardio", False)),
-                "tendoes_req": bool(prot.get("tendoes", False)),
-                "core_req": bool(prot.get("core", False)),
-                "cooldown_req": bool(prot.get("cooldown", True)),
+                "aquecimento_req": "aquecimento" in _present_keys,
+                "mobilidade_req": "mobilidade" in _present_keys,
+                "cardio_req": "cardio" in _present_keys,
+                "tendoes_req": "tendoes" in _present_keys,
+                "core_req": "core" in _present_keys,
+                "cooldown_req": "cooldown" in _present_keys,
                 "aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
                 "mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
                 "cardio": bool(st.session_state.get("chk_cardio", False)),
