@@ -3991,6 +3991,152 @@ def best_1rm_row(row):
     return float(best)
 
 
+
+
+def _session_block_state_key(block: dict) -> str:
+    return f"chk_{str(block.get('key', '')).strip()}"
+
+
+def _cfg_prep_blocks(cfg: dict) -> list:
+    prep = cfg.get("prep", []) if isinstance(cfg, dict) else []
+    if isinstance(prep, list) and prep:
+        return prep
+    return [
+        {
+            "key": "aquecimento",
+            "title": "Aquecimento",
+            "duration": "4–5 min",
+            "items": ["4–5 min leves na bike/elíptica", "2–4 séries de aproximação do 1.º exercício"],
+            "button": "✅ Aquecimento feito",
+        },
+        {
+            "key": "mobilidade",
+            "title": "Mobilidade / ativação",
+            "duration": "2–4 min",
+            "items": ["Ativação específica para ombros/anca/escápulas", "Amplitude limpa antes de meter carga"],
+            "button": "✅ Mobilidade feita",
+        },
+    ]
+
+
+def _cfg_post_blocks(cfg: dict, prot: dict) -> list:
+    post = cfg.get("post", []) if isinstance(cfg, dict) else []
+    if isinstance(post, list) and post:
+        return post
+    prot = prot or {}
+    blocks = []
+    if bool(prot.get("cardio", False)):
+        blocks.append({
+            "key": "cardio",
+            "title": "Cardio Zona 2",
+            "duration": "10–15 min",
+            "items": ["Bike, elíptica ou caminhada inclinada", "Ritmo em que ainda consegues falar"],
+            "button": "✅ Cardio feito",
+        })
+    if bool(prot.get("tendoes", False)):
+        blocks.append({
+            "key": "tendoes",
+            "title": "Protocolo de tendões",
+            "duration": "6–10 min",
+            "items": ["Isométricos + excêntricos com controlo", "Sem pressa, sem heroísmos idiotas"],
+            "button": "✅ Protocolo feito",
+        })
+    if bool(prot.get("core", False)):
+        blocks.append({
+            "key": "core",
+            "title": "Core escoliose",
+            "duration": "6–10 min",
+            "items": ["McGill curl-up, side plank, bird dog, suitcase carry"],
+            "button": "✅ Core feito",
+        })
+    if bool(prot.get("cooldown", True)):
+        blocks.append({
+            "key": "cooldown",
+            "title": "Cool-down",
+            "duration": "2–4 min",
+            "items": ["Respiração 90/90 + alongamentos leves"],
+            "button": "✅ Cool-down feito",
+        })
+    return blocks
+
+
+def _build_session_flow(cfg: dict, prot: dict) -> list:
+    flow = []
+    for block in _cfg_prep_blocks(cfg):
+        flow.append({**dict(block), "kind": "block", "phase": "prep"})
+    for ix, item in enumerate(list((cfg or {}).get("exercicios", []) or [])):
+        flow.append({
+            "kind": "exercise",
+            "phase": "main",
+            "title": str(item.get("ex", "Exercício") or "Exercício"),
+            "series": int(item.get("series", 0) or 0),
+            "ex_index": int(ix),
+        })
+    for block in _cfg_post_blocks(cfg, prot):
+        flow.append({**dict(block), "kind": "block", "phase": "finish"})
+    return flow
+
+
+def _session_flow_item_done(item: dict, perfil: str, dia: str) -> bool:
+    if str(item.get("kind", "")) == "exercise":
+        ix = int(item.get("ex_index", 0) or 0)
+        try:
+            done_sets = int(st.session_state.get(f"pt_done::{perfil}::{dia}::{ix}", 0) or 0)
+        except Exception:
+            done_sets = 0
+        return done_sets >= int(item.get("series", 0) or 0)
+    return bool(st.session_state.get(_session_block_state_key(item), False))
+
+
+def _session_flow_stats(cfg: dict, prot: dict, perfil: str, dia: str):
+    flow = _build_session_flow(cfg, prot)
+    total = len(flow)
+    done = 0
+    pending_ix = None
+    for ix, item in enumerate(flow):
+        ok = _session_flow_item_done(item, perfil, dia)
+        if ok:
+            done += 1
+        elif pending_ix is None:
+            pending_ix = ix
+    return flow, done, total, pending_ix
+
+
+def _render_session_block(block: dict):
+    title = str(block.get("title", "Bloco") or "Bloco")
+    duration = str(block.get("duration", "") or "").strip()
+    items = [str(x).strip() for x in list(block.get("items", []) or []) if str(x).strip()]
+    note = str(block.get("note", "") or "").strip()
+    state_key = _session_block_state_key(block)
+    is_done = bool(st.session_state.get(state_key, False))
+    button_label = str(block.get("button", "✅ Marcar como feito") or "✅ Marcar como feito")
+    icon = str(block.get("icon", "") or "").strip()
+
+    st.markdown(
+        f"""
+        <div class='bc-prep-card'>
+          <div class='t'>{html.escape((icon + ' ') if icon else '')}{html.escape(title)}</div>
+          <div class='s'>{html.escape(duration) if duration else 'Bloco rápido da sessão.'}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    for entry in items:
+        st.markdown(f"- {entry}")
+    if note:
+        st.caption(note)
+    c1, c2 = st.columns([2, 1])
+    if is_done:
+        c1.success("Concluído ✅")
+        if c2.button("↩️ Reabrir", key=f"undo::{state_key}", width='stretch'):
+            st.session_state[state_key] = False
+            st.rerun()
+    else:
+        if c1.button(button_label, key=f"done::{state_key}", width='stretch'):
+            st.session_state[state_key] = True
+            st.rerun()
+        c2.caption("Obrigatório" if str(block.get("phase", "")) != "optional" else "Opcional")
+
 # --- PLANO (8 semanas) ---
 def semana_label(w):
     if w in [1,2,3]:
@@ -4005,7 +4151,7 @@ def is_deload(week):
     return week in [4,8]
 
 def is_intensify_hypertrophy(week):
-    return week in [3,7]
+    return False
 
 GUI_PPLA_ID = "GUI_PPLA_v1"
 GUI_BLOCOS = {"PUSH", "PULL", "LEGS", "ARMS"}
@@ -4050,13 +4196,9 @@ def rir_alvo(item_tipo, bloco, week):
     if bloco == "ABC":
         return "2"
     if bloco == "Força":
-        return "2–3"
+        return "3–4" if is_deload(week) else "2–3"
     if bloco == "Hipertrofia":
-        if is_deload(week):
-            return "3–4"
-        if is_intensify_hypertrophy(week):
-            return "1" if item_tipo == "composto" else "0–1"
-        return "2" if item_tipo == "composto" else "1–2"
+        return "3–4" if is_deload(week) else "1–2"
     return "—"
 
 def rir_alvo_num(item_tipo, bloco, week):
@@ -4087,84 +4229,142 @@ def descanso_recomendado_s(item_tipo, bloco):
     return 60
 
 treinos_base = {
-    "Segunda — UPPER FORÇA": {
+    "Segunda — UPPER HIPERTROFIA A": {
+        "bloco": "Hipertrofia",
+        "sessao": "80–100 min",
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "prep": [
+            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "4–6 min", "items": ["Elíptica ou bike 4 min", "Dead hang 1×20–30s", "Séries de aproximação do 1.º exercício 2–3"], "button": "✅ Aquecimento feito"},
+            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "2–4 min", "items": ["Rotação torácica 1×8/lado", "Band pull-aparts 1×15", "Rotação externa leve 1×12–15"], "button": "✅ Mobilidade feita"},
+        ],
+        "post": [
+            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "5–8 min", "items": ["Pressdown isométrico 2×30–45s", "Wrist extension excêntrico 2×12", "Rotação externa isométrica 1–2×30s/lado"], "button": "✅ Tendões feitos"},
+            {"key": "cardio", "title": "Cardio Zona 2", "icon": "🏃", "duration": "12–15 min", "items": ["Elíptica ou bike", "Ritmo conversável, sem transformar isto num casting para o Tour"], "button": "✅ Cardio feito"},
+            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90 1–2 min", "Alongamento leve de peitoral/dorsal 30–45s"], "button": "✅ Cool-down feito"},
+        ],
+        "exercicios": [
+            {"ex":"Remada apoiada no peito", "series":3, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Puxada na polia neutra", "series":3, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Pulldown unilateral para dorsal", "series":2, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Máquina inclinada convergente", "series":2, "reps":"8-12", "tipo":"composto"},
+            {"ex":"Elevação lateral na polia", "series":3, "reps":"12-20", "tipo":"isolado"},
+            {"ex":"Reverse pec deck", "series":2, "reps":"15-20", "tipo":"isolado"},
+        ]
+    },
+    "Terça — LOWER HIPERTROFIA": {
+        "bloco": "Hipertrofia",
+        "sessao": "90–110 min",
+        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": True},
+        "prep": [
+            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "5–7 min", "items": ["Bike 5 min", "Séries de aproximação do 1.º exercício 2–4"], "button": "✅ Aquecimento feito"},
+            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "3–5 min", "items": ["Spanish squat 2×30–45s", "Glute bridge com pausa 2×10", "Hip hinge drill 1×8"], "button": "✅ Mobilidade feita"},
+        ],
+        "post": [
+            {"key": "core", "title": "Core escoliose", "icon": "🧱", "duration": "6–10 min", "items": ["McGill curl-up 2×8", "Side plank 2×30–45s", "Bird dog 2×6/lado", "Suitcase carry 2×20–30m/lado"], "button": "✅ Core feito"},
+            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "4–6 min", "items": ["Spanish squat 2×30–45s", "Tibial raise 2×15–20"], "button": "✅ Protocolo feito"},
+            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90 1–2 min", "Alongamento leve de flexor da anca/glúteo 30–45s"], "button": "✅ Cool-down feito"},
+        ],
+        "exercicios": [
+            {"ex":"Hack squat ou belt squat", "series":3, "reps":"6-10", "tipo":"composto"},
+            {"ex":"Hip thrust barra", "series":4, "reps":"8-10", "tipo":"composto"},
+            {"ex":"RDL com barra ou halteres", "series":3, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Leg extension", "series":2, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Split squat no smith, viés quad", "series":2, "reps":"10-12", "tipo":"composto"},
+            {"ex":"Abdução máquina", "series":2, "reps":"15-25", "tipo":"isolado"},
+        ]
+    },
+    "Quarta — UPPER HIPERTROFIA B": {
+        "bloco": "Hipertrofia",
+        "sessao": "85–105 min",
+        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "prep": [
+            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "4–6 min", "items": ["Elíptica ou caminhada 4 min", "Séries de aproximação do 1.º exercício 2–3"], "button": "✅ Aquecimento feito"},
+            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "2–4 min", "items": ["Scap push-up 1×10", "Face pull leve 1×15", "Rotação externa leve 1×12–15"], "button": "✅ Mobilidade feita"},
+        ],
+        "post": [
+            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "5–8 min", "items": ["Pressdown isométrico 2×30–45s", "Wrist extension excêntrico 2×12", "Rotação externa isométrica 1–2×30s/lado"], "button": "✅ Tendões feitos"},
+            {"key": "cardio", "title": "Cardio Zona 2", "icon": "🏃", "duration": "10–12 min", "items": ["Bike, elíptica ou caminhada inclinada", "Sem sprintar porque viste um vídeo motivacional"], "button": "✅ Cardio feito"},
+            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90 1–2 min", "Alongamento leve peitoral/ombro 30–45s"], "button": "✅ Cool-down feito"},
+        ],
+        "exercicios": [
+            {"ex":"Supino inclinado com halteres", "series":4, "reps":"6-10", "tipo":"composto"},
+            {"ex":"Smith inclinada baixa", "series":3, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Crossover baixo para alto", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Shoulder press máquina, pegada neutra", "series":2, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Elevação lateral", "series":3, "reps":"12-20", "tipo":"isolado"},
+            {"ex":"Rear delt no cabo ou máquina", "series":2, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Rosca cabo", "series":2, "reps":"10-12", "tipo":"isolado"},
+            {"ex":"Pressdown corda", "series":2, "reps":"12-15", "tipo":"isolado"},
+        ]
+    },
+    "Quinta — LIVRE": {
+        "bloco": "Fisio",
+        "sessao": "12–18 min",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": False},
+        "recovery_title": "Core / mobilidade",
+        "recovery_items": [
+            "Respiração 90/90: 2 min",
+            "Side plank: 2×30–45s",
+            "Bird dog: 2×6/lado",
+            "Dead hang: 2×20–30s",
+            "Alongamento peitoral na porta: 1×45s/lado",
+            "Alongamento flexor da anca: 1×45s/lado",
+        ],
+        "recovery_note": "Dia livre, não dia para inventar fadiga. Faz o básico e sai melhor.",
+        "exercicios": []
+    },
+    "Sexta — UPPER FORÇA": {
         "bloco": "Força",
         "sessao": "75–95 min",
         "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
+        "prep": [
+            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "4–6 min", "items": ["Bike ou elíptica 4 min", "Dead hang 1×20–30s", "Séries de aproximação do supino 3–5"], "button": "✅ Aquecimento feito"},
+            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "2–4 min", "items": ["Band pull-aparts 1×15", "Rotação externa leve 1×12–15"], "button": "✅ Mobilidade feita"},
+        ],
+        "post": [
+            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "5–8 min", "items": ["Pressdown isométrico 2×30–45s", "Wrist extension excêntrico 2×12", "Rotação externa isométrica 1–2×30s/lado"], "button": "✅ Tendões feitos"},
+            {"key": "cardio", "title": "Cardio Zona 2", "icon": "🏃", "duration": "10–12 min", "items": ["Zona 2 estável na bike ou elíptica"], "button": "✅ Cardio feito"},
+            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90 1–2 min", "Alongamento peitoral/lat 30–45s"], "button": "✅ Cool-down feito"},
+        ],
         "exercicios": [
-            {"ex":"Supino com pausa (1s no peito)", "series":4, "reps":"4-5", "tipo":"composto"},
-            {"ex":"Barra fixa com peso (pegada neutra)", "series":4, "reps":"4-6", "tipo":"composto"},
-            {"ex":"Remada unilateral com halteres", "series":3, "reps":"5-6", "tipo":"composto"},
-            {"ex":"DB OHP neutro (sentado, encosto)", "series":3, "reps":"6", "tipo":"composto"},
-            {"ex":"Elevação lateral (polia unilateral)", "series":3, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Supino inclinado baixo com pausa", "series":4, "reps":"4-6", "tipo":"composto"},
+            {"ex":"Puxada na polia neutra pesada", "series":4, "reps":"6-8", "tipo":"composto"},
+            {"ex":"Remada apoiada pesada", "series":3, "reps":"5-6", "tipo":"composto"},
+            {"ex":"Máquina inclinada convergente", "series":3, "reps":"6-8", "tipo":"composto"},
             {"ex":"Face pull", "series":2, "reps":"15-20", "tipo":"isolado"},
         ]
     },
-    "Terça — LOWER FORÇA": {
+    "Sábado — LOWER FORÇA": {
         "bloco": "Força",
-        "sessao": "75–95 min",
-        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
+        "sessao": "85–105 min",
+        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": True},
+        "prep": [
+            {"key": "aquecimento", "title": "Aquecimento", "icon": "🔥", "duration": "5–7 min", "items": ["Bike 5 min", "Séries de aproximação do 1.º exercício 3–5"], "button": "✅ Aquecimento feito"},
+            {"key": "mobilidade", "title": "Mobilidade / ativação", "icon": "🧘", "duration": "3–5 min", "items": ["Spanish squat 2×30–45s", "Glute bridge com pausa 2×10", "Hip hinge drill 1×8"], "button": "✅ Mobilidade feita"},
+        ],
+        "post": [
+            {"key": "core", "title": "Core escoliose", "icon": "🧱", "duration": "6–10 min", "items": ["McGill curl-up 2×8", "Side plank 2×30–45s", "Bird dog 2×6/lado", "Suitcase carry 2×20–30m/lado"], "button": "✅ Core feito"},
+            {"key": "tendoes", "title": "Protocolo de tendões", "icon": "🦾", "duration": "4–6 min", "items": ["Spanish squat 2×30–45s", "Tibial raise 2×15–20"], "button": "✅ Protocolo feito"},
+            {"key": "cooldown", "title": "Cool-down", "icon": "😮‍💨", "duration": "2–4 min", "items": ["Respiração 90/90 1–2 min", "Alongamento leve de posterior/flexor da anca 30–45s"], "button": "✅ Cool-down feito"},
+        ],
         "exercicios": [
-            {"ex":"Deadlift", "series":4, "reps":"3-5", "tipo":"composto"},
-            {"ex":"Bulgarian Split Squat (quad-biased / passo curto)", "series":3, "reps":"5-6", "tipo":"composto"},
-            {"ex":"Hip Thrust (máquina)", "series":4, "reps":"5", "tipo":"composto"},
-            {"ex":"Flexora (leg curl)", "series":3, "reps":"6-8", "tipo":"isolado"},
-            {"ex":"Panturrilha em pé (pesado)", "series":3, "reps":"6-8", "tipo":"isolado"},
+            {"ex":"Trap bar deadlift", "series":4, "reps":"3-5", "tipo":"composto"},
+            {"ex":"Belt squat ou hack squat pesado", "series":4, "reps":"5-6", "tipo":"composto"},
+            {"ex":"Hip thrust pesado", "series":3, "reps":"5-6", "tipo":"composto"},
+            {"ex":"Leg curl sentado ou lying curl", "series":3, "reps":"6-8", "tipo":"isolado"},
+            {"ex":"Panturrilha sentado ou em pé", "series":3, "reps":"6-10", "tipo":"isolado"},
         ]
     },
-    "Quarta — DESCANSO (Fisio em casa)": {
+    "Domingo — DESCANSO": {
         "bloco": "Fisio",
-        "sessao": "12–20 min",
-        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
-        "exercicios": []
-    },
-    "Quinta — UPPER HIPERTROFIA (costas/ombros/braços)": {
-        "bloco": "Hipertrofia",
-        "sessao": "75–95 min",
-        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
-        "exercicios": [
-            {"ex":"Puxada na polia (pegada neutra)", "series":3, "reps":"8-12", "tipo":"composto"},
-            {"ex":"Remada baixa (pausa 1s com ombro baixo)", "series":4, "reps":"8-12", "tipo":"composto"},
-            {"ex":"Pulldown braço reto (straight-arm)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Elevação lateral (halter/polia)", "series":4, "reps":"12-20", "tipo":"isolado"},
-            {"ex":"Rear delt machine / reverse pec deck", "series":3, "reps":"15-20", "tipo":"isolado"},
-            {"ex":"Rosca inclinado (halter)", "series":3, "reps":"10-12", "tipo":"isolado"},
-            {"ex":"Tríceps corda (ou barra V se cotovelo)", "series":3, "reps":"12-15", "tipo":"isolado"},
-        ]
-    },
-    "Sexta — LOWER HIPERTROFIA (glúteo + quadríceps)": {
-        "bloco": "Hipertrofia",
-        "sessao": "90–110 min",
-        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": True},
-        "exercicios": [
-            {"ex":"Hip Thrust (barra)", "series":4, "reps":"8-10", "tipo":"composto"},
-            {"ex":"Leg Press (pés altos e abertos)", "series":3, "reps":"10-12", "tipo":"composto"},
-            {"ex":"Extensora", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"RDL (halter/barra até neutro perfeito)", "series":3, "reps":"8-10", "tipo":"composto"},
-            {"ex":"Back extension 45° (glúteo bias)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Abdução máquina", "series":2, "reps":"15-25", "tipo":"isolado"},
-            {"ex":"Panturrilha sentado", "series":3, "reps":"12-15", "tipo":"isolado"},
-        ]
-    },
-    "Sábado — UPPER HIPERTROFIA (peito/ombros + estabilidade)": {
-        "bloco": "Hipertrofia",
-        "sessao": "90–110 min",
-        "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": True},
-        "exercicios": [
-            {"ex":"Supino inclinado (halter)", "series":4, "reps":"8-10", "tipo":"composto"},
-            {"ex":"Máquina convergente de peito", "series":3, "reps":"10-12", "tipo":"composto"},
-            {"ex":"Crossover na polia (alto → baixo)", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Elevação lateral com halteres (myo-reps)", "series":3, "reps":"15-20", "tipo":"isolado"},
-            {"ex":"Rear delt (cabo/máquina)", "series":3, "reps":"15-20", "tipo":"isolado"},
-            {"ex":"Remada leve apoiada (saúde escapular)", "series":2, "reps":"12", "tipo":"isolado"},
-            {"ex":"Bíceps (cabo)", "series":2, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Tríceps overhead cabo (amplitude curta)", "series":2, "reps":"12-15", "tipo":"isolado"},
-        ]
-    },
-    "Domingo — DESCANSO (caminhada leve)": {
-        "bloco": "Fisio",
-        "sessao": "opcional",
-        "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": False},
+        "sessao": "off",
+        "protocolos": {"tendoes": False, "core": False, "cardio": False, "cooldown": False},
+        "recovery_title": "Descanso",
+        "recovery_items": [
+            "Descanso real.",
+            "Opcional: caminhada leve 15–30 min e mobilidade suave 5 min.",
+        ],
+        "recovery_note": "Não precisas de transformar descanso em castigo. Recupera.",
         "exercicios": []
     },
 }
@@ -4452,10 +4652,6 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
                 novo["series"] = max(2, int(round(base_series*0.6)))
             else:
                 novo["series"] = max(1, int(round(base_series*0.6)))
-        if week == 7 and bloco == "Hipertrofia" and item["tipo"] == "composto":
-            novo["nota_semana"] = "Semana 7: 1ª série como TOP SET (RIR 1) + restantes back-off controlado."
-        elif week == 7 and bloco == "Força" and i == 0 and item["tipo"] == "composto":
-            novo["nota_semana"] = "Semana 7: antes das séries de trabalho, faz 1 top single técnico @8–8.5 para aferição submáxima; depois cumpre o plano normal."
         novo["rir_alvo"] = rir_alvo(item["tipo"], bloco, week)
         novo["tempo"] = tempo_exec(item["tipo"])
         novo["descanso_s"] = descanso_recomendado_s(item["tipo"], bloco)
@@ -4738,22 +4934,22 @@ def _on_disable_rest_timer_change():
         pass
 
 if "disable_rest_timer" not in st.session_state:
-    st.session_state["disable_rest_timer"] = False
+    st.session_state["disable_rest_timer"] = True
 
 try:
     disable_rest_timer = st.sidebar.toggle(
-        "Desligar timer de descanso",
+        "Sem timer de descanso automático",
         value=bool(st.session_state.get("disable_rest_timer", False)),
         key="disable_rest_timer",
-        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+        help="Ligado por defeito. Em vez de contagem automática, aparece uma janela grande com o descanso sugerido, botão OK e fecho automático ao fim de 10 segundos.",
         on_change=_on_disable_rest_timer_change,
     )
 except Exception:
     disable_rest_timer = st.sidebar.checkbox(
-        "Desligar timer de descanso",
+        "Sem timer de descanso automático",
         value=bool(st.session_state.get("disable_rest_timer", False)),
         key="disable_rest_timer",
-        help="Se estiver ligado, o timer não faz contagem. Em vez disso, aparece uma janela com o descanso recomendado e horas de início/fim.",
+        help="Ligado por defeito. Em vez de contagem automática, aparece uma janela grande com o descanso sugerido, botão OK e fecho automático ao fim de 10 segundos.",
         on_change=_on_disable_rest_timer_change,
     )
 
@@ -5130,7 +5326,7 @@ with tab_treino:
         return dt.strftime("%H:%M:%S")
 
     def _bc_show_rest_info_window(total_s: int, start_ts: float, end_ts: float, ex_name: str = "") -> None:
-        """Mostra uma janela (modal) com o descanso recomendado quando o timer está desligado."""
+        """Mostra uma janela grande com o descanso sugerido quando o timer está desligado."""
         try:
             payload = {
                 "ex": str(ex_name or ""),
@@ -5156,42 +5352,69 @@ with tab_treino:
       ov.style.display = 'flex';
       ov.style.alignItems = 'center';
       ov.style.justifyContent = 'center';
-      ov.style.background = 'rgba(0,0,0,0.72)';
-      ov.style.backdropFilter = 'blur(8px)';
+      ov.style.background = 'rgba(0,0,0,0.78)';
+      ov.style.backdropFilter = 'blur(9px)';
       ov.style.padding = '18px';
       d.body.appendChild(ov);
     }}
 
+    if (ov.__bcRestCloseTimer) {{
+      try {{ clearTimeout(ov.__bcRestCloseTimer); }} catch(e) {{}}
+      ov.__bcRestCloseTimer = null;
+    }}
+    if (ov.__bcRestCountTimer) {{
+      try {{ clearInterval(ov.__bcRestCountTimer); }} catch(e) {{}}
+      ov.__bcRestCountTimer = null;
+    }}
+
     const title = payload.ex ? ('Descanso • ' + payload.ex) : 'Descanso';
     ov.innerHTML = `
-      <div style="width:min(540px, 92vw); border-radius:16px; border:1px solid rgba(255,255,255,0.12); background:rgba(18,18,18,0.92); box-shadow:0 18px 38px rgba(0,0,0,0.55); overflow:hidden;">
-        <div style="padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:space-between; gap:10px;">
-          <div style="font-weight:900; color:#E8E2E2; letter-spacing:.02em;">⏱️ ${title}</div>
-          <button id="bc-rest-close" style="border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.06); color:#E8E2E2; border-radius:10px; padding:6px 10px; cursor:pointer;">Fechar</button>
+      <div style="width:min(620px, 94vw); border-radius:20px; border:1px solid rgba(255,255,255,0.12); background:linear-gradient(180deg, rgba(20,20,20,0.96), rgba(12,12,12,0.96)); box-shadow:0 22px 44px rgba(0,0,0,0.58); overflow:hidden;">
+        <div style="padding:16px 18px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <div style="font-weight:900; color:#E8E2E2; letter-spacing:.02em; font-size:18px;">⏱️ ${title}</div>
+          <div id="bc-rest-countdown" style="font-size:12px; color:rgba(232,226,226,0.72);">Fecha em 10s</div>
         </div>
-        <div style="padding:14px 16px; color:rgba(232,226,226,0.92); font-size:14px; line-height:1.4;">
-          <div style="font-size:22px; font-weight:900; margin-bottom:10px; color:#FFFFFF;">${payload.mmss} <span style="font-size:13px; font-weight:700; opacity:.75;">(min:seg)</span></div>
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-            <div style="border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px 12px; background:rgba(255,255,255,0.03);">
-              <div style="opacity:.75; font-size:12px;">Início</div>
-              <div style="font-weight:900; font-size:16px;">${payload.start}</div>
+        <div style="padding:20px 18px 18px 18px; color:rgba(232,226,226,0.94); text-align:center;">
+          <div style="font-size:52px; line-height:1; font-weight:900; color:#FFFFFF; margin:6px 0 10px 0;">${payload.mmss}</div>
+          <div style="font-size:14px; opacity:.82; margin-bottom:14px;">Descanso sugerido sem contagem automática.</div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; text-align:left; margin-bottom:16px;">
+            <div style="border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px 14px; background:rgba(255,255,255,0.03);">
+              <div style="opacity:.72; font-size:12px;">Início</div>
+              <div style="font-weight:900; font-size:18px;">${payload.start}</div>
             </div>
-            <div style="border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px 12px; background:rgba(255,255,255,0.03);">
-              <div style="opacity:.75; font-size:12px;">Fim</div>
-              <div style="font-weight:900; font-size:16px;">${payload.end}</div>
+            <div style="border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px 14px; background:rgba(255,255,255,0.03);">
+              <div style="opacity:.72; font-size:12px;">Fim estimado</div>
+              <div style="font-weight:900; font-size:18px;">${payload.end}</div>
             </div>
           </div>
-          <div style="margin-top:10px; opacity:.75; font-size:12px;">Timer desligado na sidebar.</div>
+          <button id="bc-rest-ok" style="min-width:180px; border:1px solid rgba(255,255,255,0.16); background:rgba(140,29,44,0.28); color:#FFF; border-radius:12px; padding:12px 18px; font-size:16px; font-weight:800; cursor:pointer;">OK</button>
         </div>
       </div>
     `;
 
     function close() {{
+      try {{
+        if (ov.__bcRestCloseTimer) clearTimeout(ov.__bcRestCloseTimer);
+        if (ov.__bcRestCountTimer) clearInterval(ov.__bcRestCountTimer);
+      }} catch(e) {{}}
       try {{ ov.remove(); }} catch(e) {{ ov.style.display = 'none'; }}
     }}
-    const btn = ov.querySelector('#bc-rest-close');
+
+    const btn = ov.querySelector('#bc-rest-ok');
     if (btn) btn.onclick = close;
     ov.onclick = (e) => {{ if (e.target === ov) close(); }};
+
+    let secs = 10;
+    const lbl = ov.querySelector('#bc-rest-countdown');
+    if (lbl) lbl.textContent = `Fecha em ${secs}s`;
+    ov.__bcRestCountTimer = setInterval(() => {{
+      secs -= 1;
+      if (lbl) lbl.textContent = `Fecha em ${Math.max(0, secs)}s`;
+      if (secs <= 0) {{
+        close();
+      }}
+    }}, 1000);
+    ov.__bcRestCloseTimer = setTimeout(close, 10000);
   }} catch(e) {{}}
 }})();
 </script>
@@ -5333,12 +5556,13 @@ Dor articular pontiaguda = troca variação no dia.
 """)
             else:
                 st.markdown("""
-**Força (compostos):** RIR 2–3 sempre.  
-**Hipertrofia:** RIR 2; semanas 3 e 7 → RIR 1 (isoladores podem 0–1).  
+**Força:** RIR 2–3.  
+**Hipertrofia:** RIR 1–2.  
 **Deload (sem 4 e 8):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
 
 **Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
-**Descanso:** Força 2–4 min | Hiper compostos 90–150s | Isoladores 45–90s  
+**Descanso:** Compostos 2–3 min | Isoladores 45–90s  
+**Cardio:** só nos dias upper. Sem cardio nos lower.  
 Dor articular pontiaguda = troca variação no dia.
 """)
     elif pure_workout_mode:
@@ -5375,6 +5599,20 @@ Dor articular pontiaguda = troca variação no dia.
         if not isinstance(_cfg, dict):
             return pd.DataFrame()
         _plan_id = str(st.session_state.get("plano_id_sel", "Base"))
+        for _b in _cfg_prep_blocks(_cfg):
+            _rows.append({
+                "#": "P",
+                "Exercício": str(_b.get("title", "Preparação") or "Preparação"),
+                "Tipo": "Fluxo",
+                "Feitas": "✅" if bool(st.session_state.get(_session_block_state_key(_b), False)) else "⏳",
+                "Séries": "—",
+                "Reps": "—",
+                "RIR": "—",
+                "Carga sugerida": "—",
+                "Tempo": str(_b.get("duration", "—") or "—"),
+                "Descanso": "—",
+                "Último registo": "Bloco da sessão",
+            })
         for _i, _item in enumerate(list(_cfg.get("exercicios", []) or [])):
             _ex = str(_item.get("ex", "") or "")
             try:
@@ -5427,6 +5665,20 @@ Dor articular pontiaguda = troca variação no dia.
                 "Tempo": _tempo or "—",
                 "Descanso": f"{_desc}s" if _desc > 0 else "—",
                 "Último registo": _ultimo,
+            })
+        for _b in _cfg_post_blocks(_cfg, _cfg.get("protocolos", {})):
+            _rows.append({
+                "#": "F",
+                "Exercício": str(_b.get("title", "Fecho") or "Fecho"),
+                "Tipo": "Fluxo",
+                "Feitas": "✅" if bool(st.session_state.get(_session_block_state_key(_b), False)) else "⏳",
+                "Séries": "—",
+                "Reps": "—",
+                "RIR": "—",
+                "Carga sugerida": "—",
+                "Tempo": str(_b.get("duration", "—") or "—"),
+                "Descanso": "—",
+                "Último registo": "Bloco da sessão",
             })
         return pd.DataFrame(_rows)
 
@@ -5521,43 +5773,40 @@ Dor articular pontiaguda = troca variação no dia.
                     _done_val = 0
                 if _done_val >= int(_it.get("series", 0) or 0):
                     _done_ex += 1
-            # --- Aquecimento/Mobilidade (mais destacado, antes do progresso) ---
+
+            _prep_blocks = _cfg_prep_blocks(cfg)
+            _post_blocks = _cfg_post_blocks(cfg, prot)
+            _flow_items, _flow_done, _flow_total, _flow_pending = _session_flow_stats(cfg, prot, perfil_sel, dia)
+            _prep_pending = any(not bool(st.session_state.get(_session_block_state_key(_b), False)) for _b in _prep_blocks)
+            _all_ex_done = (_done_ex >= len(cfg["exercicios"])) if len(cfg.get("exercicios", [])) > 0 else True
+            _post_pending = _all_ex_done and any(not bool(st.session_state.get(_session_block_state_key(_b), False)) for _b in _post_blocks)
+
             st.markdown(
                 "<div class='bc-prep-head'>"
-                "<div class='bc-prep-title'>Preparação</div>"
-                "<div class='bc-prep-sub'>Marca antes de começar (qualidade do treino &gt; ego).</div>"
+                "<div class='bc-prep-title'>Fluxo da sessão</div>"
+                "<div class='bc-prep-sub'>Preparação, treino principal e fecho da sessão sem deixar peças soltas pelo chão.</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
+            if _flow_pending is not None and 0 <= int(_flow_pending) < len(_flow_items):
+                _next_item = _flow_items[int(_flow_pending)]
+                _next_title = str(_next_item.get("title", "Próximo passo") or "Próximo passo")
+                _next_phase = "Preparação" if (str(_next_item.get("kind", "")) == "block" and str(_next_item.get("phase", "")) == "prep") else ("Fecho da sessão" if str(_next_item.get("kind", "")) == "block" else "Exercício atual")
+            else:
+                _next_title = "Sessão completa"
+                _next_phase = "Treino pronto"
+            st.markdown(
+                f"<div class='bc-last-chip'><span><b>{html.escape(_next_phase)}</b></span><span class='bc-lastset'>{html.escape(_next_title)}</span></div>",
+                unsafe_allow_html=True,
+            )
+            render_progress_compact(_flow_done, _flow_total)
 
-            w1, w2 = st.columns(2, gap="large")
-            with w1:
-                st.markdown(
-                    "<div class='bc-prep-card'>"
-                    "<div class='t'>🔥 Aquecimento</div>"
-                    "<div class='s'>4–5 min leves + ramp-up do 1º exercício.</div>"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-                aq = st.checkbox("Feito", key="chk_aquecimento")
-                st.caption("✅ Marcado" if aq else " ")
-
-            with w2:
-                st.markdown(
-                    "<div class='bc-prep-card'>"
-                    "<div class='t'>🧘 Mobilidade</div>"
-                    "<div class='s'>Ativação: ombros, anca, escápulas (2–4 min).</div>"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-                mob = st.checkbox("Feito", key="chk_mobilidade")
-                st.caption("✅ Marcado" if mob else " ")
-
-            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
-            render_progress_compact(_done_ex, len(cfg["exercicios"]))
-
-            st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
+            if _prep_pending:
+                for _b in _prep_blocks:
+                    _render_session_block({**dict(_b), "phase": "prep"})
+                st.info("Conclui a preparação para desbloquear o treino principal.")
+            else:
+                st.markdown("<div id='exercise-nav-anchor'></div>", unsafe_allow_html=True)
             _opt_ix = list(range(len(ex_names)))
             _sel_ix = st.selectbox(
                 "Exercício atual",
@@ -5590,9 +5839,17 @@ Dor articular pontiaguda = troca variação no dia.
                 done_now = 0
             total_series_cur = int(cfg["exercicios"][pure_idx]["series"])
             serie_txt = "Concluído ✅" if done_now >= total_series_cur else f"Série {done_now+1}/{total_series_cur}"
+            _status_left = f"Ex {pure_idx+1}/{len(ex_names)}"
+            _status_mid = html.escape(ex_names[pure_idx])
+            _status_right = serie_txt
+            if _post_pending and _post_blocks:
+                _post_open = next((b for b in _post_blocks if not bool(st.session_state.get(_session_block_state_key(b), False))), _post_blocks[0])
+                _status_left = "Fecho"
+                _status_mid = html.escape(str(_post_open.get("title", "Bloco final") or "Bloco final"))
+                _status_right = "Obrigatório"
             st.markdown(f"""
             <div class='bc-float-bar bc-float-status'>
-              <b style='color:#E8E2E2;'>Ex {pure_idx+1}/{len(ex_names)}</b> · {html.escape(ex_names[pure_idx])} · {serie_txt}
+              <b style='color:#E8E2E2;'>{_status_left}</b> · {_status_mid} · {_status_right}
             </div>
             """, unsafe_allow_html=True)
 
@@ -5629,19 +5886,16 @@ Dor articular pontiaguda = troca variação no dia.
         pass  # divider removed
 
         if bloco == "Fisio":
-            st.subheader("🏠 Fisio / Recuperação")
-            if "Quarta" in dia:
-                st.markdown("""
-    **12–20 min (opcional):**
-    - Bird dog 2×6/lado (pausa 2s)
-    - Side plank 2×30–45s (+1 lado fraco)
-    - McGill curl-up 2×8–10 (pausa 2s)
-    - Dead hang 2×20–30s
-    - Respiração 90/90 2 min
-    - Caminhada 15–30 min
-    """)
+            st.subheader(f"🏠 {cfg.get('recovery_title', 'Recuperação / mobilidade')}")
+            _rec_items = [str(x).strip() for x in list(cfg.get('recovery_items', []) or []) if str(x).strip()]
+            if _rec_items:
+                for _rit in _rec_items:
+                    st.markdown(f"- {_rit}")
             else:
                 st.markdown("Caminhada leve + mobilidade.")
+            _rec_note = str(cfg.get('recovery_note', '') or '').strip()
+            if _rec_note:
+                st.caption(_rec_note)
         else:
 
             if bloco in ["Força","Hipertrofia"]:
@@ -5649,10 +5903,6 @@ Dor articular pontiaguda = troca variação no dia.
                     st.info("Progressão: +1 rep por série OU +2,5–5% carga mantendo o RIR alvo.")
                 if semana in [4,8]:
                     st.warning("DELOAD: menos séries e mais leve. Técnica e tendões em 1º lugar.")
-                if semana == 7 and bloco == "Hipertrofia":
-                    st.info("Semana 7: TOP SET (RIR 1) + back-off controlado nos compostos.")
-                if semana == 7 and bloco == "Força":
-                    st.info("Semana 7: aferição submáxima no 1º lift do dia com top single técnico @8–8.5, depois séries de trabalho normais.")
             elif bloco in GUI_BLOCOS:
                 if is_gui_deload_week(semana):
                     st.warning("DELOAD GUI: ~50–60% das séries, -10 a -15% carga, sem drop e sem mini-sets.")
@@ -5662,7 +5912,7 @@ Dor articular pontiaguda = troca variação no dia.
                     st.info("Gui: progressão semanal da sheet (Mesociclos 1→5). Mantém descanso 60–90s e RIR 2.")
             df_now = df_all.copy() if isinstance(df_all, pd.DataFrame) else get_data()
             for i,item in enumerate(cfg["exercicios"]):
-                if pure_workout_mode and pure_nav_key is not None and i != pure_idx:
+                if pure_workout_mode and pure_nav_key is not None and (_prep_pending or _post_pending or i != pure_idx):
                     continue
                 ex = item["ex"]
                 rir_target_str = item["rir_alvo"]
@@ -5986,21 +6236,20 @@ Dor articular pontiaguda = troca variação no dia.
                                             except Exception:
                                                 pass
                                             if is_last_ex:
-                                                st.session_state["session_finished_flash"] = True
-                                                st.success("Último exercício guardado. Treino pronto ✅")
+                                                if _post_blocks:
+                                                    st.success("Último exercício guardado. Falta fechar a sessão com os blocos finais ✅")
+                                                else:
+                                                    st.session_state["session_finished_flash"] = True
+                                                    st.success("Último exercício guardado. Sessão pronta ✅")
                                             else:
                                                 _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                                 st.success("Exercício guardado. A seguir…")
                                         
-                                            # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
                                             try:
                                                 _plano_active = str(st.session_state.get('plano_id_sel','Base'))
                                                 _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                                                if is_last_ex:
-                                                    clear_inprogress_session(_ip_key)
-                                                else:
-                                                    _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-                                                    save_inprogress_session(_ip_key, _payload)
+                                                _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                                save_inprogress_session(_ip_key, _payload)
                                             except Exception:
                                                 pass
 
@@ -6054,21 +6303,20 @@ Dor articular pontiaguda = troca variação no dia.
                                         pass
                                     is_last_ex2 = (i == len(cfg["exercicios"]) - 1)
                                     if is_last_ex2:
-                                        st.session_state["session_finished_flash"] = True
-                                        st.success("Último exercício guardado. Treino pronto ✅")
+                                        if _post_blocks:
+                                            st.success("Último exercício guardado. Falta fechar a sessão com os blocos finais ✅")
+                                        else:
+                                            st.session_state["session_finished_flash"] = True
+                                            st.success("Último exercício guardado. Sessão pronta ✅")
                                     else:
                                         _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
                                         st.success("Exercício guardado. A seguir…")
                                 
-                                    # snapshot: se acabou o último exercício, limpa; senão, guarda progresso atualizado
                                     try:
                                         _plano_active = str(st.session_state.get('plano_id_sel','Base'))
                                         _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                                        if is_last_ex2:
-                                            clear_inprogress_session(_ip_key)
-                                        else:
-                                            _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-                                            save_inprogress_session(_ip_key, _payload)
+                                        _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                        save_inprogress_session(_ip_key, _payload)
                                     except Exception:
                                         pass
 
@@ -6116,59 +6364,16 @@ Dor articular pontiaguda = troca variação no dia.
 
             pass  # divider removed
 
-            if prot.get("tendoes", False):
-                with st.expander("🦾 Protocolo de tendões (8–12 min)"):
-                    st.markdown("""
-    **Isométricos**
-    - Tríceps isométrico na polia: 2×30–45s  
-    - External rotation isométrico: 2×30s/lado  
-    - (Joelho) Spanish squat: 2–3×30–45s  
-
-    **Excêntricos**
-    - Wrist extension excêntrico: 2×12 (3–4s descida)  
-    - Tibial raises: 2×15–20
-    """)
-            if prot.get("core", False):
-                with st.expander("🧱 Core escoliose (6–10 min)"):
-                    st.markdown("""
-    - McGill curl-up 2×8–10 (pausa 2s)
-    - Side plank 2×25–40s (+1 série lado fraco)
-    - Bird dog 2×6–8/lado (pausa 2s)
-    - Suitcase carry 2×20–30m/lado (se houver espaço)
-    """)
-
-            req = _get_req_state_from_session()
-
-            c3, c4 = st.columns(2)
-            c3.checkbox(
-                "🏃 Cardio Zona 2",
-                value=False,
-                key="chk_cardio",
-                disabled=(not req.get("cardio_req", False)),
-                help="Marca se fizeste cardio Zona 2 (ritmo em que ainda consegues falar)."
-            )
-            c4.checkbox(
-                "🦾 Tendões",
-                value=False,
-                key="chk_tendoes",
-                disabled=(not req.get("tendoes_req", False)),
-                help="Marca se fizeste o protocolo de tendões (isométricos + excêntricos)."
-            )
-
-            c5, c6 = st.columns(2)
-            c5.checkbox(
-                "🧱 Core escoliose",
-                value=False,
-                key="chk_core",
-                disabled=(not req.get("core_req", False)),
-                help="Marca se fizeste o core anti-rotação (McGill curl-up, side plank, bird dog, suitcase carry)."
-            )
-            c6.checkbox(
-                "😮‍💨 Cool-down",
-                value=False,
-                key="chk_cooldown",
-                help="Marca se fizeste o cool-down (respiração 90/90 + alongamentos leves)."
-            )
+            if _all_ex_done and _post_blocks:
+                st.markdown(
+                    "<div class='bc-prep-head'>"
+                    "<div class='bc-prep-title'>Fecho da sessão</div>"
+                    "<div class='bc-prep-sub'>Fecha a sessão com o que falta. Não estragues um treino bom por preguiça no último quilómetro.</div>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+                for _b in _post_blocks:
+                    _render_session_block({**dict(_b), "phase": "finish"})
 
             req = _get_req_state_from_session()
             justificativa = ""
@@ -6182,7 +6387,7 @@ Dor articular pontiaguda = troca variação no dia.
             m2.metric("Checklist", "✅ Completo" if ok_checklist else "⚠️ Incompleto")
             m3.metric("Streak", f"{streak_atual}")
 
-            # resumo final (aparece quando todos os exercícios estão concluídos)
+            _flow_items_final, _flow_done_final, _flow_total_final, _flow_pending_final = _session_flow_stats(cfg, prot, perfil_sel, dia)
             _done_ex_final = 0
             for _ix, _it in enumerate(cfg.get("exercicios", [])):
                 try:
@@ -6192,27 +6397,41 @@ Dor articular pontiaguda = troca variação no dia.
                 if _dv >= int(_it.get("series", 0) or 0):
                     _done_ex_final += 1
             _total_ex_final = len(cfg.get("exercicios", []))
-            _all_done = (_total_ex_final > 0 and _done_ex_final >= _total_ex_final)
+            _all_done = (_flow_total_final > 0 and _flow_done_final >= _flow_total_final)
             if _all_done:
                 st.markdown(
                     f"""
                     <div class='bc-final-summary'>
-                      <div class='ttl'>✅ Treino pronto</div>
-                      <div class='sub'>Exercícios concluídos: <b>{_done_ex_final}/{_total_ex_final}</b> · Sessão alvo: <b>{html.escape(str(_sessao_alvo))}</b> · XP previsto: <b>{xp_pre}</b></div>
+                      <div class='ttl'>✅ Sessão pronta</div>
+                      <div class='sub'>Fluxo concluído: <b>{_flow_done_final}/{_flow_total_final}</b> · Exercícios: <b>{_done_ex_final}/{_total_ex_final}</b> · Sessão alvo: <b>{html.escape(str(_sessao_alvo))}</b> · XP previsto: <b>{xp_pre}</b></div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
                 if bool(st.session_state.pop("session_finished_flash", False)):
-                    st.toast("Treino concluído ✅")
+                    st.toast("Sessão concluída ✅")
+            elif _all_ex_done and _post_blocks:
+                st.info("Exercícios feitos. Fecha a sessão com os blocos finais obrigatórios.")
 
             req_keys = [k for k in ["aquecimento","mobilidade","cardio","tendoes","core","cooldown"] if req.get(f"{k}_req", False)]
             done_req = sum(1 for k in req_keys if req.get(k, False))
             total_req = max(1, len(req_keys))
             st.progress(done_req/total_req, text=f"Checklist obrigatório: {done_req}/{total_req}")
 
+            try:
+                if pure_workout_mode and pure_nav_key is not None:
+                    _plano_active = str(st.session_state.get('plano_id_sel', 'Base'))
+                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                    _has_any_mark = _pure_has_any_progress(perfil_sel, dia, len(cfg.get('exercicios', []))) or any(bool(req.get(_k, False)) for _k in ["aquecimento", "mobilidade", "cardio", "tendoes", "core", "cooldown"])
+                    if _all_done:
+                        clear_inprogress_session(_ip_key)
+                    elif _has_any_mark:
+                        _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                        save_inprogress_session(_ip_key, _payload)
+            except Exception:
+                pass
 
-            _finish_label = "🏁 Terminar treino" if not _all_done else "🏁 Terminar treino (concluído)"
+            _finish_label = "🏁 Terminar sessão" if not _all_done else "🏁 Terminar sessão (concluída)"
         
             # estilo: Terminar treino (vermelho)
             try:
@@ -6232,9 +6451,15 @@ Dor articular pontiaguda = troca variação no dia.
             except Exception:
                 pass
 
-            if st.button(_finish_label):
+            if st.button(_finish_label, disabled=(not _all_done)):
+                try:
+                    _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                    _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                    clear_inprogress_session(_ip_key)
+                except Exception:
+                    pass
                 st.balloons()
-                time.sleep(1.2)
+                time.sleep(1.0)
                 st.rerun()
 
             st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
@@ -6263,6 +6488,9 @@ Dor articular pontiaguda = troca variação no dia.
                     try:
                         for _k in list(st.session_state.keys()):
                             if re.match(r"^(peso|reps|rir)_\d+_\d+$", str(_k)):
+                                del st.session_state[_k]
+                        for _k in ["chk_aquecimento", "chk_mobilidade", "chk_cardio", "chk_tendoes", "chk_core", "chk_cooldown", "rest_info_pending", "rest_auto_run", "session_finished_flash"]:
+                            if _k in st.session_state:
                                 del st.session_state[_k]
                     except Exception:
                         pass
