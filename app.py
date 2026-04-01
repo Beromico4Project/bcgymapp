@@ -4856,7 +4856,7 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
     treinos_dict = treinos_dict or treinos_base
     cfg = treinos_dict.get(dia, None)
     if not cfg:
-        return {"bloco":"—","sessao":"","protocolos":{}, "exercicios":[]}
+        return {"bloco":"—","sessao":"","protocolos":{}, "prep": [], "post": [], "exercicios":[]}
     bloco = cfg["bloco"]
     treino_final = []
     for i, item in enumerate(cfg["exercicios"]):
@@ -4871,7 +4871,14 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
         novo["tempo"] = tempo_exec(item["tipo"])
         novo["descanso_s"] = descanso_recomendado_s(item["tipo"], bloco)
         treino_final.append(novo)
-    return {"bloco": bloco, "sessao": cfg["sessao"], "protocolos": cfg["protocolos"], "exercicios": treino_final}
+    return {
+        "bloco": bloco,
+        "sessao": cfg["sessao"],
+        "protocolos": cfg["protocolos"],
+        "prep": list(cfg.get("prep", []) or []),
+        "post": list(cfg.get("post", []) or []),
+        "exercicios": treino_final,
+    }
 
 # --- 6. INTERFACE SIDEBAR ---
 # topo decorativo da sidebar removido (UI mais limpa)
@@ -6941,3 +6948,4 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
+
