@@ -1442,6 +1442,12 @@ def _pure_has_any_progress(perfil: str, dia: str, n_ex: int) -> bool:
                 return True
     except Exception:
         pass
+    try:
+        for _k in ("chk_aquecimento", "chk_mobilidade", "chk_cardio", "chk_tendoes", "chk_core", "chk_cooldown"):
+            if bool(st.session_state.get(_k, False)):
+                return True
+    except Exception:
+        pass
     return False
 
 
@@ -4102,6 +4108,53 @@ def _session_flow_stats(cfg: dict, prot: dict, perfil: str, dia: str):
     return flow, done, total, pending_ix
 
 
+def _persist_current_block_progress_snapshot():
+    """Guarda imediatamente o estado dos blocos da sessão em curso.
+
+    Isto evita que o auto-restore mobile volte a meter Aquecimento/Mobilidade a falso
+    no rerun seguinte quando ainda não há séries registadas.
+    """
+    try:
+        perfil = str(st.session_state.get("perfil_sel", "") or "")
+        plano_id = str(st.session_state.get("plano_id_sel", "Base") or "Base")
+        dia = str(st.session_state.get("dia_sel", "") or "")
+        try:
+            semana = int(st.session_state.get("semana_sel", 1) or 1)
+        except Exception:
+            semana = 1
+        if not perfil or not dia:
+            return
+
+        pure_nav_key = f"pt_idx::{perfil}::{plano_id}::{dia}::{semana}"
+        curr_cfg = globals().get("cfg", {})
+        try:
+            n_ex = int(len((curr_cfg or {}).get("exercicios", []) or []))
+        except Exception:
+            n_ex = 0
+
+        skey, payload = get_active_inprogress_session(perfil, plano_id, INPROGRESS_MAX_AGE_HOURS)
+        if isinstance(payload, dict) and isinstance(skey, str):
+            checks = payload.get("checks", {}) if isinstance(payload.get("checks", {}), dict) else {}
+            checks.update({
+                "chk_aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
+                "chk_mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
+                "chk_cardio": bool(st.session_state.get("chk_cardio", False)),
+                "chk_tendoes": bool(st.session_state.get("chk_tendoes", False)),
+                "chk_core": bool(st.session_state.get("chk_core", False)),
+                "chk_cooldown": bool(st.session_state.get("chk_cooldown", False)),
+            })
+            payload["checks"] = checks
+            payload["ts"] = time.time()
+            save_inprogress_session(skey, payload)
+            return
+
+        payload = _build_inprogress_payload(perfil, dia, plano_id, int(semana), pure_nav_key, int(n_ex))
+        new_key = _make_inprogress_key(perfil, plano_id, dia, int(semana), payload.get("date", _inprogress_today_key_date()))
+        save_inprogress_session(new_key, payload)
+    except Exception:
+        pass
+
+
 def _render_session_block(block: dict):
     title = str(block.get("title", "Bloco") or "Bloco")
     duration = str(block.get("duration", "") or "").strip()
@@ -4130,10 +4183,12 @@ def _render_session_block(block: dict):
         c1.success("Concluído ✅")
         if c2.button("↩️ Reabrir", key=f"undo::{state_key}", width='stretch'):
             st.session_state[state_key] = False
+            _persist_current_block_progress_snapshot()
             st.rerun()
     else:
         if c1.button(button_label, key=f"done::{state_key}", width='stretch'):
             st.session_state[state_key] = True
+            _persist_current_block_progress_snapshot()
             st.rerun()
         c2.caption("Obrigatório" if str(block.get("phase", "")) != "optional" else "Opcional")
 
