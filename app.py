@@ -1336,12 +1336,9 @@ def _build_inprogress_payload(perfil: str, dia: str, plano_id: str, semana: int,
         "pt_sets": {},
         "rest": {},
         "checks": {
-            "chk_aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
-            "chk_mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
-            "chk_cardio": bool(st.session_state.get("chk_cardio", False)),
-            "chk_tendoes": bool(st.session_state.get("chk_tendoes", False)),
-            "chk_core": bool(st.session_state.get("chk_core", False)),
-            "chk_cooldown": bool(st.session_state.get("chk_cooldown", False)),
+            str(k): bool(v)
+            for k, v in st.session_state.items()
+            if str(k).startswith("chk_")
         },
         "ui": {
             "disable_rest_timer": bool(st.session_state.get("disable_rest_timer", False)),
@@ -1443,8 +1440,8 @@ def _pure_has_any_progress(perfil: str, dia: str, n_ex: int) -> bool:
     except Exception:
         pass
     try:
-        for _k in ("chk_aquecimento", "chk_mobilidade", "chk_cardio", "chk_tendoes", "chk_core", "chk_cooldown"):
-            if bool(st.session_state.get(_k, False)):
+        for _k, _v in st.session_state.items():
+            if str(_k).startswith("chk_") and bool(_v):
                 return True
     except Exception:
         pass
@@ -4074,7 +4071,7 @@ def _build_session_flow(cfg: dict, prot: dict) -> list:
         flow.append({
             "kind": "exercise",
             "phase": "main",
-            "title": str(item.get("ex", "Exercício") or "Exercício"),
+            "title": _exercise_ui_label(item),
             "series": int(item.get("series", 0) or 0),
             "ex_index": int(ix),
         })
@@ -4092,6 +4089,36 @@ def _session_flow_item_done(item: dict, perfil: str, dia: str) -> bool:
             done_sets = 0
         return done_sets >= int(item.get("series", 0) or 0)
     return bool(st.session_state.get(_session_block_state_key(item), False))
+
+
+def _exercise_group_label(item: dict) -> str:
+    try:
+        return str(item.get("superset", "") or item.get("group_label", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _exercise_pair_note(item: dict) -> str:
+    group = _exercise_group_label(item)
+    try:
+        pair_with = str(item.get("pair_with", "") or "").strip()
+    except Exception:
+        pair_with = ""
+    if group and pair_with:
+        return f"{group} com {pair_with}"
+    return group
+
+
+def _exercise_ui_label(item: dict, index: int | None = None) -> str:
+    try:
+        ex = str(item.get("ex", "Exercício") or "Exercício").strip()
+    except Exception:
+        ex = "Exercício"
+    group = _exercise_group_label(item)
+    label = f"{ex} · {group}" if group else ex
+    if index is None:
+        return label
+    return f"{int(index)+1}. {label}"
 
 
 def _session_flow_stats(cfg: dict, prot: dict, perfil: str, dia: str):
@@ -4136,12 +4163,9 @@ def _persist_current_block_progress_snapshot():
         if isinstance(payload, dict) and isinstance(skey, str):
             checks = payload.get("checks", {}) if isinstance(payload.get("checks", {}), dict) else {}
             checks.update({
-                "chk_aquecimento": bool(st.session_state.get("chk_aquecimento", False)),
-                "chk_mobilidade": bool(st.session_state.get("chk_mobilidade", False)),
-                "chk_cardio": bool(st.session_state.get("chk_cardio", False)),
-                "chk_tendoes": bool(st.session_state.get("chk_tendoes", False)),
-                "chk_core": bool(st.session_state.get("chk_core", False)),
-                "chk_cooldown": bool(st.session_state.get("chk_cooldown", False)),
+                str(k): bool(v)
+                for k, v in st.session_state.items()
+                if str(k).startswith("chk_")
             })
             payload["checks"] = checks
             payload["ts"] = time.time()
@@ -4311,11 +4335,13 @@ treinos_base = {
                 "key": "tendoes",
                 "title": "Protocolo",
                 "icon": "🦾",
-                "duration": "3 linhas",
+                "duration": "Superset protocolo + final",
                 "items": [
+                    "Superset protocolo:",
                     "Pressdown isométrico: 2 x 30–45 s",
+                    "Rotação externa isométrica: 2 x 30 s/lado",
+                    "Depois:",
                     "Wrist extension excêntrico: 2 x 12",
-                    "Rotação externa isométrica: 1–2 x 30 s/lado",
                 ],
                 "button": "✅ Protocolo feito",
             },
@@ -4325,7 +4351,7 @@ treinos_base = {
                 "icon": "🏃",
                 "duration": "12–15 min",
                 "items": [
-                    "Zona 2 em elíptica ou bike: 12–15 min",
+                    "Cardio: 12–15 min",
                 ],
                 "button": "✅ Cardio feito",
             },
@@ -4335,14 +4361,14 @@ treinos_base = {
             {"ex":"Puxada na polia neutra", "series":3, "reps":"10-12", "tipo":"composto"},
             {"ex":"Pulldown unilateral para dorsal", "series":2, "reps":"12-15", "tipo":"isolado"},
             {"ex":"Máquina inclinada convergente", "series":2, "reps":"8-12", "tipo":"composto"},
-            {"ex":"Elevação lateral na polia", "series":3, "reps":"12-20", "tipo":"isolado"},
-            {"ex":"Reverse pec deck", "series":2, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Elevação lateral na polia", "series":3, "reps":"12-20", "tipo":"isolado", "superset":"Superset A", "pair_with":"Reverse pec deck"},
+            {"ex":"Reverse pec deck", "series":3, "reps":"15-20", "tipo":"isolado", "superset":"Superset A", "pair_with":"Elevação lateral na polia"},
         ]
     },
     "Terça — LOWER HIPERTROFIA": {
         "bloco": "Hipertrofia",
         "sessao": "90–110 min",
-        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": False},
+        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
         "prep": [
             {
                 "key": "aquecimento",
@@ -4362,36 +4388,27 @@ treinos_base = {
         "post": [
             {
                 "key": "core",
-                "title": "Core",
+                "title": "Core em circuito",
                 "icon": "🧱",
-                "duration": "4 exercícios",
+                "duration": "3 exercícios + final",
                 "items": [
                     "McGill curl-up: 2 x 8",
                     "Side plank: 2 x 30–45 s",
                     "Bird dog: 2 x 6/lado",
+                    "No fim:",
                     "Suitcase carry: 2 x 20–30 m/lado",
                 ],
                 "button": "✅ Core feito",
-            },
-            {
-                "key": "tendoes",
-                "title": "Protocolo",
-                "icon": "🦾",
-                "duration": "2 exercícios",
-                "items": [
-                    "Spanish squat: 2 x 30–45 s",
-                    "Tibial raise: 2 x 15–20",
-                ],
-                "button": "✅ Protocolo feito",
             },
         ],
         "exercicios": [
             {"ex":"Hack squat ou belt squat", "series":3, "reps":"6-10", "tipo":"composto"},
             {"ex":"Hip thrust barra", "series":4, "reps":"8-10", "tipo":"composto"},
-            {"ex":"RDL com barra ou halteres", "series":3, "reps":"8-10", "tipo":"composto"},
-            {"ex":"Leg extension", "series":2, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Split squat no smith, viés quad", "series":2, "reps":"10-12", "tipo":"composto"},
-            {"ex":"Abdução máquina", "series":2, "reps":"15-25", "tipo":"isolado"},
+            {"ex":"RDL", "series":3, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Leg extension", "series":2, "reps":"12-15", "tipo":"isolado", "superset":"Superset A", "pair_with":"Abdução máquina"},
+            {"ex":"Abdução máquina", "series":2, "reps":"15-25", "tipo":"isolado", "superset":"Superset A", "pair_with":"Leg extension"},
+            {"ex":"Split squat smith viés quad", "series":2, "reps":"10-12/perna", "tipo":"composto", "superset":"Superset B", "pair_with":"Tibial raise"},
+            {"ex":"Tibial raise", "series":2, "reps":"15-20", "tipo":"isolado", "superset":"Superset B", "pair_with":"Split squat smith viés quad"},
         ]
     },
     "Quarta — UPPER HIPERTROFIA B": {
@@ -4419,11 +4436,13 @@ treinos_base = {
                 "key": "tendoes",
                 "title": "Protocolo",
                 "icon": "🦾",
-                "duration": "3 linhas",
+                "duration": "Superset protocolo + final",
                 "items": [
+                    "Superset protocolo:",
                     "Pressdown isométrico: 2 x 30–45 s",
+                    "Rotação externa isométrica: 2 x 30 s/lado",
+                    "Depois:",
                     "Wrist extension excêntrico: 2 x 12",
-                    "Rotação externa isométrica: 1–2 x 30 s/lado",
                 ],
                 "button": "✅ Protocolo feito",
             },
@@ -4433,7 +4452,7 @@ treinos_base = {
                 "icon": "🏃",
                 "duration": "10–12 min",
                 "items": [
-                    "Zona 2: 10–12 min",
+                    "Cardio: 10–12 min",
                 ],
                 "button": "✅ Cardio feito",
             },
@@ -4442,11 +4461,11 @@ treinos_base = {
             {"ex":"Supino inclinado com halteres", "series":4, "reps":"6-10", "tipo":"composto"},
             {"ex":"Smith inclinada baixa", "series":3, "reps":"8-10", "tipo":"composto"},
             {"ex":"Crossover baixo para alto", "series":3, "reps":"12-15", "tipo":"isolado"},
-            {"ex":"Shoulder press máquina, pegada neutra", "series":2, "reps":"8-10", "tipo":"composto"},
-            {"ex":"Elevação lateral", "series":3, "reps":"12-20", "tipo":"isolado"},
-            {"ex":"Rear delt no cabo ou máquina", "series":2, "reps":"15-20", "tipo":"isolado"},
-            {"ex":"Rosca cabo", "series":2, "reps":"10-12", "tipo":"isolado"},
-            {"ex":"Pressdown corda", "series":2, "reps":"12-15", "tipo":"isolado"},
+            {"ex":"Shoulder press máquina neutra", "series":2, "reps":"8-10", "tipo":"composto"},
+            {"ex":"Elevação lateral", "series":3, "reps":"12-20", "tipo":"isolado", "superset":"Superset A", "pair_with":"Rear delt no cabo ou máquina"},
+            {"ex":"Rear delt no cabo ou máquina", "series":3, "reps":"15-20", "tipo":"isolado", "superset":"Superset A", "pair_with":"Elevação lateral"},
+            {"ex":"Rosca cabo", "series":2, "reps":"10-12", "tipo":"isolado", "superset":"Superset B", "pair_with":"Pressdown corda"},
+            {"ex":"Pressdown corda", "series":2, "reps":"12-15", "tipo":"isolado", "superset":"Superset B", "pair_with":"Rosca cabo"},
         ]
     },
     "Quinta — LIVRE": {
@@ -4488,13 +4507,12 @@ treinos_base = {
         "post": [
             {
                 "key": "tendoes",
-                "title": "Protocolo",
+                "title": "Depois",
                 "icon": "🦾",
-                "duration": "3 linhas",
+                "duration": "2 linhas",
                 "items": [
                     "Pressdown isométrico: 2 x 30–45 s",
                     "Wrist extension excêntrico: 2 x 12",
-                    "Rotação externa isométrica: 1–2 x 30 s/lado",
                 ],
                 "button": "✅ Protocolo feito",
             },
@@ -4504,7 +4522,7 @@ treinos_base = {
                 "icon": "🏃",
                 "duration": "10–12 min",
                 "items": [
-                    "Zona 2: 10–12 min",
+                    "Cardio: 10–12 min",
                 ],
                 "button": "✅ Cardio feito",
             },
@@ -4514,13 +4532,14 @@ treinos_base = {
             {"ex":"Puxada na polia neutra pesada", "series":4, "reps":"6-8", "tipo":"composto"},
             {"ex":"Remada apoiada pesada", "series":3, "reps":"5-6", "tipo":"composto"},
             {"ex":"Máquina inclinada convergente", "series":3, "reps":"6-8", "tipo":"composto"},
-            {"ex":"Face pull", "series":2, "reps":"15-20", "tipo":"isolado"},
+            {"ex":"Face pull", "series":2, "reps":"15-20", "tipo":"isolado", "superset":"Superset leve final", "pair_with":"Rotação externa isométrica"},
+            {"ex":"Rotação externa isométrica", "series":2, "reps":"30 s/lado", "tipo":"isolado", "superset":"Superset leve final", "pair_with":"Face pull"},
         ]
     },
     "Sábado — LOWER FORÇA": {
         "bloco": "Força",
         "sessao": "85–105 min",
-        "protocolos": {"tendoes": True, "core": True, "cardio": False, "cooldown": False},
+        "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
         "prep": [
             {
                 "key": "aquecimento",
@@ -4540,35 +4559,35 @@ treinos_base = {
         "post": [
             {
                 "key": "core",
-                "title": "Core",
+                "title": "Core em circuito",
                 "icon": "🧱",
-                "duration": "4 exercícios",
+                "duration": "3 exercícios",
                 "items": [
                     "McGill curl-up: 2 x 8",
                     "Side plank: 2 x 30–45 s",
                     "Bird dog: 2 x 6/lado",
-                    "Suitcase carry: 2 x 20–30 m/lado",
                 ],
                 "button": "✅ Core feito",
             },
             {
-                "key": "tendoes",
-                "title": "Protocolo",
-                "icon": "🦾",
-                "duration": "2 exercícios",
+                "key": "final_lower",
+                "title": "Depois",
+                "icon": "🏁",
+                "duration": "3 linhas",
                 "items": [
+                    "Suitcase carry: 2 x 20–30 m/lado",
                     "Spanish squat: 2 x 30–45 s",
                     "Tibial raise: 2 x 15–20",
                 ],
-                "button": "✅ Protocolo feito",
+                "button": "✅ Final feito",
             },
         ],
         "exercicios": [
             {"ex":"Trap bar deadlift", "series":4, "reps":"3-5", "tipo":"composto"},
             {"ex":"Belt squat ou hack squat pesado", "series":4, "reps":"5-6", "tipo":"composto"},
             {"ex":"Hip thrust pesado", "series":3, "reps":"5-6", "tipo":"composto"},
-            {"ex":"Leg curl sentado ou lying curl", "series":3, "reps":"6-8", "tipo":"isolado"},
-            {"ex":"Panturrilha sentado ou em pé", "series":3, "reps":"6-10", "tipo":"isolado"},
+            {"ex":"Leg curl sentado ou lying curl", "series":3, "reps":"6-8", "tipo":"isolado", "superset":"Superset A", "pair_with":"Panturrilha"},
+            {"ex":"Panturrilha", "series":3, "reps":"6-10", "tipo":"isolado", "superset":"Superset A", "pair_with":"Leg curl sentado ou lying curl"},
         ]
     },
     "Domingo — DESCANSO": {
@@ -5837,6 +5856,7 @@ Dor articular pontiaguda = troca variação no dia.
             })
         for _i, _item in enumerate(list(_cfg.get("exercicios", []) or [])):
             _ex = str(_item.get("ex", "") or "")
+            _ex_ui = _exercise_ui_label(_item)
             try:
                 _series = int(_item.get("series", 0) or 0)
             except Exception:
@@ -5877,8 +5897,8 @@ Dor articular pontiaguda = troca variação no dia.
 
             _rows.append({
                 "#": _i + 1,
-                "Exercício": _ex,
-                "Tipo": _tipo or "—",
+                "Exercício": _ex_ui,
+                "Tipo": (f"{_tipo} · {_exercise_group_label(_item)}" if _exercise_group_label(_item) else (_tipo or "—")),
                 "Feitas": f"{min(_done_sets, _series)}/{_series}" if _series > 0 else str(_done_sets),
                 "Séries": _series,
                 "Reps": _reps or "—",
@@ -6173,12 +6193,13 @@ Dor articular pontiaguda = troca variação no dia.
                 reps_default = int(reps_high) if int(reps_high) > 0 else int(reps_low)
 
 
-                with st.expander(f"{i+1}. {ex}", expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
+                with st.expander(_exercise_ui_label(item, i), expanded=(i==0 or (pure_workout_mode and pure_nav_key is not None and i == pure_idx))):
                     if pure_workout_mode and pure_nav_key is not None and i == pure_idx:
                         st.markdown("<div id='exercise-current-anchor'></div>", unsafe_allow_html=True)
                     series_txt = str(item.get('series',''))
                     reps_txt = str(item.get('reps',''))
-                    meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR esperado: {rir_target_str}"
+                    _group_lbl = _exercise_group_label(item)
+                    meta_line = f"🎯 Meta: {series_txt}×{reps_txt}  •  RIR esperado: {rir_target_str}" + (f"  •  {_group_lbl}" if _group_lbl else "")
                     st.markdown(
                         f"""<div class='bc-meta-card'>
       <div class='bc-meta-top'>{html.escape(meta_line)}</div>
@@ -6186,6 +6207,9 @@ Dor articular pontiaguda = troca variação no dia.
                         unsafe_allow_html=True
                     )
 
+                    _pair_note = _exercise_pair_note(item)
+                    if _pair_note:
+                        st.caption(f"↔ {_pair_note}")
 
                     if isinstance(yami, dict) and yami:
                         _y_action = str(yami.get('acao', 'Mantém carga'))
@@ -6948,4 +6972,3 @@ with tab_ranking:
 
 # espaço de segurança para barras flutuantes (mobile)
 st.markdown("<div class='app-bottom-safe'></div>", unsafe_allow_html=True)
-
