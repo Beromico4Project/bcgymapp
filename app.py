@@ -4121,6 +4121,118 @@ def _exercise_ui_label(item: dict, index: int | None = None) -> str:
     return f"{int(index)+1}. {label}"
 
 
+def _superset_group_indices(cfg: dict, group_label: str) -> list[int]:
+    group_label = str(group_label or "").strip()
+    if not group_label:
+        return []
+    out = []
+    for _ix, _it in enumerate(list((cfg or {}).get("exercicios", []) or [])):
+        if _exercise_group_label(_it) == group_label:
+            out.append(int(_ix))
+    return out
+
+
+def _effective_ex_done_count(cfg: dict, perfil: str, dia: str, ex_ix: int, overrides: dict | None = None) -> int:
+    try:
+        if isinstance(overrides, dict) and int(ex_ix) in overrides:
+            return int(overrides[int(ex_ix)] or 0)
+    except Exception:
+        pass
+    try:
+        pending = st.session_state.get(f"pt_sets::{perfil}::{dia}::{int(ex_ix)}", [])
+        pending_n = len(pending) if isinstance(pending, list) else 0
+    except Exception:
+        pending_n = 0
+    try:
+        done_n = int(st.session_state.get(f"pt_done::{perfil}::{dia}::{int(ex_ix)}", 0) or 0)
+    except Exception:
+        done_n = 0
+    try:
+        total_n = int(((cfg or {}).get("exercicios", []) or [])[int(ex_ix)].get("series", 0) or 0)
+    except Exception:
+        total_n = 0
+    return max(0, min(max(pending_n, done_n), total_n if total_n > 0 else max(pending_n, done_n)))
+
+
+def _superset_execution_note(cfg: dict, perfil: str, dia: str, ex_ix: int) -> str:
+    try:
+        item = ((cfg or {}).get("exercicios", []) or [])[int(ex_ix)]
+    except Exception:
+        return ""
+    group = _exercise_group_label(item)
+    indices = _superset_group_indices(cfg, group)
+    if len(indices) < 2:
+        return ""
+    names = []
+    rounds = []
+    for _ix in indices:
+        try:
+            _it = cfg["exercicios"][_ix]
+            names.append(str(_it.get("ex", "Exercício") or "Exercício"))
+            rounds.append(int(_it.get("series", 0) or 0))
+        except Exception:
+            pass
+    if not names:
+        return ""
+    total_rounds = max(rounds) if rounds else 0
+    current_round = _effective_ex_done_count(cfg, perfil, dia, int(ex_ix)) + 1
+    if total_rounds > 0:
+        current_round = max(1, min(int(current_round), int(total_rounds)))
+    seq = " → ".join(names) + " → pausa"
+    if total_rounds > 0:
+        return f"{group}: ronda {current_round}/{total_rounds} · {seq}"
+    return f"{group}: {seq}"
+
+
+def _superset_nav_after_set(cfg: dict, perfil: str, dia: str, ex_ix: int, overrides: dict | None = None) -> dict:
+    exercises = list((cfg or {}).get("exercicios", []) or [])
+    ex_ix = int(ex_ix)
+    item = exercises[ex_ix] if 0 <= ex_ix < len(exercises) else {}
+    group = _exercise_group_label(item)
+    indices = _superset_group_indices(cfg, group)
+    if len(indices) < 2:
+        total = int(item.get("series", 0) or 0)
+        done = _effective_ex_done_count(cfg, perfil, dia, ex_ix, overrides)
+        ex_complete = done >= total if total > 0 else False
+        return {
+            "is_superset": False,
+            "queue_rest": not ex_complete,
+            "next_ix": (min(len(exercises) - 1, ex_ix + 1) if ex_complete and ex_ix < len(exercises) - 1 else ex_ix),
+            "group_complete": ex_complete,
+            "current_complete": ex_complete,
+        }
+
+    counts = {ix: _effective_ex_done_count(cfg, perfil, dia, ix, overrides) for ix in indices}
+    totals = {ix: int(exercises[ix].get("series", 0) or 0) for ix in indices}
+    current_complete = counts.get(ex_ix, 0) >= totals.get(ex_ix, 0)
+    group_complete = all(counts.get(ix, 0) >= totals.get(ix, 0) for ix in indices)
+    pos = indices.index(ex_ix)
+
+    next_ix = ex_ix
+    if not group_complete:
+        for step in range(1, len(indices) + 1):
+            cand = indices[(pos + step) % len(indices)]
+            if counts.get(cand, 0) < totals.get(cand, 0):
+                next_ix = cand
+                break
+    else:
+        next_ix = max(indices)
+        if next_ix < len(exercises) - 1:
+            next_ix += 1
+
+    queue_rest = (not group_complete) and (pos == len(indices) - 1)
+    return {
+        "is_superset": True,
+        "queue_rest": bool(queue_rest),
+        "next_ix": int(next_ix),
+        "group_complete": bool(group_complete),
+        "current_complete": bool(current_complete),
+        "group_indices": list(indices),
+        "position": int(pos),
+        "order_names": [str(exercises[ix].get("ex", "Exercício") or "Exercício") for ix in indices],
+    }
+
+
 def _session_flow_stats(cfg: dict, prot: dict, perfil: str, dia: str):
     flow = _build_session_flow(cfg, prot)
     total = len(flow)
@@ -6210,6 +6322,9 @@ Dor articular pontiaguda = troca variação no dia.
                     _pair_note = _exercise_pair_note(item)
                     if _pair_note:
                         st.caption(f"↔ {_pair_note}")
+                    _superset_note = _superset_execution_note(cfg, perfil_sel, dia, i)
+                    if _superset_note:
+                        st.info(f"🔁 {_superset_note}")
 
                     if isinstance(yami, dict) and yami:
                         _y_action = str(yami.get('acao', 'Mantém carga'))
@@ -6429,7 +6544,24 @@ Dor articular pontiaguda = troca variação no dia.
 
                                 is_last = (s == total_series - 1)
                                 is_last_ex = (i == len(cfg["exercicios"]) - 1)
-                                if not is_last:
+                                _nav_preview = _superset_nav_after_set(
+                                    cfg, perfil_sel, dia, i,
+                                    overrides={int(i): int(current_s + 1)}
+                                )
+                                if bool(_nav_preview.get("is_superset", False)):
+                                    _next_preview_ix = int(_nav_preview.get("next_ix", i) or i)
+                                    _next_preview_label = str(cfg["exercicios"][_next_preview_ix].get("ex", "Exercício") or "Exercício") if 0 <= _next_preview_ix < len(cfg.get("exercicios", [])) else "Exercício"
+                                    if bool(_nav_preview.get("group_complete", False)):
+                                        if _next_preview_ix > i:
+                                            btn_label = "Próximo exercício"
+                                            _btn_kind = "exercise"
+                                        else:
+                                            btn_label = "🏁 Terminar treino"
+                                            _btn_kind = "finish"
+                                    else:
+                                        btn_label = f"Próximo do superset · {_next_preview_label}"
+                                        _btn_kind = "series"
+                                elif not is_last:
                                     btn_label = "Próxima série"
                                     _btn_kind = "series"
                                 elif not is_last_ex:
@@ -6481,7 +6613,15 @@ Dor articular pontiaguda = troca variação no dia.
                                     except Exception:
                                         pass
 
-                                    if is_last:
+                                    _nav_after = _superset_nav_after_set(
+                                        cfg, perfil_sel, dia, i,
+                                        overrides={int(i): int(len(novos_sets))}
+                                    )
+                                    _current_complete = bool(_nav_after.get("current_complete", False)) if bool(_nav_after.get("is_superset", False)) else bool(is_last)
+                                    _group_complete = bool(_nav_after.get("group_complete", False)) if bool(_nav_after.get("is_superset", False)) else bool(is_last)
+                                    _next_ix_after = int(_nav_after.get("next_ix", min(len(cfg["exercicios"]) - 1, i + 1)) or min(len(cfg["exercicios"]) - 1, i + 1))
+
+                                    if _current_complete:
                                         ok_gravou = salvar_sets_agrupados(perfil_sel, dia, bloco, ex, novos_sets, req, justificativa)
                                         if ok_gravou:
                                             st.session_state[series_key] = []
@@ -6489,41 +6629,68 @@ Dor articular pontiaguda = troca variação no dia.
                                                 st.session_state[f"pt_done::{perfil_sel}::{dia}::{i}"] = int(item["series"])
                                             except Exception:
                                                 pass
-                                            if is_last_ex:
+
+                                    # descanso definido pelo Yami para a PRÓXIMA ronda/série
+                                    try:
+                                        _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
+                                    except Exception:
+                                        _prev_reps = None
+                                    _rir_eff = float(rir) if rir is not None else None
+
+                                    _rest_yami = yami_definir_descanso_s(
+                                        int(item.get('descanso_s', 75)),
+                                        _rir_eff, float(rir_expect),
+                                        int(reps), reps_low, (lambda _ri: int(_ri.get('high') or 0) if str(_ri.get('kind') or '') in ('range','fixed','fixed_seq') else None)(_parse_rep_scheme(item.get('reps',''), int(item.get('series',0) or 0))),
+                                        _prev_reps,
+                                        is_composto=(str(item.get('tipo','')).lower()=='composto')
+                                    )
+
+                                    if _current_complete:
+                                        try:
+                                            _plano_active = str(st.session_state.get('plano_id_sel','Base'))
+                                            _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
+                                            _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
+                                            save_inprogress_session(_ip_key, _payload)
+                                        except Exception:
+                                            pass
+
+                                    if bool(_nav_after.get("is_superset", False)):
+                                        if _group_complete:
+                                            if _next_ix_after > i:
+                                                _set_pure_idx(_next_ix_after)
+                                                st.success("Superset concluído. A seguir…")
+                                            else:
                                                 if _post_blocks:
                                                     st.success("Último exercício guardado. Falta fechar a sessão com os blocos finais ✅")
                                                 else:
                                                     st.session_state["session_finished_flash"] = True
                                                     st.success("Último exercício guardado. Sessão pronta ✅")
+                                        else:
+                                            if bool(_nav_after.get("queue_rest", False)):
+                                                _queue_auto_rest(int(_rest_yami), str(_exercise_group_label(item) or ex))
+                                                try:
+                                                    st.toast(f"🔁 Superset: descansa {_rest_yami}s e volta à próxima ronda.")
+                                                except Exception:
+                                                    pass
                                             else:
-                                                _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
-                                                st.success("Exercício guardado. A seguir…")
-                                        
-                                            try:
-                                                _plano_active = str(st.session_state.get('plano_id_sel','Base'))
-                                                _ip_key = _make_inprogress_key(perfil_sel, _plano_active, dia, int(semana), _inprogress_today_key_date())
-                                                _payload = _build_inprogress_payload(perfil_sel, dia, _plano_active, int(semana), pure_nav_key, len(cfg.get('exercicios', [])))
-                                                save_inprogress_session(_ip_key, _payload)
-                                            except Exception:
-                                                pass
+                                                try:
+                                                    _next_name = str(cfg["exercicios"][_next_ix_after].get("ex", "Exercício") or "Exercício")
+                                                    st.toast(f"🔁 Superset: segue para {_next_name} sem pausa.")
+                                                except Exception:
+                                                    pass
+                                            _set_pure_idx(_next_ix_after)
 
-                                            time.sleep(0.35)
-                                            st.rerun()
+                                    elif _current_complete:
+                                        if is_last_ex:
+                                            if _post_blocks:
+                                                st.success("Último exercício guardado. Falta fechar a sessão com os blocos finais ✅")
+                                            else:
+                                                st.session_state["session_finished_flash"] = True
+                                                st.success("Último exercício guardado. Sessão pronta ✅")
+                                        else:
+                                            _set_pure_idx(min(len(cfg["exercicios"]) - 1, i + 1))
+                                            st.success("Exercício guardado. A seguir…")
                                     else:
-                                        # descanso definido pelo Yami para a PRÓXIMA série
-                                        try:
-                                            _prev_reps = int(novos_sets[-2]['reps']) if len(novos_sets) >= 2 else None
-                                        except Exception:
-                                            _prev_reps = None
-                                        _rir_eff = float(rir) if rir is not None else None
-
-                                        _rest_yami = yami_definir_descanso_s(
-                                            int(item.get('descanso_s', 75)),
-                                            _rir_eff, float(rir_expect),
-                                            int(reps), reps_low, (lambda _ri: int(_ri.get('high') or 0) if str(_ri.get('kind') or '') in ('range','fixed','fixed_seq') else None)(_parse_rep_scheme(item.get('reps',''), int(item.get('series',0) or 0))),
-                                            _prev_reps,
-                                            is_composto=(str(item.get('tipo','')).lower()=='composto')
-                                        )
                                         _queue_auto_rest(int(_rest_yami), ex)
                                         try:
                                             # comentário curto "ao vivo" (Yami)
@@ -6543,8 +6710,7 @@ Dor articular pontiaguda = troca variação no dia.
                                         except Exception:
                                             pass
 
-
-                                        st.rerun()
+                                    st.rerun()
                         else:
                             st.success("Exercício concluído.")
                             if st.button("Tentar guardar agora", key=f"pt_retry_save_{i}", width='stretch'):
