@@ -11,6 +11,7 @@ import html
 import urllib.parse
 import re
 import random
+import unicodedata
 import json
 from zoneinfo import ZoneInfo
 
@@ -1102,7 +1103,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 SCHEMA_COLUMNS = [
     "Data","Perfil","Dia","Bloco","Plano_ID",
-    "Exercício","Peso","Reps","RIR","Notas",
+    "Exercício","Exercício_Key","Peso","Reps","RIR","Notas",
     "Aquecimento","Mobilidade","Cardio","Tendões","Core","Cooldown",
     "XP","Streak","Checklist_OK"
 ]
@@ -2527,6 +2528,7 @@ def get_data(force_refresh: bool = False):
         for c in SCHEMA_COLUMNS:
             if c not in df.columns:
                 df[c] = None
+        df = _ensure_exercise_key_column(df)
         df = df[SCHEMA_COLUMNS]
 
         try:
@@ -2548,6 +2550,114 @@ def get_data(force_refresh: bool = False):
 
 
 # --- 4.1 HELPERS DE DADOS / XP / HISTÓRICO ---
+EXERCISE_KEY_STOPWORDS = {
+    "a", "o", "as", "os", "de", "do", "da", "dos", "das",
+    "na", "no", "nas", "nos", "com", "sem", "e", "ou", "para",
+    "por", "ao", "aos", "the", "and", "or"
+}
+
+EXERCISE_KEY_TOKEN_MAP = {
+    "halteres": "halter",
+    "dumbbell": "halter",
+    "db": "halter",
+    "neutro": "neutra",
+    "neutra": "neutra",
+    "pegada": "",
+    "straight": "braco",
+    "arm": "reto",
+}
+
+EXERCISE_KEY_ALIAS_PATTERNS = [
+    (re.compile(r"\bsupino\s+inclinad[oa]\b.*\bhalter\b"), "supino inclinado halter"),
+    (re.compile(r"\bpuxada\b.*\bpolia\b.*\bneutra\b"), "puxada polia neutra"),
+    (re.compile(r"\beleva(?:cao|ç[aã]o)\s+lateral\b.*\bpolia\b"), "elevacao lateral polia"),
+    (re.compile(r"\beleva(?:cao|ç[aã]o)\s+lateral\b.*\bhalter\b"), "elevacao lateral halter"),
+    (re.compile(r"\breverse\s+pec\s+deck\b"), "reverse pec deck"),
+    (re.compile(r"\brear\s+delt\b.*\bmachine\b"), "reverse pec deck"),
+]
+
+
+def _strip_accents_text(v: str) -> str:
+    try:
+        return "".join(
+            ch for ch in unicodedata.normalize("NFKD", str(v or ""))
+            if not unicodedata.combining(ch)
+        )
+    except Exception:
+        return str(v or "")
+
+
+def exercise_key(ex_name: str) -> str:
+    s = _strip_accents_text(str(ex_name or "")).lower().strip()
+    if not s:
+        return ""
+    s = s.replace("→", " ").replace("->", " ").replace("/", " ")
+    s = re.sub(r"[()\[\],;:]+", " ", s)
+    s = re.sub(r"[^a-z0-9\s+-]", " ", s)
+    s = re.sub(r"\b\d+(?:s)?\b", " ", s)
+    tokens = []
+    for tok in s.split():
+        tok = EXERCISE_KEY_TOKEN_MAP.get(tok, tok)
+        tok = str(tok or "").strip()
+        if not tok or tok in EXERCISE_KEY_STOPWORDS:
+            continue
+        if tok.endswith("s") and len(tok) > 4 and tok not in {"legs"}:
+            tok = tok[:-1]
+        tokens.append(tok)
+    norm = re.sub(r"\s+", " ", " ".join(tokens)).strip()
+    if not norm:
+        return ""
+    for patt, repl in EXERCISE_KEY_ALIAS_PATTERNS:
+        if patt.search(norm):
+            return repl
+    return norm
+
+
+def _ensure_exercise_key_column(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None:
+        return pd.DataFrame(columns=SCHEMA_COLUMNS)
+    out = df.copy()
+    if "Exercício_Key" not in out.columns:
+        out["Exercício_Key"] = ""
+    try:
+        base_ex = out["Exercício"] if "Exercício" in out.columns else pd.Series([""] * len(out), index=out.index)
+        curr_key = out["Exercício_Key"].fillna("").astype(str).str.strip()
+        mask = curr_key.eq("")
+        if mask.any():
+            out.loc[mask, "Exercício_Key"] = base_ex.loc[mask].apply(exercise_key)
+        else:
+            out["Exercício_Key"] = out["Exercício_Key"].apply(exercise_key)
+    except Exception:
+        try:
+            out["Exercício_Key"] = out.get("Exercício", "").apply(exercise_key)
+        except Exception:
+            out["Exercício_Key"] = ""
+    return out
+
+
+def _exercise_label_map(df: pd.DataFrame) -> dict:
+    out = {}
+    if df is None or getattr(df, "empty", True):
+        return out
+    d = _ensure_exercise_key_column(df)
+    if d.empty:
+        return out
+    if "Exercício" not in d.columns:
+        return out
+    try:
+        d["_label_dt"] = pd.to_datetime(d.get("Data"), dayfirst=True, errors="coerce")
+    except Exception:
+        d["_label_dt"] = pd.NaT
+    d = d.sort_values(["_label_dt"], ascending=False, na_position="last")
+    for key, grp in d.groupby("Exercício_Key", dropna=False):
+        skey = str(key or "").strip()
+        if not skey:
+            continue
+        label = str(grp.iloc[0].get("Exercício", "") or skey).strip() or skey
+        out[skey] = label
+    return out
+
+
 def _parse_num_list(v):
     if v is None:
         return []
@@ -2605,10 +2715,15 @@ def _join_num_list(vals, decimals=1):
 
 def normalize_for_save(df: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame() if df is None else df.copy()
+    df = _ensure_exercise_key_column(df)
     for c in SCHEMA_COLUMNS:
         if c not in df.columns:
             df[c] = None
     df = df[SCHEMA_COLUMNS].copy()
+    if 'Exercício' in df.columns:
+        df['Exercício'] = df['Exercício'].apply(lambda x: '' if pd.isna(x) else str(x).strip())
+    if 'Exercício_Key' in df.columns:
+        df['Exercício_Key'] = df.apply(lambda r: exercise_key(r.get('Exercício_Key') or r.get('Exercício')), axis=1)
 
     bool_cols = ["Aquecimento","Mobilidade","Cardio","Tendões","Core","Cooldown","Checklist_OK"]
     for c in bool_cols:
@@ -2634,12 +2749,12 @@ def normalize_for_save(df: pd.DataFrame) -> pd.DataFrame:
         def _norm_date(x):
             try:
                 if pd.isna(x):
-                    return datetime.date.today().strftime('%d/%m/%Y')
+                    return _lisbon_today_date().strftime('%d/%m/%Y')
             except Exception:
                 pass
             sx=str(x).strip()
             if not sx:
-                return datetime.date.today().strftime('%d/%m/%Y')
+                return _lisbon_today_date().strftime('%d/%m/%Y')
             dt = pd.to_datetime(sx, dayfirst=True, errors='coerce')
             if pd.notna(dt):
                 return dt.strftime('%d/%m/%Y')
@@ -2712,8 +2827,13 @@ def _compute_streak_if_add_today(df: pd.DataFrame, perfil: str, day: datetime.da
 def get_historico_detalhado(df: pd.DataFrame, perfil: str, ex: str):
     if df is None or df.empty:
         return None, 0.0, 2.0, '—'
-    d = df.copy()
-    d = d[(d['Perfil'].astype(str) == str(perfil)) & (d['Exercício'].astype(str) == str(ex))]
+    d = _ensure_exercise_key_column(df)
+    ex_key = exercise_key(ex)
+    d = d[d['Perfil'].astype(str) == str(perfil)].copy()
+    if ex_key:
+        d = d[d['Exercício_Key'].astype(str) == str(ex_key)]
+    else:
+        d = d[d['Exercício'].astype(str) == str(ex)]
     if d.empty:
         return None, 0.0, 2.0, '—'
     d['_dt'] = pd.to_datetime(d['Data'], dayfirst=True, errors='coerce')
@@ -2725,7 +2845,6 @@ def get_historico_detalhado(df: pd.DataFrame, perfil: str, ex: str):
     n = max(len(pesos), len(reps), len(rirs))
     if n == 0:
         return None, 0.0, 2.0, str(row.get('Data', '—'))
-    # broadcast simples quando uma lista tem só 1 valor
     def _get(arr, i):
         if not arr:
             return None
@@ -2851,10 +2970,15 @@ def _historico_resumos_exercicio(df: pd.DataFrame, perfil: str, ex: str,
     """
     if df is None or getattr(df, 'empty', True):
         return []
-    d = df.copy()
+    d = _ensure_exercise_key_column(df)
     if 'Perfil' not in d.columns or 'Exercício' not in d.columns:
         return []
-    d = d[(d['Perfil'].astype(str) == str(perfil)) & (d['Exercício'].astype(str) == str(ex))].copy()
+    ex_key = exercise_key(ex)
+    d = d[d['Perfil'].astype(str) == str(perfil)].copy()
+    if ex_key:
+        d = d[d['Exercício_Key'].astype(str) == str(ex_key)].copy()
+    else:
+        d = d[d['Exercício'].astype(str) == str(ex)].copy()
     if d.empty:
         return []
 
@@ -3856,7 +3980,7 @@ def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa
     justificativa = str(justificativa or '').strip()
     xp, checklist_ok = checklist_xp(req, justificativa)
 
-    today = datetime.date.today()
+    today = _lisbon_today_date()
     data_str = today.strftime('%d/%m/%Y')
     # NÃO forçar leitura da Google Sheet no momento do save (evita 429 durante o treino em mobile)
     df_now = st.session_state.get("_df_cache_data")
@@ -3878,6 +4002,7 @@ def salvar_sets_agrupados(perfil, dia, bloco, ex, lista_sets, req, justificativa
         'Bloco': str(bloco),
         'Plano_ID': str(st.session_state.get('plano_id_sel', 'Base')),
         'Exercício': str(ex),
+        'Exercício_Key': exercise_key(ex),
         'Peso': _join_num_list(pesos, decimals=1),
         'Reps': _join_num_list(repss, decimals=0),
         'RIR': _join_num_list(rirs, decimals=1),
@@ -5238,7 +5363,7 @@ st.sidebar.caption(f"Yami: **{_y_read.get('label','Normal')}** · Ajuste: **{_ad
 
 if st.sidebar.button("💾 Guardar check-in", key="yami_save_checkin"):
     _ck = dict(_y_read)
-    _ck["date"] = datetime.date.today().isoformat()
+    _ck["date"] = _lisbon_today_date().isoformat()
     yami_log_checkin(perfil_sel, _ck)
     st.sidebar.success("Check-in guardado.")
 
@@ -6953,10 +7078,12 @@ with tab_historico:
         dias_opts = sorted(dfp["Dia"].dropna().astype(str).unique().tolist())
         blocos_opts = sorted(dfp["Bloco"].dropna().astype(str).unique().tolist())
 
+        dfp = _ensure_exercise_key_column(dfp)
         dias_filtrados = st.multiselect("Dia", dias_opts, default=[])
         blocos_filtrados = st.multiselect("Bloco", blocos_opts, default=[])
-        ex_opts = sorted(dfp["Exercício"].dropna().astype(str).unique().tolist()) if "Exercício" in dfp.columns else []
-        ex_filtro = st.multiselect("Exercício", ex_opts, default=[])
+        ex_label_map = _exercise_label_map(dfp)
+        ex_opts = sorted(ex_label_map.keys(), key=lambda k: ex_label_map.get(k, k))
+        ex_filtro = st.multiselect("Exercício", ex_opts, default=[], format_func=lambda k: ex_label_map.get(k, k))
 
         datas_dt = pd.to_datetime(dfp["Data"], dayfirst=True, errors="coerce").dropna()
         if not datas_dt.empty:
@@ -6978,7 +7105,7 @@ with tab_historico:
         if blocos_filtrados:
             dfp = dfp[dfp["Bloco"].astype(str).isin([str(x) for x in blocos_filtrados])]
         if ex_filtro:
-            dfp = dfp[dfp["Exercício"].astype(str).isin([str(x) for x in ex_filtro])]
+            dfp = dfp[dfp["Exercício_Key"].astype(str).isin([str(x) for x in ex_filtro])]
 
         if dfp.empty:
             st.info("Sem registos com esses filtros.")
@@ -7036,13 +7163,16 @@ with tab_historico:
             pass  # divider removed
 
             st.subheader("🏆 PRs por Exercício (1RM Estimado)")
-            best_hist = dfw_all.groupby("Exercício")["1RM Estimado"].max()
-            best_week = dfw.groupby("Exercício")["1RM Estimado"].max()
+            dfw_all = _ensure_exercise_key_column(dfw_all)
+            dfw = _ensure_exercise_key_column(dfw)
+            _hist_label_map = _exercise_label_map(dfw_all)
+            best_hist = dfw_all.groupby("Exercício_Key")["1RM Estimado"].max()
+            best_week = dfw.groupby("Exercício_Key")["1RM Estimado"].max()
             prs = []
-            for ex, val_week in best_week.items():
-                val_hist = float(best_hist.get(ex, 0))
+            for ex_key, val_week in best_week.items():
+                val_hist = float(best_hist.get(ex_key, 0))
                 if val_week > 0 and abs(val_week - val_hist) < 1e-9:
-                    prs.append((ex, val_week))
+                    prs.append((_hist_label_map.get(str(ex_key), str(ex_key)), val_week))
             if prs:
                 st.success("Novos PRs detetados nesta semana:")
                 st.dataframe(pd.DataFrame(prs, columns=["Exercício","1RM Estimado (PR)"]), hide_index=True, width='stretch')
@@ -7052,9 +7182,9 @@ with tab_historico:
             pass  # divider removed
 
             st.subheader("📈 Progressão de Força (1RM Estimado)")
-            lista_exercicios = sorted(dfw_all["Exercício"].dropna().astype(str).unique())
-            filtro_ex = st.selectbox("Escolhe um Exercício:", lista_exercicios)
-            df_chart = dfw_all[dfw_all["Exercício"].astype(str) == str(filtro_ex)].copy()
+            lista_exercicios = sorted(_hist_label_map.keys(), key=lambda k: _hist_label_map.get(k, k))
+            filtro_ex = st.selectbox("Escolhe um Exercício:", lista_exercicios, format_func=lambda k: _hist_label_map.get(k, k))
+            df_chart = dfw_all[dfw_all["Exercício_Key"].astype(str) == str(filtro_ex)].copy()
             df_chart["1RM Estimado"] = df_chart.apply(best_1rm_row, axis=1)
             df_chart = df_chart.sort_values("Data_dt")
 
