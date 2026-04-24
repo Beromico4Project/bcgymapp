@@ -27,6 +27,52 @@ CLOVER_OPACITY = 0.06
 
 st.set_page_config(page_title="Black Clover Training APP", page_icon="♣️", layout="centered", initial_sidebar_state="expanded")
 
+
+# --- FIX iOS/mobile: scroll, zoom e refresh ---
+# iPhone faz zoom automático quando inputs têm font-size < 16px; sim, tecnologia moderna, pelos vistos.
+st.markdown("""
+<style>
+html, body, .stApp{
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+  -webkit-text-size-adjust: 100% !important;
+  touch-action: pan-y !important;
+}
+.block-container,
+[data-testid="stAppViewContainer"],
+[data-testid="stVerticalBlock"],
+div[data-testid="stHorizontalBlock"]{
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+}
+input, textarea, select,
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea,
+[data-baseweb="select"] input,
+[data-testid="stDateInput"] input{
+  font-size: 16px !important;
+  -webkit-text-size-adjust: 100% !important;
+}
+.stTabs [data-baseweb="tab-list"]{
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+[data-testid="stDataFrame"], iframe{
+  max-width: 100% !important;
+}
+.bc-float-bar{ pointer-events: none; }
+.bc-float-bar button,
+.bc-float-bar a,
+.bc-float-bar input{ pointer-events: auto; }
+.bc-rest-track{
+  touch-action: pan-y !important;
+  overscroll-behavior: auto !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Keep screen awake on mobile (when supported)
 st.components.v1.html("""
 <script>
@@ -744,7 +790,7 @@ st.markdown("""
 [data-testid='stNumberInput'] button{ min-width: 34px !important; }
 [data-testid='stProgressBar'] > div > div{ border-radius: 999px !important; }
 [data-testid='stProgressBar']{ margin: .40rem 0 .90rem 0 !important; }
-.bc-rest-track{width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); overflow:hidden; margin-top:6px; touch-action: none; overscroll-behavior: contain; user-select: none;}
+.bc-rest-track{width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08); overflow:hidden; margin-top:6px; touch-action: pan-y; overscroll-behavior: auto; user-select: none;}
 .bc-rest-fill{ height:100%; border-radius:999px; background:linear-gradient(90deg, rgba(140,29,44,.9), rgba(180,60,82,.95)); }
 .bc-rest-caption{ font-size:.78rem; color:#E8E2E2; opacity:.95; margin-top:4px; }
 @media (max-width: 768px){
@@ -6009,8 +6055,57 @@ with tab_treino:
                 st.session_state["rest_auto_notified"] = True
             st.session_state["rest_auto_run"] = False
         else:
-            time.sleep(1)
-            st.rerun()
+            # Não fazer st.rerun() a cada segundo no mobile.
+            # O contador atualiza no browser e só volta ao Python quando o utilizador toca num botão.
+            components.html(
+                f"""
+                <div id="bc-live-rest" style="
+                    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+                    color: #E8E2E2;
+                    background: rgba(18,18,18,.72);
+                    border: 1px solid rgba(255,255,255,.10);
+                    border-radius: 12px;
+                    padding: 8px 10px;
+                    margin-top: 6px;
+                    text-align: center;
+                    font-weight: 800;
+                    font-size: 16px;">
+                  Descanso: <span id="bc-live-rest-rem">{rem}</span>s
+                </div>
+                <script>
+                (function() {{
+                  try {{
+                    const endTs = {float(end_ts) * 1000.0};
+                    const total = Math.max(1, {int(total_rest)});
+                    const remEl = document.getElementById('bc-live-rest-rem');
+                    const box = document.getElementById('bc-live-rest');
+                    let notified = false;
+                    function tick() {{
+                      const rem = Math.max(0, Math.ceil((endTs - Date.now()) / 1000));
+                      if (remEl) remEl.textContent = String(rem);
+                      try {{
+                        const pct = Math.max(0, Math.min(1, (total - rem) / total));
+                        const fill = parent.document.querySelector('.bc-rest-fill') || document.querySelector('.bc-rest-fill');
+                        if (fill) fill.style.width = (pct * 100).toFixed(1) + '%';
+                      }} catch(e) {{}}
+                      if (rem <= 0) {{
+                        if (box) box.innerHTML = 'Descanso concluído ✅';
+                        if (!notified) {{
+                          notified = true;
+                          try {{ navigator.vibrate && navigator.vibrate([120,50,120]); }} catch(e) {{}}
+                        }}
+                        clearInterval(window.__bcRestTimerInterval);
+                      }}
+                    }}
+                    if (window.__bcRestTimerInterval) clearInterval(window.__bcRestTimerInterval);
+                    tick();
+                    window.__bcRestTimerInterval = setInterval(tick, 1000);
+                  }} catch(e) {{}}
+                }})();
+                </script>
+                """,
+                height=54,
+            )
 
     if show_rules:
         with st.expander("📜 Regras rápidas do plano"):
