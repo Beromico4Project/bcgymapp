@@ -16,7 +16,7 @@ import json
 from zoneinfo import ZoneInfo
 
 # =========================================================
-# ♣ BLACK CLOVER WORKOUT — RIR Edition (8 semanas + perfis)
+# ♣ BLACK CLOVER WORKOUT — RIR Edition (perfis + planos)
 # =========================================================
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
@@ -4518,6 +4518,12 @@ def is_intensify_hypertrophy(week):
 GUI_PPLA_ID = "GUI_PPLA_v1"
 GUI_BLOCOS = {"PUSH", "PULL", "LEGS", "ARMS"}
 
+BRUNO_OPCAO_1_ID = "BRUNO_4D_RECUP_v1"
+BRUNO_OPCAO_2_ID = "BRUNO_4D_SEG_TER_QUA_SEX_v1"
+BRUNO_IDS = {BRUNO_OPCAO_1_ID, BRUNO_OPCAO_2_ID}
+BRUNO_BLOCOS = {"BRUNO_UPPER", "BRUNO_LOWER"}
+
+
 def gui_stage_week(week: int) -> int:
     """Mapeia semanas 1-12 para estágio do mesociclo (1-5, 6=deload)."""
     try:
@@ -4542,19 +4548,55 @@ def semana_label_gui(week: int) -> str:
         return f"Semana {w} — Mesociclo {stage}"
     return f"Semana {w} — Repetição M{stage}"
 
+def semana_label_bruno(week: int) -> str:
+    try:
+        w = int(week)
+    except Exception:
+        w = 1
+    if w in (1, 2):
+        return f"Semana {w} — Teste técnico"
+    if w in (3, 4, 5):
+        return f"Semana {w} — Progressão"
+    return "Semana 6 — DELOAD"
+
+
 def semana_label_por_plano(week: int, plano_id: str) -> str:
     if plano_id == GUI_PPLA_ID:
         return semana_label_gui(week)
+    if plano_id in BRUNO_IDS:
+        return semana_label_bruno(week)
     return semana_label(week)
+
+
+def is_bruno_deload_week(week: int) -> bool:
+    try:
+        return int(week) == 6
+    except Exception:
+        return False
+
 
 def is_deload_for_plan(week: int, plano_id: str) -> bool:
     if plano_id == GUI_PPLA_ID:
         return is_gui_deload_week(week)
+    if plano_id in BRUNO_IDS:
+        return is_bruno_deload_week(week)
     return is_deload(week)
+
 
 def rir_alvo(item_tipo, bloco, week):
     if bloco in GUI_BLOCOS:
         return "2–4" if is_gui_deload_week(week) else "2"
+    if bloco in BRUNO_BLOCOS:
+        if is_bruno_deload_week(week):
+            return "3–4"
+        try:
+            w = int(week)
+        except Exception:
+            w = 1
+        tipo = str(item_tipo or "").lower()
+        if w in (1, 2):
+            return "2–3" if tipo == "composto" else "1–2"
+        return "1–2" if tipo == "composto" else "1"
     if bloco == "ABC":
         return "2"
     if bloco == "Força":
@@ -4584,6 +4626,8 @@ def descanso_recomendado_s(item_tipo, bloco):
         return 180
     if bloco in GUI_BLOCOS:
         return 75
+    if bloco in BRUNO_BLOCOS:
+        return 120 if item_tipo == "composto" else 75
     if bloco == "ABC":
         return 75
     if item_tipo == "composto":
@@ -5150,7 +5194,242 @@ def gerar_treino_gui_dia(dia, week):
         treino_final.append(novo)
     return {"bloco": bloco, "sessao": cfg["sessao"], "protocolos": cfg["protocolos"], "exercicios": treino_final}
 
-PLANOS = {"Base": treinos_base, "INEIX_ABC_v1": treinos_ineix, GUI_PPLA_ID: treinos_gui}
+
+# --- Plano Bruno — duas opções 4 dias ---
+# Opção 1: seg/ter/sex/sáb (mais recuperável)
+# Opção 2: seg/ter/qua/sex (a semana que pediste)
+BRUNO_UPPER_A = {
+    "bloco": "BRUNO_UPPER",
+    "sessao": "60–75 min",
+    "protocolos": {"tendoes": True, "core": False, "cardio": True, "cooldown": False},
+    "prep": [
+        {
+            "key": "aquecimento",
+            "title": "Aquecimento Upper A",
+            "icon": "🔥",
+            "duration": "5 min + ombro/escápula + aproximações",
+            "items": [
+                "Bike ou elíptica: 5 min",
+                "Face pull leve: 1 x 15",
+                "Rotação externa cabo/banda: 1 x 12–15",
+                "2–3 séries de aproximação no primeiro exercício",
+            ],
+            "button": "✅ Aquecimento feito",
+        },
+    ],
+    "post": [
+        {
+            "key": "cardio",
+            "title": "Cardio zona 2",
+            "icon": "🏃",
+            "duration": "12–15 min",
+            "items": [
+                "Bike ou elíptica: 12–15 min em zona 2",
+                "Ritmo em que ainda consegues falar frases curtas",
+            ],
+            "button": "✅ Cardio feito",
+        },
+        {
+            "key": "tendoes",
+            "title": "Prehab ombro/cotovelo/pulso",
+            "icon": "🦾",
+            "duration": "4–6 min",
+            "items": [
+                "Wrist extension excêntrico: 2 x 12",
+                "Rotação externa isométrica: 2 x 30 s/lado",
+            ],
+            "button": "✅ Prehab feito",
+        },
+    ],
+    "exercicios": [
+        {"ex": "Remada apoiada no peito", "series": 3, "reps": "8-10", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Puxada neutra na polia", "series": 3, "reps": "8-12", "tipo": "composto", "descanso_s": 120},
+        {"ex": "Máquina inclinada convergente", "series": 3, "reps": "8-12", "tipo": "composto", "descanso_s": 120},
+        {"ex": "Crossover baixo para alto", "series": 2, "reps": "12-15", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Elevação lateral na polia", "series": 3, "reps": "12-20", "tipo": "isolado", "descanso_s": 75, "superset": "Superset deltoides", "pair_with": "Rear delt no cabo/máquina"},
+        {"ex": "Rear delt no cabo/máquina", "series": 2, "reps": "15-20", "tipo": "isolado", "descanso_s": 75, "superset": "Superset deltoides", "pair_with": "Elevação lateral na polia"},
+        {"ex": "Rosca cabo punho neutro/semi-supinado", "series": 2, "reps": "10-15", "tipo": "isolado", "descanso_s": 75, "superset": "Superset braços", "pair_with": "Pressdown corda"},
+        {"ex": "Pressdown corda", "series": 2, "reps": "12-15", "tipo": "isolado", "descanso_s": 75, "superset": "Superset braços", "pair_with": "Rosca cabo punho neutro/semi-supinado"},
+    ],
+}
+
+BRUNO_LOWER_A = {
+    "bloco": "BRUNO_LOWER",
+    "sessao": "60–75 min",
+    "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
+    "prep": [
+        {
+            "key": "aquecimento",
+            "title": "Aquecimento Lower A",
+            "icon": "🔥",
+            "duration": "5–8 min + joelho/glúteo + aproximações",
+            "items": [
+                "Bike: 5 min",
+                "Spanish squat: 2 x 30–45 s",
+                "Glute bridge com pausa: 1–2 x 10",
+                "2–3 séries de aproximação no hack squat",
+            ],
+            "button": "✅ Aquecimento feito",
+        },
+    ],
+    "post": [
+        {
+            "key": "core",
+            "title": "Core curto",
+            "icon": "🧱",
+            "duration": "5–8 min",
+            "items": [
+                "McGill curl-up: 2 x 8/lado",
+                "Dead bug: 2 x 8/lado",
+                "Sem twists, sem side bends pesados.",
+            ],
+            "button": "✅ Core feito",
+        },
+    ],
+    "exercicios": [
+        {"ex": "Hack squat", "series": 3, "reps": "6-10", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Leg press pés médios/baixos", "series": 2, "reps": "10-12", "tipo": "composto", "descanso_s": 120},
+        {"ex": "Hip thrust barra/máquina", "series": 3, "reps": "8-12", "tipo": "composto", "descanso_s": 120},
+        {"ex": "Leg extension", "series": 2, "reps": "12-15", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Leg curl sentado", "series": 2, "reps": "10-12", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Gémeos máquina", "series": 3, "reps": "8-12", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Tibial raise", "series": 2, "reps": "15-20", "tipo": "isolado", "descanso_s": 60},
+    ],
+}
+
+BRUNO_UPPER_B = {
+    "bloco": "BRUNO_UPPER",
+    "sessao": "60–75 min",
+    "protocolos": {"tendoes": False, "core": False, "cardio": True, "cooldown": False},
+    "prep": [
+        {
+            "key": "aquecimento",
+            "title": "Aquecimento Upper B",
+            "icon": "🔥",
+            "duration": "5 min + mobilidade torácica/ombro + aproximações",
+            "items": [
+                "Bike ou elíptica: 4–5 min",
+                "Mobilidade torácica rápida",
+                "Face pull leve: 1 x 15",
+                "Rotação externa leve: 1 x 12–15",
+                "2–3 séries de aproximação no supino inclinado",
+            ],
+            "button": "✅ Aquecimento feito",
+        },
+    ],
+    "post": [
+        {
+            "key": "cardio",
+            "title": "Cardio zona 2 curto",
+            "icon": "🏃",
+            "duration": "8–12 min",
+            "items": [
+                "Bike ou elíptica: 8–12 min em zona 2",
+                "Se a asma chatear, reduz intensidade.",
+            ],
+            "button": "✅ Cardio feito",
+        },
+    ],
+    "exercicios": [
+        {"ex": "Supino inclinado halteres 20–30°", "series": 3, "reps": "6-10", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Smith inclinada baixa com pausa", "series": 2, "reps": "8-10", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Remada baixa com apoio", "series": 3, "reps": "8-10", "tipo": "composto", "descanso_s": 120},
+        {"ex": "Pulldown unilateral para dorsal", "series": 2, "reps": "12-15", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Shoulder press máquina neutra", "series": 2, "reps": "8-10", "tipo": "composto", "descanso_s": 120},
+        {"ex": "Elevação lateral cabo/halter", "series": 3, "reps": "12-20", "tipo": "isolado", "descanso_s": 75, "superset": "Superset deltoides", "pair_with": "Rear delt cabo/máquina"},
+        {"ex": "Rear delt cabo/máquina", "series": 2, "reps": "15-20", "tipo": "isolado", "descanso_s": 75, "superset": "Superset deltoides", "pair_with": "Elevação lateral cabo/halter"},
+        {"ex": "Rosca inclinada cabo/halter", "series": 2, "reps": "10-15", "tipo": "isolado", "descanso_s": 75, "superset": "Superset braços", "pair_with": "Tríceps corda/barra V"},
+        {"ex": "Tríceps corda/barra V", "series": 2, "reps": "10-15", "tipo": "isolado", "descanso_s": 75, "superset": "Superset braços", "pair_with": "Rosca inclinada cabo/halter"},
+    ],
+}
+
+BRUNO_LOWER_B_RECUP = {
+    "bloco": "BRUNO_LOWER",
+    "sessao": "75–90 min",
+    "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
+    "prep": [
+        {
+            "key": "aquecimento",
+            "title": "Aquecimento Lower B",
+            "icon": "🔥",
+            "duration": "8–10 min + hinge/joelho + aproximações",
+            "items": [
+                "Bike: 5 min",
+                "Hip hinge drill: 1 x 8",
+                "Spanish squat: 2 x 30–45 s",
+                "Glute bridge: 1 x 10",
+                "3–4 séries de aproximação no primeiro exercício",
+            ],
+            "button": "✅ Aquecimento feito",
+        },
+    ],
+    "post": [
+        {
+            "key": "core",
+            "title": "Core final",
+            "icon": "🧱",
+            "duration": "3–5 min",
+            "items": ["Prancha: 2 x 30–45 s"],
+            "button": "✅ Core feito",
+        },
+    ],
+    "exercicios": [
+        {"ex": "Trap bar deadlift ou RDL", "series": 3, "reps": "4-6", "tipo": "composto", "descanso_s": 180},
+        {"ex": "Hack squat ou belt squat pesado", "series": 3, "reps": "5-8", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Hip thrust pesado", "series": 2, "reps": "6-8", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Leg curl sentado/deitado", "series": 2, "reps": "8-10", "tipo": "isolado", "descanso_s": 90},
+        {"ex": "Abdução máquina", "series": 1, "reps": "15-25", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Gémeos sentado/em pé", "series": 3, "reps": "10-15", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Crunch cabo leve/moderado", "series": 2, "reps": "10-15", "tipo": "isolado", "descanso_s": 75},
+    ],
+}
+
+BRUNO_LOWER_B_SEG_TER_QUA_SEX = {
+    "bloco": "BRUNO_LOWER",
+    "sessao": "80–95 min",
+    "protocolos": {"tendoes": False, "core": True, "cardio": False, "cooldown": False},
+    "prep": BRUNO_LOWER_B_RECUP["prep"],
+    "post": [
+        {
+            "key": "core",
+            "title": "Core final",
+            "icon": "🧱",
+            "duration": "5–8 min",
+            "items": [
+                "Prancha: 2 x 30–45 s",
+                "Bird dog: 2 x 6/lado",
+                "Sem side bends, sem twists pesados.",
+            ],
+            "button": "✅ Core feito",
+        },
+    ],
+    "exercicios": [
+        {"ex": "RDL", "series": 3, "reps": "6-8", "tipo": "composto", "descanso_s": 180},
+        {"ex": "Hack squat ou belt squat", "series": 3, "reps": "5-8", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Hip thrust pesado", "series": 3, "reps": "6-10", "tipo": "composto", "descanso_s": 150},
+        {"ex": "Leg curl sentado/deitado", "series": 2, "reps": "8-10", "tipo": "isolado", "descanso_s": 90},
+        {"ex": "Leg extension", "series": 2, "reps": "12-15", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Abdução máquina", "series": 2, "reps": "15-25", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Gémeos sentado/em pé", "series": 4, "reps": "8-15", "tipo": "isolado", "descanso_s": 75},
+        {"ex": "Crunch cabo moderado", "series": 2, "reps": "10-15", "tipo": "isolado", "descanso_s": 75},
+    ],
+}
+
+treinos_bruno_opcao_1 = {
+    "Segunda — BRUNO UPPER A": BRUNO_UPPER_A,
+    "Terça — BRUNO LOWER A": BRUNO_LOWER_A,
+    "Sexta — BRUNO UPPER B": BRUNO_UPPER_B,
+    "Sábado — BRUNO LOWER B": BRUNO_LOWER_B_RECUP,
+}
+
+treinos_bruno_opcao_2 = {
+    "Segunda — BRUNO UPPER A": BRUNO_UPPER_A,
+    "Terça — BRUNO LOWER A": BRUNO_LOWER_A,
+    "Quarta — BRUNO UPPER B": BRUNO_UPPER_B,
+    "Sexta — BRUNO LOWER B": BRUNO_LOWER_B_SEG_TER_QUA_SEX,
+}
+
+PLANOS = {"Base": treinos_base, "INEIX_ABC_v1": treinos_ineix, GUI_PPLA_ID: treinos_gui, BRUNO_OPCAO_1_ID: treinos_bruno_opcao_1, BRUNO_OPCAO_2_ID: treinos_bruno_opcao_2}
 
 def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
     if plan_id == GUI_PPLA_ID:
@@ -5163,7 +5442,7 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
     treino_final = []
     for i, item in enumerate(cfg["exercicios"]):
         novo = dict(item)
-        if ((plan_id == "Base" and is_deload(week) and bloco in ["Força","Hipertrofia"]) or (plan_id == GUI_PPLA_ID and is_gui_deload_week(week) and bloco in GUI_BLOCOS)):
+        if ((plan_id == "Base" and is_deload(week) and bloco in ["Força","Hipertrofia"]) or (plan_id == GUI_PPLA_ID and is_gui_deload_week(week) and bloco in GUI_BLOCOS) or (plan_id in BRUNO_IDS and is_bruno_deload_week(week) and bloco in BRUNO_BLOCOS)):
             base_series = int(item["series"])
             if item["tipo"] == "composto":
                 novo["series"] = max(2, int(round(base_series*0.6)))
@@ -5171,7 +5450,10 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
                 novo["series"] = max(1, int(round(base_series*0.6)))
         novo["rir_alvo"] = rir_alvo(item["tipo"], bloco, week)
         novo["tempo"] = tempo_exec(item["tipo"])
-        novo["descanso_s"] = descanso_recomendado_s(item["tipo"], bloco)
+        try:
+            novo["descanso_s"] = int(item.get("descanso_s", descanso_recomendado_s(item["tipo"], bloco)) or descanso_recomendado_s(item["tipo"], bloco))
+        except Exception:
+            novo["descanso_s"] = descanso_recomendado_s(item["tipo"], bloco)
         treino_final.append(novo)
     return {
         "bloco": bloco,
@@ -5280,6 +5562,31 @@ if str(perfil_sel).strip().lower() == "ineix":
     plano_id_sel = "INEIX_ABC_v1"
 elif str(perfil_sel).strip().lower() == "gui":
     plano_id_sel = GUI_PPLA_ID
+elif str(perfil_sel).strip().lower() == "bruno":
+    _bruno_opts = {
+        "Opção 1 — Seg/Ter/Sex/Sáb (mais recuperável)": BRUNO_OPCAO_1_ID,
+        "Opção 2 — Seg/Ter/Qua/Sex": BRUNO_OPCAO_2_ID,
+    }
+    _bruno_default_label = "Opção 2 — Seg/Ter/Qua/Sex"
+    try:
+        _curr_bruno_id = st.session_state.get("bruno_plano_id", BRUNO_OPCAO_2_ID)
+        _curr_bruno_label = next((k for k, v in _bruno_opts.items() if v == _curr_bruno_id), _bruno_default_label)
+    except Exception:
+        _curr_bruno_label = _bruno_default_label
+    st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+    st.sidebar.markdown("<h3>Plano Bruno</h3>", unsafe_allow_html=True)
+    _bruno_label = st.sidebar.radio(
+        "Opção do plano",
+        list(_bruno_opts.keys()),
+        index=list(_bruno_opts.keys()).index(_curr_bruno_label),
+        key="bruno_plano_label",
+        label_visibility="collapsed",
+        on_change=_reset_daily_state,
+    )
+    st.sidebar.caption("Opção 1 recupera melhor. Opção 2 encaixa em segunda, terça, quarta e sexta.")
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+    plano_id_sel = _bruno_opts.get(_bruno_label, BRUNO_OPCAO_2_ID)
+    st.session_state["bruno_plano_id"] = plano_id_sel
 if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
@@ -5483,7 +5790,7 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 plano_cycle = st.session_state.get("plano_id_sel","Base")
 is_ineix = (plano_cycle == "INEIX_ABC_v1")
 if not is_ineix:
-    cycle_len = 12 if plano_cycle == GUI_PPLA_ID else 8
+    cycle_len = 12 if plano_cycle == GUI_PPLA_ID else (6 if plano_cycle in BRUNO_IDS else 8)
 
     # --- Semana automática (não tens de te lembrar de mexer) ---
     _cyc_cfg = yami_get_cycle_cfg(perfil_sel, plano_cycle)
@@ -5708,6 +6015,16 @@ if not is_ineix:
                 list(range(1, 13)),
                 format_func=semana_label_gui,
                 index=min(max(_wk_state - 1, 0), 11),
+                key="semana_sel",
+                on_change=_reset_daily_state,
+                label_visibility="collapsed",
+            )
+        elif plano_cycle in BRUNO_IDS:
+            semana_sel = st.sidebar.radio(
+                "Semana do ciclo:",
+                list(range(1, 7)),
+                format_func=semana_label_bruno,
+                index=min(max(_wk_state - 1, 0), 5),
                 key="semana_sel",
                 on_change=_reset_daily_state,
                 label_visibility="collapsed",
@@ -6126,6 +6443,16 @@ Dor articular pontiaguda = troca variação no dia.
 **Tempo:** Compostos 2–0–1 | Isoladores 3–0–1  
 **Semana atual:** **{semana_label_gui(semana)}**  
 **Deload (sem 6 e 12):** ~50–60% das séries, -10 a -15% carga, sem drop / sem M+M, RIR 2–4.
+""")
+            elif _pid_rules in BRUNO_IDS:
+                st.markdown(f"""
+**Plano Bruno (4 dias):**  
+**Semanas 1–2:** compostos RIR **2–3**; isoladores RIR **1–2**.  
+**Semanas 3–5:** progressão; compostos RIR **1–2**; isoladores podem ficar em RIR **1**.  
+**Semana atual:** **{semana_label_bruno(semana)}**  
+**Deload (sem 6):** -40 a -50% séries, -10 a -15% carga, RIR 3–4.  
+**Cardio:** só nos upper. Sem cardio pós-perna.  
+**Core:** anti-extensão/estabilidade. Nada de twists/side bends pesados.
 """)
             else:
                 st.markdown("""
