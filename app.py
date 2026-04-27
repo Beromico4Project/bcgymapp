@@ -5558,9 +5558,9 @@ perfil_sel = st.sidebar.selectbox(
 
 # plano do perfil — agora visível e guardável, porque esconder planos era uma decisão muito "humana"
 _PLAN_LABEL_BY_ID = {
-    "Base": "Plano 5 dias — ULULU/PPLA atual",
-    BRUNO_OPCAO_1_ID: "Bruno Opção 1 — Seg/Ter/Sex/Sáb (mais recuperável)",
-    BRUNO_OPCAO_2_ID: "Bruno Opção 2 — Seg/Ter/Qua/Sex",
+    "Base": "Bruno - Plano 5 dias",
+    BRUNO_OPCAO_1_ID: "Bruno OG — Seg/Ter/Sex/Sáb (mais recuperável)",
+    BRUNO_OPCAO_2_ID: "Bruno V2 — Seg/Ter/Qua/Sex",
     GUI_PPLA_ID: "Gui — PPLA/PUSH-PULL-LEGS-ARMS",
     "INEIX_ABC_v1": "Ineix — ABC 3x/sem",
 }
