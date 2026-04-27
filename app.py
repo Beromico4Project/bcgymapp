@@ -1144,6 +1144,297 @@ p{ margin-bottom: .35rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
+
+# =========================================================
+# HIGH-END UI LAYER — vidro, dashboard e leitura rápida
+# =========================================================
+st.markdown("""
+<style>
+:root{
+  --he-bg: rgba(8, 9, 12, .72);
+  --he-bg2: rgba(255,255,255,.045);
+  --he-line: rgba(255,255,255,.10);
+  --he-line-strong: rgba(232,226,226,.18);
+  --he-red: #8C1D2C;
+  --he-red2: #C3344A;
+  --he-gold: #E8E2E2;
+  --he-muted: rgba(232,226,226,.68);
+  --he-soft: rgba(140,29,44,.22);
+  --he-green: rgba(52,211,153,.86);
+  --he-blue: rgba(96,165,250,.88);
+}
+
+/* base premium */
+.block-container{
+  max-width: 1180px !important;
+  padding-left: clamp(.65rem, 2vw, 1.25rem) !important;
+  padding-right: clamp(.65rem, 2vw, 1.25rem) !important;
+}
+[data-testid="stAppViewContainer"]::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(140,29,44,.22), transparent 28%),
+    radial-gradient(circle at 80% 12%, rgba(232,226,226,.08), transparent 24%),
+    linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.42));
+  z-index:-1;
+}
+
+.he-shell, .he-card, .he-hero, .he-sidebar-hero, .he-command, .he-mini-card{
+  border: 1px solid var(--he-line);
+  background: linear-gradient(180deg, rgba(18,18,22,.78), rgba(9,9,12,.58));
+  box-shadow: 0 18px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(16px);
+}
+.he-hero{
+  position:relative;
+  overflow:hidden;
+  border-radius: 26px;
+  padding: clamp(16px, 2.2vw, 28px);
+  margin: 2px 0 16px 0;
+}
+.he-hero::before{
+  content:"";
+  position:absolute;
+  inset:-1px;
+  background:
+    radial-gradient(circle at 16% 5%, rgba(195,52,74,.32), transparent 24%),
+    radial-gradient(circle at 92% 8%, rgba(232,226,226,.10), transparent 22%);
+  pointer-events:none;
+}
+.he-hero > *{ position:relative; z-index:1; }
+.he-kicker{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(232,226,226,.14);
+  background: rgba(255,255,255,.045);
+  color: var(--he-muted);
+  font-size:.78rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.he-title{
+  font-family:'Cinzel', serif;
+  font-size: clamp(2.0rem, 6vw, 4.2rem);
+  line-height:.96;
+  margin: 12px 0 8px 0;
+  letter-spacing:.02em;
+  color:#F4EEEE;
+  text-shadow:0 14px 42px rgba(0,0,0,.42);
+}
+.he-subtitle{
+  max-width: 820px;
+  color: rgba(232,226,226,.76);
+  font-size: clamp(.92rem, 1.7vw, 1.08rem);
+  line-height:1.45;
+}
+.he-hero-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:14px;
+}
+.he-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.045);
+  color:#EEEAEA;
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:.82rem;
+}
+.he-pill.hot{ border-color:rgba(195,52,74,.42); background:rgba(140,29,44,.18); }
+.he-pill.good{ border-color:rgba(52,211,153,.28); background:rgba(52,211,153,.10); }
+.he-pill.blue{ border-color:rgba(96,165,250,.32); background:rgba(96,165,250,.10); }
+
+.he-grid{
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 16px 0;
+}
+.he-card{
+  border-radius: 20px;
+  padding: 14px;
+  position:relative;
+  overflow:hidden;
+}
+.he-card::after{
+  content:"♣";
+  position:absolute;
+  right:12px;
+  top:8px;
+  color:rgba(232,226,226,.10);
+  font-size:1.1rem;
+}
+.he-label{
+  color:rgba(232,226,226,.62);
+  font-size:.76rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:8px;
+}
+.he-value{
+  color:#F7F2F2;
+  font-weight:900;
+  font-size: clamp(1.05rem, 2.4vw, 1.55rem);
+  line-height:1.05;
+}
+.he-note{
+  color:rgba(232,226,226,.58);
+  font-size:.80rem;
+  margin-top:7px;
+  line-height:1.25;
+}
+.he-card.accent{ border-color:rgba(195,52,74,.32); background:linear-gradient(180deg, rgba(140,29,44,.22), rgba(12,12,16,.62)); }
+.he-card.green{ border-color:rgba(52,211,153,.22); }
+.he-card.blue{ border-color:rgba(96,165,250,.24); }
+
+.he-command{
+  border-radius:22px;
+  padding: 14px;
+  margin: 10px 0 16px 0;
+}
+.he-command-title{
+  color:#F3EEEE;
+  font-size:1rem;
+  font-weight:900;
+  margin-bottom:8px;
+}
+.he-progress-track{
+  width:100%; height:10px; border-radius:999px; overflow:hidden;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.07);
+}
+.he-progress-fill{
+  height:100%; border-radius:999px;
+  background:linear-gradient(90deg, rgba(140,29,44,.95), rgba(195,52,74,.96), rgba(232,226,226,.70));
+  box-shadow: 0 0 24px rgba(195,52,74,.26);
+}
+.he-week-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:10px;
+  margin-top:10px;
+}
+.he-mini-card{
+  border-radius:16px;
+  padding:11px 12px;
+  min-height:74px;
+}
+.he-mini-card.current{
+  border-color:rgba(195,52,74,.55);
+  background:linear-gradient(180deg, rgba(140,29,44,.24), rgba(12,12,16,.58));
+}
+.he-mini-title{ color:#F1ECEC; font-weight:850; font-size:.92rem; }
+.he-mini-sub{ color:rgba(232,226,226,.62); font-size:.78rem; margin-top:4px; }
+
+.he-sidebar-hero{
+  border-radius:20px;
+  padding:14px 14px 12px 14px;
+  margin:6px 8px 12px 8px;
+  position:relative;
+  overflow:hidden;
+}
+.he-sidebar-hero::after{
+  content:"♣";
+  position:absolute;
+  right:14px;
+  top:10px;
+  color:rgba(232,226,226,.20);
+  font-size:1.6rem;
+}
+.he-side-title{
+  font-family:'Cinzel', serif;
+  color:#F1ECEC;
+  font-size:1.05rem;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.he-side-sub{
+  color:rgba(232,226,226,.62);
+  font-size:.78rem;
+  margin-top:4px;
+  line-height:1.25;
+}
+
+/* tabs mais app-like */
+.stTabs [data-baseweb="tab-list"]{
+  border-radius:18px !important;
+  border:1px solid rgba(255,255,255,.09) !important;
+  background:rgba(12,12,15,.64) !important;
+  backdrop-filter: blur(14px);
+  box-shadow:0 14px 28px rgba(0,0,0,.22);
+}
+.stTabs [data-baseweb="tab"]{
+  border-radius:13px !important;
+  font-weight:800 !important;
+}
+.stTabs [aria-selected="true"]{
+  background:linear-gradient(180deg, rgba(140,29,44,.95), rgba(62,12,20,.96)) !important;
+}
+
+/* expansores e inputs premium */
+div[data-testid="stExpander"]{
+  border:1px solid rgba(255,255,255,.09) !important;
+  background:rgba(12,12,15,.46) !important;
+  box-shadow:0 12px 26px rgba(0,0,0,.18);
+}
+.streamlit-expanderHeader{
+  border-radius:14px !important;
+}
+[data-testid="stMetric"]{
+  border:1px solid rgba(255,255,255,.09) !important;
+  background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025)) !important;
+  box-shadow:0 10px 24px rgba(0,0,0,.18);
+}
+hr{ border-color:rgba(255,255,255,.08) !important; }
+
+/* botões com presença */
+div.stButton > button:first-child{
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, rgba(140,29,44,1), rgba(43,9,15,1)) !important;
+  border: 1px solid rgba(232,226,226,.16) !important;
+  box-shadow: 0 12px 24px rgba(140,29,44,.18), inset 0 1px 0 rgba(255,255,255,.09) !important;
+}
+div.stButton > button:first-child:hover{
+  transform: translateY(-1px) scale(1.01) !important;
+  border-color:rgba(232,226,226,.28) !important;
+}
+
+/* footer high-end */
+.bc-float-footer{
+  max-width: 760px;
+  left:50% !important;
+  right:auto !important;
+  transform:translateX(-50%);
+  border-radius:999px !important;
+  background:rgba(8,8,10,.82) !important;
+}
+
+@media (max-width: 880px){
+  .he-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .he-week-grid{ grid-template-columns: 1fr; }
+}
+@media (max-width: 520px){
+  .he-grid{ grid-template-columns: 1fr 1fr; gap:8px; }
+  .he-card{ padding:12px; border-radius:16px; }
+  .he-hero{ border-radius:20px; padding:15px; }
+  .he-title{ font-size:1.9rem; }
+  .he-subtitle{ font-size:.88rem; }
+  .he-pill{ font-size:.74rem; padding:5px 8px; }
+  .bc-float-footer{ max-width: calc(100vw - 16px); }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- 4. CONEXÃO E DADOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -5491,6 +5782,13 @@ def gerar_treino_do_dia(dia, week, treinos_dict=None, plan_id="Base"):
 
 df_all = get_data()
 
+st.sidebar.markdown("""
+<div class='he-sidebar-hero'>
+  <div class='he-side-title'>Training OS</div>
+  <div class='he-side-sub'>Plano, ciclo, prontidão e execução num só painel. Porque até o caos merece UX decente.</div>
+</div>
+""", unsafe_allow_html=True)
+
 # PERFIL
 def _reset_daily_state():
     """Reseta checklists e inputs do dia quando muda Perfil/Semana/Dia (evita checks marcados por defeito)."""
@@ -5552,7 +5850,7 @@ def _default_treino_index_for_today(options):
     return 0
 
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-st.sidebar.markdown("<h3>♣️ Grimório de</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Perfil</h3>", unsafe_allow_html=True)
 
 df_profiles, profiles_ok, profiles_err = get_profiles_df()
 
@@ -5577,6 +5875,7 @@ perfil_sel = st.sidebar.selectbox(
     on_change=_reset_daily_state,
     label_visibility="collapsed",
 )
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # plano do perfil — agora visível e guardável, porque esconder planos era uma decisão muito "humana"
 _PLAN_LABEL_BY_ID = {
@@ -6221,15 +6520,30 @@ st.markdown("""
 <style>
 .bc-header-center{ text-align:center; margin: 2px 0 10px 0; }
 .bc-tagline{ margin-top: 2px; font-size: 1rem; color: rgba(232,226,226,0.70); }
-
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class='bc-header-center'>
-  <div class='bc-tagline'>Powered by SOHCAHTOA & Ltd.</div>
-  <div class='bc-main-title'>Black Clover Training</div>
+try:
+    _he_plan_label = _PLAN_LABEL_BY_ID.get(str(st.session_state.get("plano_id_sel", "Base")), str(st.session_state.get("plano_id_sel", "Base")))
+except Exception:
+    _he_plan_label = "Plano ativo"
+try:
+    _he_today = datetime.datetime.now(ZoneInfo("Europe/Lisbon")).strftime("%d/%m/%Y")
+except Exception:
+    _he_today = datetime.datetime.now().strftime("%d/%m/%Y")
 
+st.markdown(f"""
+<div class='he-hero'>
+  <div class='he-kicker'>♣ Training Command Center</div>
+  <div class='he-title'>Black Clover<br/>Training OS</div>
+  <div class='he-subtitle'>Execução guiada por RIR, ciclo automático, histórico e progressão. Não é magia; é só organização, esse conceito exótico.</div>
+  <div class='he-hero-row'>
+    <span class='he-pill hot'>Perfil: {html.escape(str(perfil_sel))}</span>
+    <span class='he-pill blue'>Treino: {html.escape(str(dia))}</span>
+    <span class='he-pill'>Semana {int(semana)}</span>
+    <span class='he-pill good'>{html.escape(str(_he_plan_label))}</span>
+    <span class='he-pill'>{html.escape(str(_he_today))}</span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -6245,7 +6559,93 @@ except Exception:
     pass
 
 # --- 8. CORPO PRINCIPAL ---
-tab_treino, tab_historico, tab_ranking = st.tabs(["🔥 Treino", "📊 Histórico", "🏅 Ranking"])
+tab_painel, tab_treino, tab_historico, tab_ranking = st.tabs(["🏰 Painel", "🔥 Treino", "📊 Histórico", "🏅 Ranking"])
+
+with tab_painel:
+    try:
+        _pid = str(st.session_state.get("plano_id_sel", "Base"))
+        _plan_label = _PLAN_LABEL_BY_ID.get(_pid, _pid)
+        _cfg_dash = gerar_treino_do_dia(dia, semana, treinos_dict=treinos_dict, plan_id=_pid)
+        _prot_dash = _cfg_dash.get("protocolos", {}) if isinstance(_cfg_dash, dict) else {}
+        _exs_dash = list(_cfg_dash.get("exercicios", []) or []) if isinstance(_cfg_dash, dict) else []
+        _sets_total_dash = int(sum(int(x.get("series", 0) or 0) for x in _exs_dash))
+        _flow_dash, _flow_done_dash, _flow_total_dash, _flow_pending_dash = _session_flow_stats(_cfg_dash, _prot_dash, perfil_sel, dia)
+        _pct_dash = (_flow_done_dash / max(1, _flow_total_dash)) * 100.0
+        _read = st.session_state.get("yami_readiness", {}) or {}
+        _read_label = str(_read.get("label", "Normal") or "Normal")
+        _streak = int(get_last_streak(df_all, perfil_sel)) if isinstance(df_all, pd.DataFrame) else 0
+        _bloco_dash = str(_cfg_dash.get("bloco", "—") or "—") if isinstance(_cfg_dash, dict) else "—"
+        _sessao_dash = str(_cfg_dash.get("sessao", "—") or "—") if isinstance(_cfg_dash, dict) else "—"
+
+        st.markdown("""
+        <div class='he-command'>
+          <div class='he-command-title'>Painel de missão</div>
+          <div class='he-note'>Resumo do que interessa antes de começares a carregar ferro como se a gravidade te devesse dinheiro.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class='he-grid'>
+          <div class='he-card accent'>
+            <div class='he-label'>Plano</div>
+            <div class='he-value'>{html.escape(str(_plan_label).split('—')[0].strip())}</div>
+            <div class='he-note'>{html.escape(str(_plan_label))}</div>
+          </div>
+          <div class='he-card blue'>
+            <div class='he-label'>Sessão</div>
+            <div class='he-value'>{html.escape(str(dia).split('—')[0].strip())}</div>
+            <div class='he-note'>{html.escape(_bloco_dash)} · {html.escape(_sessao_dash)}</div>
+          </div>
+          <div class='he-card green'>
+            <div class='he-label'>Volume</div>
+            <div class='he-value'>{len(_exs_dash)} ex · {_sets_total_dash} séries</div>
+            <div class='he-note'>Volume do treino selecionado</div>
+          </div>
+          <div class='he-card'>
+            <div class='he-label'>Estado</div>
+            <div class='he-value'>{html.escape(_read_label)}</div>
+            <div class='he-note'>Streak: {_streak} dias · Semana {int(semana)}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class='he-command'>
+          <div class='he-command-title'>Progresso da sessão: {_flow_done_dash}/{_flow_total_dash} blocos</div>
+          <div class='he-progress-track'><div class='he-progress-fill' style='width:{_pct_dash:.1f}%'></div></div>
+          <div class='he-note'>Inclui aquecimento, exercícios e blocos finais. Sim, até aquecer conta. Finalmente uma ideia decente.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        _week_items = list(treinos_dict.keys()) if isinstance(treinos_dict, dict) else []
+        if _week_items:
+            st.markdown("<div class='he-command-title'>Semana do plano</div>", unsafe_allow_html=True)
+            _cards = []
+            for _name in _week_items[:8]:
+                try:
+                    _cfg_w = gerar_treino_do_dia(_name, semana, treinos_dict=treinos_dict, plan_id=_pid)
+                    _n_ex = len(_cfg_w.get("exercicios", []) or []) if isinstance(_cfg_w, dict) else 0
+                    _bl = str(_cfg_w.get("bloco", "—") or "—") if isinstance(_cfg_w, dict) else "—"
+                except Exception:
+                    _n_ex, _bl = 0, "—"
+                _cls = "he-mini-card current" if str(_name) == str(dia) else "he-mini-card"
+                _cards.append(
+                    f"<div class='{_cls}'><div class='he-mini-title'>{html.escape(str(_name))}</div>"
+                    f"<div class='he-mini-sub'>{html.escape(_bl)} · {_n_ex} exercícios</div></div>"
+                )
+            st.markdown("<div class='he-week-grid'>" + "".join(_cards) + "</div>", unsafe_allow_html=True)
+
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Exercícios", len(_exs_dash))
+        c2.metric("Séries totais", _sets_total_dash)
+        c3.metric("Blocos feitos", f"{_flow_done_dash}/{_flow_total_dash}")
+
+        if not _exs_dash:
+            st.info("Hoje não há treino principal neste plano. Mobilidade, passos, sono e não inventar dores novas. Uma agenda revolucionária.")
+    except Exception as _dash_e:
+        st.warning("O painel high-end não conseguiu renderizar, mas o treino continua disponível. Pequenas humilhações digitais.")
+        st.caption(str(_dash_e)[:260])
 
 with tab_treino:
 
