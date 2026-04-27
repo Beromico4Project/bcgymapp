@@ -5556,37 +5556,106 @@ perfil_sel = st.sidebar.selectbox(
     label_visibility="collapsed",
 )
 
-# plano do perfil (preparado para ter planos diferentes no futuro)
-plano_id_sel = get_plan_id_for_profile(perfil_sel, df_profiles) if df_profiles is not None else "Base"
-if str(perfil_sel).strip().lower() == "ineix":
-    plano_id_sel = "INEIX_ABC_v1"
-elif str(perfil_sel).strip().lower() == "gui":
-    plano_id_sel = GUI_PPLA_ID
-elif str(perfil_sel).strip().lower() == "bruno":
-    _bruno_opts = {
-        "Opção 1 — Seg/Ter/Sex/Sáb (mais recuperável)": BRUNO_OPCAO_1_ID,
-        "Opção 2 — Seg/Ter/Qua/Sex": BRUNO_OPCAO_2_ID,
-    }
-    _bruno_default_label = "Opção 2 — Seg/Ter/Qua/Sex"
+# plano do perfil — agora visível e guardável, porque esconder planos era uma decisão muito "humana"
+_PLAN_LABEL_BY_ID = {
+    "Base": "Plano 5 dias — ULULU/PPLA atual",
+    BRUNO_OPCAO_1_ID: "Bruno Opção 1 — Seg/Ter/Sex/Sáb (mais recuperável)",
+    BRUNO_OPCAO_2_ID: "Bruno Opção 2 — Seg/Ter/Qua/Sex",
+    GUI_PPLA_ID: "Gui — PPLA/PUSH-PULL-LEGS-ARMS",
+    "INEIX_ABC_v1": "Ineix — ABC 3x/sem",
+}
+_PLAN_ID_BY_LABEL = {v: k for k, v in _PLAN_LABEL_BY_ID.items() if k in PLANOS}
+_PLAN_LABELS_ORDER = [
+    _PLAN_LABEL_BY_ID[k]
+    for k in ["Base", BRUNO_OPCAO_1_ID, BRUNO_OPCAO_2_ID, GUI_PPLA_ID, "INEIX_ABC_v1"]
+    if k in PLANOS and k in _PLAN_LABEL_BY_ID
+]
+
+def _default_plan_for_profile(_perfil: str) -> str:
+    _p = str(_perfil or "").strip().lower()
+    if _p == "ineix":
+        return "INEIX_ABC_v1"
+    if _p == "gui":
+        return GUI_PPLA_ID
+    if _p == "bruno":
+        return BRUNO_OPCAO_2_ID
+    return "Base"
+
+def _save_plan_for_profile(_perfil: str, _plan_id: str, _df_profiles: pd.DataFrame):
     try:
-        _curr_bruno_id = st.session_state.get("bruno_plano_id", BRUNO_OPCAO_2_ID)
-        _curr_bruno_label = next((k for k, v in _bruno_opts.items() if v == _curr_bruno_id), _bruno_default_label)
-    except Exception:
-        _curr_bruno_label = _bruno_default_label
-    st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
-    st.sidebar.markdown("<h3>Plano Bruno</h3>", unsafe_allow_html=True)
-    _bruno_label = st.sidebar.radio(
-        "Opção do plano",
-        list(_bruno_opts.keys()),
-        index=list(_bruno_opts.keys()).index(_curr_bruno_label),
-        key="bruno_plano_label",
-        label_visibility="collapsed",
-        on_change=_reset_daily_state,
-    )
-    st.sidebar.caption("Opção 1 recupera melhor. Opção 2 encaixa em segunda, terça, quarta e sexta.")
-    st.sidebar.markdown('</div>', unsafe_allow_html=True)
-    plano_id_sel = _bruno_opts.get(_bruno_label, BRUNO_OPCAO_2_ID)
-    st.session_state["bruno_plano_id"] = plano_id_sel
+        _perfil = str(_perfil or "").strip() or "Principal"
+        _plan_id = str(_plan_id or "Base").strip()
+        if _plan_id not in PLANOS:
+            _plan_id = "Base"
+
+        if _df_profiles is None or not isinstance(_df_profiles, pd.DataFrame):
+            _dfp = pd.DataFrame(columns=PROFILES_COLUMNS)
+        else:
+            _dfp = _df_profiles.copy()
+
+        for _c in PROFILES_COLUMNS:
+            if _c not in _dfp.columns:
+                _dfp[_c] = ""
+        _dfp = _dfp[PROFILES_COLUMNS].copy()
+        _dfp["Perfil"] = _dfp["Perfil"].astype(str).str.strip()
+        _dfp = _dfp[_dfp["Perfil"] != ""]
+        _dfp = _dfp[_dfp["Perfil"].astype(str) != _perfil]
+
+        _new_row = pd.DataFrame([{
+            "Perfil": _perfil,
+            "Criado_em": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "Plano_ID": _plan_id,
+            "Ativo": "TRUE",
+        }], columns=PROFILES_COLUMNS)
+        _dfp = pd.concat([_dfp, _new_row], ignore_index=True)
+        return save_profiles_df(_dfp)
+    except Exception as _e:
+        return False, str(_e)
+
+_stored_plan_id = get_plan_id_for_profile(perfil_sel, df_profiles) if df_profiles is not None else ""
+_default_plan_id = _default_plan_for_profile(perfil_sel)
+_initial_plan_id = _stored_plan_id if _stored_plan_id in PLANOS else _default_plan_id
+if _initial_plan_id not in PLANOS:
+    _initial_plan_id = "Base"
+
+_initial_label = _PLAN_LABEL_BY_ID.get(_initial_plan_id, _PLAN_LABEL_BY_ID["Base"])
+if _initial_label not in _PLAN_LABELS_ORDER:
+    _initial_label = _PLAN_LABEL_BY_ID["Base"]
+
+st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+st.sidebar.markdown("<h3>Plano ativo</h3>", unsafe_allow_html=True)
+_plan_label_sel = st.sidebar.selectbox(
+    "Plano ativo",
+    _PLAN_LABELS_ORDER,
+    index=_PLAN_LABELS_ORDER.index(_initial_label),
+    key=f"plano_label_sel::{perfil_sel}",
+    label_visibility="collapsed",
+    on_change=_reset_daily_state,
+)
+plano_id_sel = _PLAN_ID_BY_LABEL.get(_plan_label_sel, "Base")
+
+if plano_id_sel == "Base":
+    st.sidebar.caption("Plano de 5 dias guardado/selecionado.")
+elif plano_id_sel in BRUNO_IDS:
+    st.sidebar.caption("Plano Bruno novo selecionado. Opção 1 recupera melhor; opção 2 encaixa em Seg/Ter/Qua/Sex.")
+else:
+    st.sidebar.caption("Plano selecionado para este perfil.")
+
+if st.sidebar.button("💾 Guardar plano neste perfil", key=f"save_plan::{perfil_sel}", width="stretch"):
+    _ok_save_plan, _err_save_plan = _save_plan_for_profile(perfil_sel, plano_id_sel, df_profiles)
+    if _ok_save_plan:
+        st.sidebar.success("Plano guardado neste perfil ✅")
+        try:
+            df_profiles, profiles_ok, profiles_err = get_profiles_df(force_refresh=True)
+        except Exception:
+            pass
+    else:
+        st.sidebar.warning("Não consegui guardar na Google Sheet. Ficou no backup local se a Sheet falhou.")
+        if _err_save_plan:
+            st.sidebar.caption(str(_err_save_plan)[:220])
+
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
+
 if plano_id_sel not in PLANOS:
     plano_id_sel = "Base"
 st.session_state["plano_id_sel"] = plano_id_sel
