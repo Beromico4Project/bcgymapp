@@ -4523,6 +4523,28 @@ BRUNO_OPCAO_2_ID = "BRUNO_4D_SEG_TER_QUA_SEX_v1"
 BRUNO_IDS = {BRUNO_OPCAO_1_ID, BRUNO_OPCAO_2_ID}
 BRUNO_BLOCOS = {"BRUNO_UPPER", "BRUNO_LOWER"}
 
+# As duas opções Bruno são variações da MESMA periodização.
+# Assim, trocar Opção 1 <-> Opção 2 mantém a semana, data de início, deload e RIR do ciclo.
+BRUNO_CYCLE_ID = "BRUNO_4D_CICLO_INTERLIGADO_v1"
+
+def cycle_key_for_plan(plano_id: str) -> str:
+    try:
+        pid = str(plano_id or "Base")
+    except Exception:
+        pid = "Base"
+    return BRUNO_CYCLE_ID if pid in BRUNO_IDS else pid
+
+def cycle_len_for_plan(plano_id: str) -> int:
+    try:
+        pid = str(plano_id or "Base")
+    except Exception:
+        pid = "Base"
+    if pid == GUI_PPLA_ID:
+        return 12
+    if pid in BRUNO_IDS or pid == BRUNO_CYCLE_ID:
+        return 6
+    return 8
+
 
 def gui_stage_week(week: int) -> int:
     """Mapeia semanas 1-12 para estágio do mesociclo (1-5, 6=deload)."""
@@ -5558,9 +5580,9 @@ perfil_sel = st.sidebar.selectbox(
 
 # plano do perfil — agora visível e guardável, porque esconder planos era uma decisão muito "humana"
 _PLAN_LABEL_BY_ID = {
-    "Base": "Bruno - Plano 5 dias",
-    BRUNO_OPCAO_1_ID: "Bruno OG — Seg/Ter/Sex/Sáb (mais recuperável)",
-    BRUNO_OPCAO_2_ID: "Bruno V2 — Seg/Ter/Qua/Sex",
+    "Base": "Plano 5 dias — ULULU/PPLA atual",
+    BRUNO_OPCAO_1_ID: "Bruno Opção 1 — Seg/Ter/Sex/Sáb (mais recuperável)",
+    BRUNO_OPCAO_2_ID: "Bruno Opção 2 — Seg/Ter/Qua/Sex",
     GUI_PPLA_ID: "Gui — PPLA/PUSH-PULL-LEGS-ARMS",
     "INEIX_ABC_v1": "Ineix — ABC 3x/sem",
 }
@@ -5638,6 +5660,7 @@ if plano_id_sel == "Base":
     st.sidebar.caption("Plano de 5 dias guardado/selecionado.")
 elif plano_id_sel in BRUNO_IDS:
     st.sidebar.caption("Plano Bruno novo selecionado. Opção 1 recupera melhor; opção 2 encaixa em Seg/Ter/Qua/Sex.")
+    st.sidebar.caption("🔗 Ciclo interligado entre Opção 1 e Opção 2: mesma semana, mesmo início e mesmo deload.")
 else:
     st.sidebar.caption("Plano selecionado para este perfil.")
 
@@ -5857,13 +5880,16 @@ st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 # PERIODIZAÇÃO (último na sidebar)
 plano_cycle = st.session_state.get("plano_id_sel","Base")
+# ID real do plano continua separado para histórico/treinos.
+# ID do ciclo pode ser partilhado entre variações equivalentes, como Bruno Opção 1 e 2.
+plano_cycle_cfg = cycle_key_for_plan(plano_cycle)
 is_ineix = (plano_cycle == "INEIX_ABC_v1")
 if not is_ineix:
-    cycle_len = 12 if plano_cycle == GUI_PPLA_ID else (6 if plano_cycle in BRUNO_IDS else 8)
+    cycle_len = cycle_len_for_plan(plano_cycle)
 
     # --- Semana automática (não tens de te lembrar de mexer) ---
-    _cyc_cfg = yami_get_cycle_cfg(perfil_sel, plano_cycle)
-    _cyc_key = hashlib.md5(f"{perfil_sel}|{plano_cycle}".encode("utf-8")).hexdigest()[:8]
+    _cyc_cfg = yami_get_cycle_cfg(perfil_sel, plano_cycle_cfg)
+    _cyc_key = hashlib.md5(f"{perfil_sel}|{plano_cycle_cfg}".encode("utf-8")).hexdigest()[:8]
     _auto_week_key = f"auto_week::{_cyc_key}"
     if _auto_week_key not in st.session_state:
         st.session_state[_auto_week_key] = bool(_cyc_cfg.get("auto", True))
@@ -5888,7 +5914,7 @@ if not is_ineix:
             on_change=_reset_daily_state,
         )
     try:
-        yami_set_cycle_cfg(perfil_sel, plano_cycle, auto=bool(auto_week))
+        yami_set_cycle_cfg(perfil_sel, plano_cycle_cfg, auto=bool(auto_week))
     except Exception:
         pass
 
@@ -5905,10 +5931,16 @@ if not is_ineix:
             return ""
 
         try:
-            dfh = dfh[
-                (dfh["Perfil"].astype(str) == str(perfil_sel)) &
-                (dfh["Plano_ID"].astype(str) == str(plano_cycle))
-            ].copy()
+            if str(plano_cycle) in BRUNO_IDS:
+                dfh = dfh[
+                    (dfh["Perfil"].astype(str) == str(perfil_sel)) &
+                    (dfh["Plano_ID"].astype(str).isin(list(BRUNO_IDS)))
+                ].copy()
+            else:
+                dfh = dfh[
+                    (dfh["Perfil"].astype(str) == str(perfil_sel)) &
+                    (dfh["Plano_ID"].astype(str) == str(plano_cycle))
+                ].copy()
         except Exception:
             return ""
 
@@ -5945,14 +5977,14 @@ if not is_ineix:
             start_iso = _infer_cycle_start_from_history()
             if start_iso:
                 try:
-                    yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start_iso)
+                    yami_set_cycle_cfg(perfil_sel, plano_cycle_cfg, start_iso=start_iso)
                 except Exception:
                     pass
         if not start_iso:
             # fallback: assume que hoje é o início (melhor do que inventar)
             start_iso = _lisbon_today_date().isoformat()
             try:
-                yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start_iso)
+                yami_set_cycle_cfg(perfil_sel, plano_cycle_cfg, start_iso=start_iso)
             except Exception:
                 pass
 
@@ -6025,7 +6057,7 @@ if not is_ineix:
             # se mudar a data, recalcula e guarda
             try:
                 if isinstance(new_start, datetime.date) and new_start.isoformat() != start_iso:
-                    yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=new_start.isoformat())
+                    yami_set_cycle_cfg(perfil_sel, plano_cycle_cfg, start_iso=new_start.isoformat())
                     start_date = new_start
                     start_iso = new_start.isoformat()
                     wk = int(((today - start_date).days // 7) + 1)
@@ -6054,7 +6086,7 @@ if not is_ineix:
                     # define start = hoje - (tw-1)*7
                     start2 = today - datetime.timedelta(days=7 * (tw - 1))
                     try:
-                        yami_set_cycle_cfg(perfil_sel, plano_cycle, start_iso=start2.isoformat())
+                        yami_set_cycle_cfg(perfil_sel, plano_cycle_cfg, start_iso=start2.isoformat())
                     except Exception:
                         pass
                     # não mexer diretamente no state do date_input (key=_start_key) aqui, senão Streamlit explode.
